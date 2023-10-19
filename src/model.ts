@@ -1,4 +1,4 @@
-import { Model, ModelDefinition } from "types"
+import { Model, ModelDefinition, ResolvedField } from "types"
 
 export enum FieldType {
   String,
@@ -12,6 +12,7 @@ export enum FieldType {
 
 export class Field<T extends FieldType> {
   private _unique: boolean = false
+  private _default?: ResolvedField<Field<this["type"]>>
 
   constructor(
     public type: T,
@@ -26,6 +27,11 @@ export class Field<T extends FieldType> {
 
   optional() {
     return new OptionalField(this.type, this.model, this.field)
+  }
+
+  default(value: ResolvedField<Field<this["type"]>>) {
+    this._default = value
+    return this
   }
 
   static string() {

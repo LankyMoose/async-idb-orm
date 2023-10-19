@@ -11,7 +11,7 @@ const pets = model("Pet", {
 
 const users = model("User", {
   id: Field.number().unique(),
-  name: Field.string(),
+  name: Field.string().default("John"),
   age: Field.number().optional(),
   pets: Field.array(pets),
   alive: Field.boolean().optional(),
