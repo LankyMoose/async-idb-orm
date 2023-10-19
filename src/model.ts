@@ -1,4 +1,6 @@
-enum FieldType {
+import { Model, ModelDefinition } from "types"
+
+export enum FieldType {
   String,
   Number,
   BigInt,
@@ -9,13 +11,12 @@ enum FieldType {
 }
 
 export class Field<T extends FieldType> {
-  type: T
   _unique: boolean = false
-  model?: ModelDefinition
-  constructor(type: T, model?: ModelDefinition) {
-    this.type = type
-    this.model = model
-  }
+  constructor(
+    public type: T,
+    public model?: Model<ModelDefinition>,
+    public field?: Field<FieldType>
+  ) {}
 
   unique() {
     this._unique = true
@@ -42,21 +43,31 @@ export class Field<T extends FieldType> {
     return new Field(FieldType.Date)
   }
 
-  static model<T extends ModelDefinition>(model: T) {
-    return new Field(FieldType.Model, model)
+  static model<T extends Model<ModelDefinition>>(model: T) {
+    return new ModelField(model)
   }
 
-  static array<T extends ModelDefinition | Field<FieldType>>(modelOrField: T) {
+  static array<U extends Model<ModelDefinition> | Field<FieldType>>(modelOrField: U) {
     return new ArrayField(modelOrField)
   }
 }
 
-class ArrayField<T extends ModelDefinition | Field<FieldType>> extends Field<FieldType> {
-  _fieldType: T
+export class ModelField<T extends Model<ModelDefinition>> extends Field<FieldType.Model> {
+  constructor(model: T) {
+    super(FieldType.Model, model)
+  }
+}
 
-  constructor(type: T) {
+export class ArrayField<
+  T extends Model<ModelDefinition> | Field<FieldType>
+> extends Field<FieldType> {
+  constructor(modalOrField: T) {
     super(FieldType.Array)
-    this._fieldType = type
+    if (modalOrField instanceof Field) {
+      this.field = modalOrField
+    } else {
+      this.model = modalOrField
+    }
   }
 }
 
