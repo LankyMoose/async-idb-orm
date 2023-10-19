@@ -11,7 +11,8 @@ export enum FieldType {
 }
 
 export class Field<T extends FieldType> {
-  _unique: boolean = false
+  private _unique: boolean = false
+
   constructor(
     public type: T,
     public model?: Model<ModelDefinition>,
@@ -21,6 +22,10 @@ export class Field<T extends FieldType> {
   unique() {
     this._unique = true
     return this
+  }
+
+  optional() {
+    return new OptionalField(this.type, this.model, this.field)
   }
 
   static string() {
@@ -56,6 +61,10 @@ export class ModelField<T extends Model<ModelDefinition>> extends Field<FieldTyp
   constructor(model: T) {
     super(FieldType.Model, model)
   }
+}
+
+export class OptionalField<T extends FieldType> extends Field<T> {
+  _optional: boolean = true
 }
 
 export class ArrayField<

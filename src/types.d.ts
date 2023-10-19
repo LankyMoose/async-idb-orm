@@ -1,4 +1,4 @@
-import { Field, ArrayField, FieldType, ModelField } from "model"
+import { Field, ArrayField, FieldType, ModelField, OptionalField } from "model"
 
 export type ModelDefinition = Record<string, Field<FieldType>>
 
@@ -10,7 +10,9 @@ export type Model<T extends ModelDefinition> = {
 export type ModelSchema = Record<string, Model<ModelDefinition>>
 
 export type ResolvedModel<T extends ModelDefinition> = {
-  [key in keyof T]: ResolvedField<T[key]>
+  [key in keyof T]: T[key] extends OptionalField<FieldType>
+    ? undefined | ResolvedField<T[key]>
+    : ResolvedField<T[key]>
 }
 
 export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldType.String>

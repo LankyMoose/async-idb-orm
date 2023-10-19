@@ -12,10 +12,10 @@ const pets = model("Pet", {
 const users = model("User", {
   id: Field.number().unique(),
   name: Field.string(),
-  age: Field.number(),
-  pets: Field.array(pets),
-  father: Field.model(pets),
-  alive: Field.boolean(),
+  age: Field.number().optional(),
+  //pets: Field.array(pets),
+  //father: Field.model(pets),
+  alive: Field.boolean().optional(),
 })
 
 const db = await idb("test", { pets, users })
@@ -23,31 +23,31 @@ db.users.create({
   id: 1,
   name: "John",
   age: 30,
-  alive: true,
-  pets: [
-    {
-      id: 1,
-      name: "Dog",
-      age: 10,
-      species: "Dog",
-      alive: true,
-    },
-    {
-      id: 2,
-      name: "Cat",
-      age: 5,
-      species: "Cat",
-      alive: true,
-    },
-  ],
+  alive: undefined,
+  // pets: [
+  //   {
+  //     id: 1,
+  //     name: "Dog",
+  //     age: 10,
+  //     species: "Dog",
+  //     alive: true,
+  //   },
+  //   {
+  //     id: 2,
+  //     name: "Cat",
+  //     age: 5,
+  //     species: "Cat",
+  //     alive: true,
+  //   },
+  // ],
 
-  father: {
-    id: 2,
-    name: "Asd",
-    age: 50,
-    species: "Asd",
-    alive: true,
-  },
+  // father: {
+  //   id: 2,
+  //   name: "Asd",
+  //   age: 50,
+  //   species: "Asd",
+  //   alive: true,
+  // },
 })
 
 const user = await db.users.read(1)
