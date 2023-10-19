@@ -1,4 +1,4 @@
-import { Model, ModelDefinition, ResolvedField } from "types"
+import { IModel, ModelDefinition, ResolvedField, ResolvedModel } from "types"
 
 export enum FieldType {
   String,
@@ -16,7 +16,7 @@ export class Field<T extends FieldType> {
 
   constructor(
     public type: T,
-    public model?: Model<ModelDefinition>,
+    public model?: IModel<ModelDefinition>,
     public field?: Field<FieldType>
   ) {}
 
@@ -58,7 +58,7 @@ export class Field<T extends FieldType> {
     return new ModelField(model)
   }
 
-  static array<U extends Model<ModelDefinition> | Field<FieldType>>(modelOrField: U) {
+  static array<U extends IModel<ModelDefinition> | Field<FieldType>>(modelOrField: U) {
     return new ArrayField(modelOrField)
   }
 }
@@ -74,7 +74,7 @@ export class OptionalField<T extends FieldType> extends Field<T> {
 }
 
 export class ArrayField<
-  T extends Model<ModelDefinition> | Field<FieldType>
+  T extends IModel<ModelDefinition> | Field<FieldType>
 > extends Field<FieldType> {
   constructor(modalOrField: T) {
     super(FieldType.Array)
@@ -86,9 +86,51 @@ export class ArrayField<
   }
 }
 
-export function model<T extends ModelDefinition>(name: string, definition: T): Model<T> {
-  return {
-    name,
-    definition,
+type ModelEvent = "write" | "beforewrite" | "delete" | "beforedelete"
+
+type NonCancellableModelEventCallback<T extends ModelDefinition> = (data: ResolvedModel<T>) => void
+type CancellableModelEventCallback<T extends ModelDefinition> = (
+  data: ResolvedModel<T>,
+  cancel: () => void
+) => void
+
+type ModelEventCallback<T extends ModelDefinition, U extends ModelEvent> = U extends
+  | "write"
+  | "delete"
+  ? NonCancellableModelEventCallback<T>
+  : CancellableModelEventCallback<T>
+
+export class Model<T extends ModelDefinition> implements IModel<T> {
+  private writeCallbacks: ModelEventCallback<T, ModelEvent>[] = []
+  private beforeWriteCallbacks: ModelEventCallback<T, ModelEvent>[] = []
+  private deleteCallbacks: ModelEventCallback<T, ModelEvent>[] = []
+  private beforeDeleteCallbacks: ModelEventCallback<T, ModelEvent>[] = []
+
+  constructor(public name: string, public definition: T) {
+    this.name = name
+    this.definition = definition
   }
+
+  on<U extends ModelEvent>(evtName: U, callback: ModelEventCallback<T, U>) {
+    switch (evtName) {
+      case "write":
+        this.writeCallbacks.push(callback)
+        break
+      case "beforewrite":
+        this.beforeWriteCallbacks.push(callback)
+        break
+      case "delete":
+        this.deleteCallbacks.push(callback)
+        break
+      case "beforedelete":
+        this.beforeDeleteCallbacks.push(callback)
+        break
+      default:
+        throw new Error(`Unknown event ${evtName}`)
+    }
+  }
+}
+
+export function model<T extends ModelDefinition>(name: string, definition: T): Model<T> {
+  return new Model(name, definition)
 }

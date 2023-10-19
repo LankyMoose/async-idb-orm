@@ -1,13 +1,13 @@
-import { Field, ArrayField, FieldType, ModelField, OptionalField } from "model"
+import { Field, ArrayField, FieldType, ModelField, OptionalField, Model } from "model"
 
-export type ModelDefinition = Record<string, Field<FieldType>>
-
-export type Model<T extends ModelDefinition> = {
+export interface IModel<T extends ModelDefinition> {
   name: string
   definition: T
 }
 
-export type ModelSchema = Record<string, Model<ModelDefinition>>
+export type ModelDefinition = Record<string, Field<FieldType>>
+
+export type ModelSchema = Record<string, IModel<ModelDefinition>>
 
 export type ResolvedModel<T extends ModelDefinition> = {
   [key in keyof T as T[key] extends OptionalField<FieldType> ? never : key]: ResolvedField<T[key]>
@@ -30,7 +30,7 @@ export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldTyp
   : T extends ModelField<infer U>
   ? ResolvedModel<U["definition"]>
   : T extends ArrayField<infer U>
-  ? U extends Model<ModelDefinition>
+  ? U extends IModel<ModelDefinition>
     ? ResolvedModel<U["definition"]>[]
     : U extends Field<FieldType>
     ? ResolvedField<U>[]

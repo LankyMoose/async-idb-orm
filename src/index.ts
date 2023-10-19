@@ -17,6 +17,15 @@ const users = model("User", {
   alive: Field.boolean().optional(),
 })
 
+users.on("beforewrite", (data, cancel) => {
+  console.log(data)
+  return cancel()
+})
+
+users.on("delete", (data) => {
+  console.log(data)
+})
+
 const db = await idb("test", { pets, users })
 
 const key = await db.users.create({
