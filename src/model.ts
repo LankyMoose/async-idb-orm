@@ -1,4 +1,11 @@
-import { IModel, ModelDefinition, ResolvedField, ResolvedModel } from "types"
+import {
+  IModel,
+  ModelDefinition,
+  ModelEvent,
+  ModelEventCallback,
+  ResolvedField,
+  ResolvedModel,
+} from "types"
 
 export enum FieldType {
   String,
@@ -86,44 +93,36 @@ export class ArrayField<
   }
 }
 
-type ModelEvent = "write" | "beforewrite" | "delete" | "beforedelete"
-
-type NonCancellableModelEventCallback<T extends ModelDefinition> = (data: ResolvedModel<T>) => void
-type CancellableModelEventCallback<T extends ModelDefinition> = (
-  data: ResolvedModel<T>,
-  cancel: () => void
-) => void
-
-type ModelEventCallback<T extends ModelDefinition, U extends ModelEvent> = U extends
-  | "write"
-  | "delete"
-  ? NonCancellableModelEventCallback<T>
-  : CancellableModelEventCallback<T>
-
 export class Model<T extends ModelDefinition> implements IModel<T> {
-  private writeCallbacks: ModelEventCallback<T, ModelEvent>[] = []
-  private beforeWriteCallbacks: ModelEventCallback<T, ModelEvent>[] = []
-  private deleteCallbacks: ModelEventCallback<T, ModelEvent>[] = []
-  private beforeDeleteCallbacks: ModelEventCallback<T, ModelEvent>[] = []
+  private _callbacks: Record<ModelEvent, ModelEventCallback<T, ModelEvent>[]> = {
+    write: [],
+    beforewrite: [],
+    delete: [],
+    beforedelete: [],
+  }
 
   constructor(public name: string, public definition: T) {
     this.name = name
     this.definition = definition
   }
 
+  callbacks<T extends ModelEvent>(evtName: T) {
+    return this._callbacks[evtName]
+  }
+
   on<U extends ModelEvent>(evtName: U, callback: ModelEventCallback<T, U>) {
     switch (evtName) {
       case "write":
-        this.writeCallbacks.push(callback)
+        this._callbacks.write.push(callback)
         break
       case "beforewrite":
-        this.beforeWriteCallbacks.push(callback)
+        this._callbacks.beforewrite.push(callback)
         break
       case "delete":
-        this.deleteCallbacks.push(callback)
+        this._callbacks.delete.push(callback)
         break
       case "beforedelete":
-        this.beforeDeleteCallbacks.push(callback)
+        this._callbacks.beforedelete.push(callback)
         break
       default:
         throw new Error(`Unknown event ${evtName}`)
@@ -131,6 +130,6 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
   }
 }
 
-export function model<T extends ModelDefinition>(name: string, definition: T): Model<T> {
+export function model<T extends ModelDefinition>(name: string, definition: T) {
   return new Model(name, definition)
 }

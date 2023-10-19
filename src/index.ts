@@ -34,4 +34,6 @@ const key = await db.users.create({
   pets: [],
 })
 
+if (key === undefined) throw new Error("key is undefined")
+
 const user = await db.users.read(key)

@@ -1,4 +1,12 @@
-import { ModelSchema, ModelDefinition, ResolvedModel } from "types"
+import { Model } from "model"
+import {
+  ModelSchema,
+  ModelDefinition,
+  ResolvedModel,
+  IModel,
+  ModelEventCallback,
+  ModelEvent,
+} from "types"
 
 class AsyncIDB {
   db: IDBDatabase | null = null
@@ -26,7 +34,7 @@ class AsyncIDB {
           this.db.createObjectStore(model.name, {
             keyPath: uniqueKeys.length > 0 ? uniqueKeys : undefined,
           })
-          this.stores[model.name] = new AsyncIDBStore(model.name, this.db)
+          this.stores[model.name] = new AsyncIDBStore(model, this.db)
         }
 
         resolve(this)
@@ -36,19 +44,44 @@ class AsyncIDB {
 }
 
 class AsyncIDBStore<T extends ModelDefinition> {
+  model: Model<T>
   name: string
   db: IDBDatabase
   store: IDBObjectStore
-  constructor(name: string, db: IDBDatabase) {
-    this.name = name
+  constructor(model: IModel<T>, db: IDBDatabase) {
+    this.model = model as Model<T>
+    this.name = model.name
     this.db = db
-    this.store = db.transaction(name, "readwrite").objectStore(name)
+    this.store = db.transaction(model.name, "readwrite").objectStore(model.name)
   }
+
+  private onBefore(evtName: "write" | "delete", data: ResolvedModel<T>) {
+    const callbacks = this.model.callbacks(`before${evtName}`)
+    for (const callback of callbacks) {
+      let cancelled = false
+      callback(data, () => (cancelled = true))
+      if (cancelled) return false
+    }
+    return true
+  }
+
+  private onAfter(evtName: "write" | "delete", data: ResolvedModel<T>) {
+    const callbacks = this.model.callbacks(evtName) as ModelEventCallback<T, "write">[]
+    for (const callback of callbacks) {
+      callback(data)
+    }
+  }
+
   async create(data: ResolvedModel<T>) {
+    if (!this.onBefore("write", data)) return
+
     const request = this.store.add(data)
     return new Promise<IDBValidKey>((resolve, reject) => {
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result)
+      request.onsuccess = () => {
+        this.onAfter("write", data)
+        resolve(request.result)
+      }
     })
   }
   async read(id: IDBValidKey) {
@@ -58,18 +91,29 @@ class AsyncIDBStore<T extends ModelDefinition> {
       request.onsuccess = () => resolve(request.result)
     })
   }
-  async update(id: IDBValidKey, data: object) {
+  async update(id: IDBValidKey, data: ResolvedModel<T>) {
+    if (!this.onBefore("write", data)) return
+
     const request = this.store.put(data, id)
     return new Promise<IDBValidKey>((resolve, reject) => {
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result)
+      request.onsuccess = () => {
+        this.onAfter("write", data)
+        resolve(request.result)
+      }
     })
   }
   async delete(id: IDBValidKey) {
+    const data = await this.read(id)
+    if (!this.onBefore("delete", data)) return
+
     const request = this.store.delete(id)
     return new Promise<void>((resolve, reject) => {
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result)
+      request.onsuccess = () => {
+        this.onAfter("delete", data)
+        resolve()
+      }
     })
   }
 }

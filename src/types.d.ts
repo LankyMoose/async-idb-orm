@@ -36,3 +36,17 @@ export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldTyp
     ? ResolvedField<U>[]
     : never
   : never
+
+export type ModelEvent = "write" | "beforewrite" | "delete" | "beforedelete"
+
+type NonCancellableModelEventCallback<T extends ModelDefinition> = (data: ResolvedModel<T>) => void
+type CancellableModelEventCallback<T extends ModelDefinition> = (
+  data: ResolvedModel<T>,
+  cancel: () => void
+) => void
+
+export type ModelEventCallback<T extends ModelDefinition, U extends ModelEvent> = U extends
+  | "write"
+  | "delete"
+  ? NonCancellableModelEventCallback<T>
+  : CancellableModelEventCallback<T>
