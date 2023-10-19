@@ -1,12 +1,5 @@
 import { Model } from "model"
-import {
-  ModelSchema,
-  ModelDefinition,
-  ResolvedModel,
-  IModel,
-  ModelEventCallback,
-  ModelEvent,
-} from "types"
+import { ModelSchema, ModelDefinition, ResolvedModel, IModel, ModelEventCallback } from "types"
 
 class AsyncIDB {
   db: IDBDatabase | null = null

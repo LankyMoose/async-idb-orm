@@ -18,14 +18,19 @@ export enum FieldType {
 }
 
 export class Field<T extends FieldType> {
-  private _unique: boolean = false
-  private _default?: ResolvedField<Field<this["type"]>>
+  private _unique?: boolean
+  private _default?: ResolvedField<Field<T>>
 
   constructor(
     public type: T,
     public model?: IModel<ModelDefinition>,
-    public field?: Field<FieldType>
-  ) {}
+    public field?: Field<FieldType>,
+    unique?: boolean,
+    defaultValue?: ResolvedField<Field<T>>
+  ) {
+    this._unique = unique
+    this._default = defaultValue
+  }
 
   unique() {
     this._unique = true
@@ -33,10 +38,16 @@ export class Field<T extends FieldType> {
   }
 
   optional() {
-    return new OptionalField(this.type, this.model, this.field)
+    return new OptionalField(
+      this.type,
+      this.model,
+      this.field,
+      this._unique,
+      this._default as ResolvedField<Field<T>>
+    )
   }
 
-  default(value: ResolvedField<Field<this["type"]>>) {
+  default(value: ResolvedField<Field<T>>) {
     this._default = value
     return this
   }
