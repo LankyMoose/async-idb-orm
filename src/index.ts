@@ -1,6 +1,5 @@
 import { idb } from "idb"
 import { Field, model } from "model"
-import { ResolvedModel } from "types"
 
 const pets = model("Pet", {
   id: Field.number().unique(),
@@ -14,12 +13,10 @@ const users = model("User", {
   id: Field.number().unique(),
   name: Field.string(),
   age: Field.number(),
-  //pets: Field.array(pets),
+  pets: Field.array(pets),
   father: Field.model(pets),
   alive: Field.boolean(),
 })
-
-//as ResolvedModel<(typeof pets)["definition"]>[]
 
 const db = await idb("test", { pets, users })
 db.users.create({
@@ -27,14 +24,22 @@ db.users.create({
   name: "John",
   age: 30,
   alive: true,
-  // pets: [
-  //   {
-  //     id: 1,
-  //     name: "Fluffy",
-  //     age: 2,
-  //     species: "cat",
-  //   },
-  // ],
+  pets: [
+    {
+      id: 1,
+      name: "Dog",
+      age: 10,
+      species: "Dog",
+      alive: true,
+    },
+    {
+      id: 2,
+      name: "Cat",
+      age: 5,
+      species: "Cat",
+      alive: true,
+    },
+  ],
 
   father: {
     id: 2,
@@ -46,12 +51,3 @@ db.users.create({
 })
 
 const user = await db.users.read(1)
-//user.pets
-
-const x = {
-  id: 2,
-  name: "Asd",
-  age: 50,
-  species: "asd",
-  alive: true,
-} as ResolvedModel<(typeof pets)["definition"]>

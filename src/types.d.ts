@@ -25,4 +25,10 @@ export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldTyp
   ? Date
   : T extends ModelField<infer U>
   ? ResolvedModel<U["definition"]>
+  : T extends ArrayField<infer U>
+  ? U extends Model<ModelDefinition>
+    ? ResolvedModel<U["definition"]>[]
+    : U extends Field<FieldType>
+    ? ResolvedField<U>[]
+    : never
   : never
