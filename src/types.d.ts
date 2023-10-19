@@ -10,9 +10,11 @@ export type Model<T extends ModelDefinition> = {
 export type ModelSchema = Record<string, Model<ModelDefinition>>
 
 export type ResolvedModel<T extends ModelDefinition> = {
-  [key in keyof T]: T[key] extends OptionalField<FieldType>
-    ? undefined | ResolvedField<T[key]>
-    : ResolvedField<T[key]>
+  [key in keyof T as T[key] extends OptionalField<FieldType> ? never : key]: ResolvedField<T[key]>
+} & {
+  [key in keyof T as T[key] extends OptionalField<FieldType> ? key : never]?:
+    | ResolvedField<T[key]>
+    | undefined
 }
 
 export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldType.String>
