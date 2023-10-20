@@ -1,5 +1,12 @@
 import { Model } from "model"
-import { ModelSchema, ModelDefinition, ResolvedModel, IModel, ModelEventCallback } from "types"
+import {
+  ModelSchema,
+  ModelDefinition,
+  ResolvedModel,
+  IModel,
+  ModelEventCallback,
+  ResolvedModelWithUniqueKeys,
+} from "types"
 
 class AsyncIDB {
   db: IDBDatabase | null = null
@@ -48,17 +55,21 @@ class AsyncIDBStore<T extends ModelDefinition> {
     this.store = db.transaction(model.name, "readwrite").objectStore(model.name)
   }
 
-  private onBefore(evtName: "write" | "delete", data: ResolvedModel<T>) {
+  private onBefore(
+    evtName: "write" | "delete",
+    data: ResolvedModel<T> | ResolvedModelWithUniqueKeys<T>
+  ) {
     const callbacks = this.model.callbacks(`before${evtName}`)
+    let cancelled = false
+
     for (const callback of callbacks) {
-      let cancelled = false
-      callback(data, () => (cancelled = true))
+      ;(callback as (data: any, cancel: () => void) => void)(data, () => (cancelled = true))
       if (cancelled) return false
     }
     return true
   }
 
-  private onAfter(evtName: "write" | "delete", data: ResolvedModel<T>) {
+  private onAfter(evtName: "write" | "delete", data: ResolvedModelWithUniqueKeys<T>) {
     const callbacks = this.model.callbacks(evtName) as ModelEventCallback<T, "write">[]
     for (const callback of callbacks) {
       callback(data)
@@ -69,7 +80,7 @@ class AsyncIDBStore<T extends ModelDefinition> {
     if (!this.onBefore("write", data)) return
 
     const request = this.store.add(data)
-    return new Promise<ResolvedModel<T>>((resolve, reject) => {
+    return new Promise<ResolvedModelWithUniqueKeys<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () =>
         this.read(request.result).then((data) => {
@@ -80,21 +91,23 @@ class AsyncIDBStore<T extends ModelDefinition> {
   }
   async read(id: IDBValidKey) {
     const request = this.store.get(id)
-    return new Promise<ResolvedModel<T>>((resolve, reject) => {
+    return new Promise<ResolvedModelWithUniqueKeys<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
     })
   }
+
   async update(id: IDBValidKey, data: ResolvedModel<T>) {
     if (!this.onBefore("write", data)) return
 
     const request = this.store.put(data, id)
-    return new Promise<IDBValidKey>((resolve, reject) => {
+    return new Promise<ResolvedModelWithUniqueKeys<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        this.onAfter("write", data)
-        resolve(request.result)
-      }
+      request.onsuccess = () =>
+        this.read(request.result).then((data) => {
+          this.onAfter("write", data)
+          resolve(data)
+        })
     })
   }
   async delete(id: IDBValidKey) {

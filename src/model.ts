@@ -6,6 +6,7 @@ import {
   ModelEvent,
   ModelEventCallback,
   ResolvedModel,
+  ResolvedModelWithUniqueKeys,
 } from "types"
 
 export enum FieldType {
@@ -122,10 +123,10 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
     this.definition = definition
   }
 
-  getIDBValidKeys(item: ResolvedModel<T>) {
+  getIDBValidKeys<U extends ResolvedModelWithUniqueKeys<T>>(item: U) {
     return Object.keys(this.definition)
-      .filter((key) => this.definition[key].options.unique)
-      .map((key) => item[key as keyof ResolvedModel<T>])
+      .filter((field) => this.definition[field].options.unique)
+      .map((field) => item[field as keyof U])
   }
 
   callbacks<T extends ModelEvent>(evtName: T) {

@@ -1,33 +1,42 @@
 import { idb } from "idb"
 import { Field, model } from "model"
 
-const pets = model("Pet", {
-  id: Field.number({ unique: true }),
-  name: Field.string({ optional: true }),
-  age: Field.number(),
-  species: Field.string(),
-  alive: Field.boolean(),
-  birthday: Field.date({ default: () => new Date() }),
-})
-
 const users = model("User", {
   id: Field.number({ unique: true }),
   name: Field.string({ default: "John Doe", optional: true }),
   age: Field.number(),
-  pets: Field.array(pets),
+  pets: Field.array(
+    model("Pet", {
+      id: Field.number({ unique: true }),
+      name: Field.string({ optional: true }),
+      age: Field.number(),
+      species: Field.string(),
+      alive: Field.boolean(),
+      birthday: Field.date({ default: () => new Date() }),
+    })
+  ),
   alive: Field.boolean(),
 })
 
 users.on("beforewrite", (data, cancel) => {
-  console.log(data)
+  console.log(data.id)
+  return cancel()
+})
+
+users.on("beforedelete", (data, cancel) => {
+  console.log(data.id)
   return cancel()
 })
 
 users.on("delete", (data) => {
-  console.log(data)
+  console.log(data.id)
 })
 
-const db = await idb("test", { pets, users })
+users.on("write", (data) => {
+  console.log(data.id)
+})
+
+const db = await idb("test", { users })
 
 const user = await db.users.create({
   id: 1,
@@ -45,4 +54,4 @@ const user = await db.users.create({
   alive: true,
 })
 
-console.log(user?.pets)
+console.log(user!.id)
