@@ -1,11 +1,4 @@
-import {
-  IModel,
-  ModelDefinition,
-  ModelEvent,
-  ModelEventCallback,
-  ResolvedField,
-  ResolvedModel,
-} from "types"
+import { IModel, ModelDefinition, ModelEvent, ModelEventCallback, ResolvedModel } from "types"
 
 export enum FieldType {
   String = "string",
@@ -30,7 +23,7 @@ export class Field<T extends FieldType> {
   }
 
   uniqueKey() {
-    return new UniqueField(this.type, this.model, this.field, true)
+    return new UniqueField(this.type, this.model, this.field)
   }
 
   optional() {
@@ -42,19 +35,19 @@ export class Field<T extends FieldType> {
   }
 
   static number() {
-    return new Field(FieldType.Number)
+    return new NumberField()
   }
 
   static bigint() {
-    return new Field(FieldType.BigInt)
+    return new BigIntField()
   }
 
   static boolean() {
-    return new Field(FieldType.Boolean)
+    return new BooleanField()
   }
 
   static date() {
-    return new Field(FieldType.Date)
+    return new DateField()
   }
 
   static model<T extends Model<ModelDefinition>>(model: T) {
@@ -66,62 +59,66 @@ export class Field<T extends FieldType> {
   }
 }
 
-export class StringField extends Field<FieldType.String> {
-  private _default?: string
+class StringField extends Field<FieldType.String> {
+  private _default?: string | (() => string)
   constructor() {
     super(FieldType.String)
   }
-  default(value: string): this {
+  default(value: string | (() => string)): this {
     this._default = value
     return this
   }
 }
 
-export class NumberField extends Field<FieldType.Number> {
-  private _default?: number
+class NumberField extends Field<FieldType.Number> {
+  private _default?: number | (() => number)
   constructor() {
     super(FieldType.Number)
   }
-  default(value: number): this {
+  default(value: number | (() => number)): this {
     this._default = value
     return this
   }
 }
 
-export class BigIntField extends Field<FieldType.BigInt> {
-  private _default?: bigint
+class BigIntField extends Field<FieldType.BigInt> {
+  private _default?: bigint | (() => bigint)
   constructor() {
     super(FieldType.BigInt)
   }
-  default(value: bigint): this {
+  default(value: bigint | (() => bigint)): this {
     this._default = value
     return this
   }
 }
 
-export class BooleanField extends Field<FieldType.Boolean> {
-  private _default?: boolean
+class BooleanField extends Field<FieldType.Boolean> {
+  private _default?: boolean | (() => boolean)
   constructor() {
     super(FieldType.Boolean)
   }
-  default(value: boolean): this {
+  default(value: boolean | (() => boolean)): this {
     this._default = value
     return this
   }
 }
 
-export class DateField extends Field<FieldType.Date> {
-  private _default?: Date
+class DateField extends Field<FieldType.Date> {
+  private _default?: Date | (() => Date)
   constructor() {
     super(FieldType.Date)
   }
-  default(value: Date): this {
+  default(value: Date | (() => Date)): this {
     this._default = value
     return this
   }
 }
 
-export class UniqueField<T extends FieldType> extends Field<T> {}
+export class UniqueField<T extends FieldType> extends Field<T> {
+  constructor(type: T, model?: IModel<ModelDefinition>, field?: Field<FieldType>) {
+    super(type, model, field, true)
+  }
+}
 
 export class ModelField<T extends Model<ModelDefinition>> extends Field<FieldType.Model> {
   constructor(model: T) {
@@ -186,6 +183,10 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
       default:
         throw new Error(`Unknown event ${evtName}`)
     }
+  }
+
+  maxKey() {
+    return this.definition.id.type === FieldType.Number ? Infinity : undefined
   }
 }
 

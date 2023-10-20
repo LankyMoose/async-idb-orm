@@ -7,6 +7,9 @@ const pets = model("Pet", {
   age: Field.number(),
   species: Field.string(),
   alive: Field.boolean(),
+  birthday: Field.date()
+    .default(() => new Date())
+    .optional(),
 })
 
 const users = model("User", {

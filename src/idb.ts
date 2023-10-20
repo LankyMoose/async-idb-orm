@@ -109,6 +109,13 @@ class AsyncIDBStore<T extends ModelDefinition> {
       }
     })
   }
+  async clear() {
+    const request = this.store.clear()
+    return new Promise<void>((resolve, reject) => {
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => resolve()
+    })
+  }
 }
 
 export async function idb<T extends ModelSchema>(
