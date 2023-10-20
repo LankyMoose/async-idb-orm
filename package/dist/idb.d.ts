@@ -23,6 +23,7 @@ export declare class AsyncIDBStore<T extends ModelDefinition> {
     private onBefore;
     private onAfter;
     private getStore;
+    private applyDefaults;
     create(data: ResolvedModel<T>): Promise<ModelRecord<T> | undefined>;
     read(id: IDBValidKey): Promise<ModelRecord<T>>;
     update(id: IDBValidKey, data: ResolvedModel<T>): Promise<ModelRecord<T> | undefined>;

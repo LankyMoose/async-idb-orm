@@ -106,22 +106,34 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     await this.db.init()
     return this.store as unknown as IDBObjectStore
   }
+  private applyDefaults<U extends ResolvedModel<T>>(data: U): ResolvedModel<T> {
+    const record = { ...data } as ResolvedModel<T>
+
+    for (const [key, field] of Object.entries(this.model.definition)) {
+      if (record[key as keyof ResolvedModel<T>] === undefined) {
+        if (field.options.default) {
+          record[key as keyof ResolvedModel<T>] =
+            typeof field.options.default === "function"
+              ? field.options.default()
+              : field.options.default
+        }
+      }
+    }
+    return record
+  }
 
   async create(data: ResolvedModel<T>) {
-    try {
-      if (!this.onBefore("write", data)) return
-      const request = (this.store ?? (await this.getStore())).add(data)
-      return new Promise<ModelRecord<T>>((resolve, reject) => {
-        request.onerror = (err) => reject(err)
-        request.onsuccess = () =>
-          this.read(request.result).then((data) => {
-            this.onAfter("write", data)
-            resolve(data)
-          })
-      })
-    } catch (error) {
-      console.log("create error", error)
-    }
+    const record = this.applyDefaults(data)
+    if (!this.onBefore("write", record)) return
+    const request = (this.store ?? (await this.getStore())).add(record)
+    return new Promise<ModelRecord<T>>((resolve, reject) => {
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () =>
+        this.read(request.result).then((data) => {
+          this.onAfter("write", data)
+          resolve(data)
+        })
+    })
   }
   async read(id: IDBValidKey) {
     const request = (this.store ?? (await this.getStore())).get(id)
