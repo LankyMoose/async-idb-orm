@@ -18,7 +18,10 @@ export enum FieldType {
   Array = "array",
 }
 
-export abstract class Field<T extends FieldType, U extends FieldArgs<any> = FieldArgs<any>> {
+export abstract class Field<
+  T extends FieldType,
+  U extends FieldArgs<unknown> = FieldArgs<unknown>
+> {
   type: T
   options: U = {} as U
 
@@ -176,7 +179,7 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
           record[key as keyof ResolvedModel<T>] as ResolvedModel<T>[]
         ).map((item) => {
           if (field.model) {
-            return (field.model as Model<any>).applyDefaults(item)
+            return (field.model as Model<ModelDefinition>).applyDefaults(item)
           }
           return item
         })

@@ -16,7 +16,7 @@ type UniqueField = {
 };
 type DefaultField = {
     options: {
-        default: FieldDefault<any>;
+        default: FieldDefault<unknown>;
     };
 };
 type PrimaryKeyField = {
@@ -46,8 +46,8 @@ export interface FieldArgs<T> {
     default?: FieldDefault<T>;
 }
 export type FieldDefault<T> = T | (() => T);
-export type ResolvedField<T extends Field<FieldType>> = T extends StringField<any> ? string : T extends NumberField<any> ? number : T extends BigIntField<any> ? bigint : T extends BooleanField<any> ? boolean : T extends DateField<any> ? Date : T extends ModelField<infer U> ? ResolvedModel<U["definition"]> : T extends ArrayField<infer U> ? U extends Field<FieldType> ? ResolvedField<U>[] : U extends IModel<ModelDefinition> ? ResolvedModel<U["definition"]>[] : never : never;
-export type RecordField<T extends Field<FieldType>> = T extends StringField<any> ? string : T extends NumberField<any> ? number : T extends BigIntField<any> ? bigint : T extends BooleanField<any> ? boolean : T extends DateField<any> ? Date : T extends ModelField<infer U> ? ModelRecord<U["definition"]> : T extends ArrayField<infer U> ? U extends Field<FieldType> ? RecordField<U>[] : U extends IModel<ModelDefinition> ? ModelRecord<U["definition"]>[] : never : never;
+export type ResolvedField<T extends Field<FieldType>> = T extends StringField<FieldArgs<string>> ? string : T extends NumberField<FieldArgs<number>> ? number : T extends BigIntField<FieldArgs<bigint>> ? bigint : T extends BooleanField<FieldArgs<boolean>> ? boolean : T extends DateField<FieldArgs<Date>> ? Date : T extends ModelField<infer U> ? ResolvedModel<U["definition"]> : T extends ArrayField<infer U> ? U extends Field<FieldType> ? ResolvedField<U>[] : U extends IModel<ModelDefinition> ? ResolvedModel<U["definition"]>[] : never : never;
+export type RecordField<T extends Field<FieldType>> = T extends StringField<FieldArgs<string>> ? string : T extends NumberField<FieldArgs<number>> ? number : T extends BigIntField<FieldArgs<bigint>> ? bigint : T extends BooleanField<FieldArgs<boolean>> ? boolean : T extends DateField<FieldArgs<Date>> ? Date : T extends ModelField<infer U> ? ModelRecord<U["definition"]> : T extends ArrayField<infer U> ? U extends Field<FieldType> ? RecordField<U>[] : U extends IModel<ModelDefinition> ? ModelRecord<U["definition"]>[] : never : never;
 export type ModelEvent = "write" | "beforewrite" | "delete" | "beforedelete";
 export type NonCancellableModelEventCallback<T extends ModelDefinition> = (data: ModelRecord<T>) => void;
 export type CancellableModelEventCallback<T extends ModelDefinition> = (data: ResolvedModel<T>, cancel: () => void) => void;

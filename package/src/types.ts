@@ -21,7 +21,7 @@ export type ModelSchema = Record<string, IModel<ModelDefinition>>
 
 type OptionalField = { options: { optional: true } }
 type UniqueField = { options: { unique: true } }
-type DefaultField = { options: { default: FieldDefault<any> } }
+type DefaultField = { options: { default: FieldDefault<unknown> } }
 type PrimaryKeyField = { options: { primaryKey: true } }
 
 export type ResolvedModel<T extends ModelDefinition> = {
@@ -53,15 +53,15 @@ export interface FieldArgs<T> {
 
 export type FieldDefault<T> = T | (() => T)
 
-export type ResolvedField<T extends Field<FieldType>> = T extends StringField<any>
+export type ResolvedField<T extends Field<FieldType>> = T extends StringField<FieldArgs<string>>
   ? string
-  : T extends NumberField<any>
+  : T extends NumberField<FieldArgs<number>>
   ? number
-  : T extends BigIntField<any>
+  : T extends BigIntField<FieldArgs<bigint>>
   ? bigint
-  : T extends BooleanField<any>
+  : T extends BooleanField<FieldArgs<boolean>>
   ? boolean
-  : T extends DateField<any>
+  : T extends DateField<FieldArgs<Date>>
   ? Date
   : T extends ModelField<infer U>
   ? ResolvedModel<U["definition"]>
@@ -73,15 +73,15 @@ export type ResolvedField<T extends Field<FieldType>> = T extends StringField<an
     : never
   : never
 
-export type RecordField<T extends Field<FieldType>> = T extends StringField<any>
+export type RecordField<T extends Field<FieldType>> = T extends StringField<FieldArgs<string>>
   ? string
-  : T extends NumberField<any>
+  : T extends NumberField<FieldArgs<number>>
   ? number
-  : T extends BigIntField<any>
+  : T extends BigIntField<FieldArgs<bigint>>
   ? bigint
-  : T extends BooleanField<any>
+  : T extends BooleanField<FieldArgs<boolean>>
   ? boolean
-  : T extends DateField<any>
+  : T extends DateField<FieldArgs<Date>>
   ? Date
   : T extends ModelField<infer U>
   ? ModelRecord<U["definition"]>

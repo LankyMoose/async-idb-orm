@@ -8,7 +8,7 @@ export declare enum FieldType {
     Model = "model",
     Array = "array"
 }
-export declare abstract class Field<T extends FieldType, U extends FieldArgs<any> = FieldArgs<any>> {
+export declare abstract class Field<T extends FieldType, U extends FieldArgs<unknown> = FieldArgs<unknown>> {
     type: T;
     options: U;
     constructor(type: T, args: U);

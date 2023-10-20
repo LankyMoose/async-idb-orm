@@ -44,7 +44,7 @@ class AsyncIDB {
     }
   }
 
-  initializeStore(store: AsyncIDBStore<any>, db: IDBDatabase) {
+  initializeStore(store: AsyncIDBStore<ModelDefinition>, db: IDBDatabase) {
     const primaryKeys = Object.keys(store.model.definition).filter(
       (key) => store.model.definition[key].options.primaryKey
     )
@@ -127,11 +127,11 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     })
   }
 
-  async update(id: IDBValidKey, data: ResolvedModel<T>) {
+  async update(data: ResolvedModel<T>) {
     const record = this.model.applyDefaults(data)
     if (!this.onBefore("write", record)) return
 
-    const request = (this.store ?? (await this.getStore())).put(record, id)
+    const request = (this.store ?? (await this.getStore())).put(record)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () =>
@@ -159,6 +159,78 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     return new Promise<void>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve()
+    })
+  }
+
+  async find(predicate: (item: ModelRecord<T>) => boolean) {
+    const request = (this.store ?? (await this.getStore())).openCursor()
+    return new Promise<ModelRecord<T> | void>((resolve, reject) => {
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (cursor) {
+          if (predicate(cursor.value)) {
+            resolve(cursor.value)
+          }
+          cursor.continue()
+        } else {
+          resolve()
+        }
+      }
+    })
+  }
+
+  async findMany(predicate: (item: ModelRecord<T>) => boolean) {
+    const request = (this.store ?? (await this.getStore())).openCursor()
+    return new Promise<ModelRecord<T>[]>((resolve, reject) => {
+      const results: ModelRecord<T>[] = []
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (cursor) {
+          if (predicate(cursor.value)) {
+            results.push(cursor.value)
+          }
+          cursor.continue()
+        } else {
+          resolve(results)
+        }
+      }
+    })
+  }
+
+  async all() {
+    return this.findMany(() => true)
+  }
+
+  async count() {
+    const request = (this.store ?? (await this.getStore())).count()
+    return new Promise<number>((resolve, reject) => {
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => resolve(request.result)
+    })
+  }
+
+  async upsert(...data: ResolvedModel<T>[]) {
+    return Promise.all(data.map((item) => this.update(item)))
+  }
+
+  async max<U extends keyof T & string>(field: U) {
+    const fieldDef = this.model.definition[field]
+    if (!fieldDef) throw new Error(`Unknown field ${field}`)
+    if (!fieldDef.options.index) throw new Error(`Field ${field} is not indexed`)
+
+    const request = (this.store ?? (await this.getStore())).index(field).openCursor(null, "prev")
+    return new Promise<IDBValidKey>((resolve, reject) => {
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (cursor) {
+          resolve(cursor.key)
+        } else {
+          resolve(0)
+        }
+      }
     })
   }
 }

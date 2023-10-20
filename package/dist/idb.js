@@ -110,11 +110,11 @@ export class AsyncIDBStore {
             request.onsuccess = () => resolve(request.result);
         });
     }
-    async update(id, data) {
+    async update(data) {
         const record = this.model.applyDefaults(data);
         if (!this.onBefore("write", record))
             return;
-        const request = (this.store ?? (await this.getStore())).put(record, id);
+        const request = (this.store ?? (await this.getStore())).put(record);
         return new Promise((resolve, reject) => {
             request.onerror = (err) => reject(err);
             request.onsuccess = () => this.read(request.result).then((data) => {
@@ -141,6 +141,76 @@ export class AsyncIDBStore {
         return new Promise((resolve, reject) => {
             request.onerror = (err) => reject(err);
             request.onsuccess = () => resolve();
+        });
+    }
+    async find(predicate) {
+        const request = (this.store ?? (await this.getStore())).openCursor();
+        return new Promise((resolve, reject) => {
+            request.onerror = (err) => reject(err);
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (cursor) {
+                    if (predicate(cursor.value)) {
+                        resolve(cursor.value);
+                    }
+                    cursor.continue();
+                }
+                else {
+                    resolve();
+                }
+            };
+        });
+    }
+    async findMany(predicate) {
+        const request = (this.store ?? (await this.getStore())).openCursor();
+        return new Promise((resolve, reject) => {
+            const results = [];
+            request.onerror = (err) => reject(err);
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (cursor) {
+                    if (predicate(cursor.value)) {
+                        results.push(cursor.value);
+                    }
+                    cursor.continue();
+                }
+                else {
+                    resolve(results);
+                }
+            };
+        });
+    }
+    async all() {
+        return this.findMany(() => true);
+    }
+    async count() {
+        const request = (this.store ?? (await this.getStore())).count();
+        return new Promise((resolve, reject) => {
+            request.onerror = (err) => reject(err);
+            request.onsuccess = () => resolve(request.result);
+        });
+    }
+    async upsert(...data) {
+        return Promise.all(data.map((item) => this.update(item)));
+    }
+    async max(field) {
+        const fieldDef = this.model.definition[field];
+        if (!fieldDef)
+            throw new Error(`Unknown field ${field}`);
+        if (!fieldDef.options.index)
+            throw new Error(`Field ${field} is not indexed`);
+        const request = (this.store ?? (await this.getStore())).index(field).openCursor(null, "prev");
+        return new Promise((resolve, reject) => {
+            request.onerror = (err) => reject(err);
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (cursor) {
+                    resolve(cursor.key);
+                }
+                else {
+                    resolve(0);
+                }
+            };
         });
     }
 }

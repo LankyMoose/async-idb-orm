@@ -5,7 +5,7 @@ const users = model({
   id: Field.number({ primaryKey: true }),
   name: Field.string({ default: "John Doe" }),
   age: Field.number({ index: true }),
-  birthday: Field.date({ default: () => new Date() }),
+  birthday: Field.date({ default: () => new Date(), optional: true }),
   pets: Field.array(
     model({
       name: Field.string(),
@@ -17,21 +17,13 @@ const users = model({
   alive: Field.boolean(),
 })
 
-users.on("beforewrite", (data) => {
-  console.log("beforewrite", data.id)
-})
+users.on("beforewrite", console.log)
 
-users.on("beforedelete", (data) => {
-  console.log("beforedelete", data.id)
-})
+users.on("beforedelete", console.log)
 
-users.on("delete", (data) => {
-  console.log("delete", data.id)
-})
+users.on("delete", console.log)
 
-users.on("write", (data) => {
-  console.log("write", data)
-})
+users.on("write", console.log)
 
 const db = idb("demo", { users })
 
@@ -39,6 +31,24 @@ db.users.clear()
 
 db.users
   .create({
+    id: 1,
+    age: 25,
+    pets: [
+      {
+        name: "Fido",
+        age: 1,
+        species: "dog",
+      },
+    ],
+    alive: true,
+  })
+  .then((user) => {
+    console.log(user)
+  })
+
+db.users
+  .create({
+    id: 2,
     age: 25,
     pets: [
       {
