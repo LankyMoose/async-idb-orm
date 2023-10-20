@@ -1,3 +1,4 @@
+import { AsyncIDBStore } from "idb.js"
 import {
   Field,
   ArrayField,
@@ -8,7 +9,7 @@ import {
   BigIntField,
   BooleanField,
   DateField,
-} from "model"
+} from "./model.js"
 
 export interface IModel<T extends ModelDefinition> {
   name: string
@@ -21,21 +22,23 @@ export type ModelSchema = Record<string, IModel<ModelDefinition>>
 
 type OptionalField = { options: { optional: true } }
 type UniqueField = { options: { unique: true } }
+type DefaultField = { options: { default: FieldDefault<any> } }
+type PrimaryKeyField = { options: { primaryKey: true } }
 
 export type ResolvedModel<T extends ModelDefinition> = {
-  [key in keyof T as T[key] extends OptionalField | UniqueField ? never : key]: ResolvedField<
-    T[key]
-  >
+  [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField | PrimaryKeyField
+    ? never
+    : key]: ResolvedField<T[key]>
 } & {
-  [key in keyof T as T[key] extends OptionalField | UniqueField ? key : never]?:
-    | ResolvedField<T[key]>
-    | undefined
+  [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField | PrimaryKeyField
+    ? key
+    : never]?: ResolvedField<T[key]> | undefined
 }
 
-export type ResolvedModelWithUniqueKeys<T extends ModelDefinition> = {
-  [key in keyof T as T[key] extends OptionalField ? never : key]: ResolvedField<T[key]>
+export type ModelRecord<T extends ModelDefinition> = {
+  [key in keyof T as T[key] extends OptionalField ? never : key]: RecordField<T[key]>
 } & {
-  [key in keyof T as T[key] extends OptionalField ? key : never]?: ResolvedField<T[key]> | undefined
+  [key in keyof T as T[key] extends OptionalField ? key : never]?: RecordField<T[key]> | undefined
 }
 /** */
 export interface FieldArgs<T> {
@@ -71,13 +74,33 @@ export type ResolvedField<T extends Field<FieldType>> = T extends StringField<an
     : never
   : never
 
+export type RecordField<T extends Field<FieldType>> = T extends StringField<any>
+  ? string
+  : T extends NumberField<any>
+  ? number
+  : T extends BigIntField<any>
+  ? bigint
+  : T extends BooleanField<any>
+  ? boolean
+  : T extends DateField<any>
+  ? Date
+  : T extends ModelField<infer U>
+  ? ModelRecord<U["definition"]>
+  : T extends ArrayField<infer U>
+  ? U extends Field<FieldType>
+    ? RecordField<U>[]
+    : U extends IModel<ModelDefinition>
+    ? ModelRecord<U["definition"]>[]
+    : never
+  : never
+
 export type ModelEvent = "write" | "beforewrite" | "delete" | "beforedelete"
 
-type NonCancellableModelEventCallback<T extends ModelDefinition> = (
-  data: ResolvedModelWithUniqueKeys<T>
+export type NonCancellableModelEventCallback<T extends ModelDefinition> = (
+  data: ModelRecord<T>
 ) => void
 
-type CancellableModelEventCallback<T extends ModelDefinition> = (
+export type CancellableModelEventCallback<T extends ModelDefinition> = (
   data: ResolvedModel<T>,
   cancel: () => void
 ) => void

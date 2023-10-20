@@ -1,13 +1,11 @@
 import {
   FieldArgs,
-  FieldDefault,
   IModel,
   ModelDefinition,
   ModelEvent,
   ModelEventCallback,
-  ResolvedModel,
-  ResolvedModelWithUniqueKeys,
-} from "types"
+  ModelRecord,
+} from "./types.js"
 
 export enum FieldType {
   String = "string",
@@ -123,7 +121,7 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
     this.definition = definition
   }
 
-  getIDBValidKeys<U extends ResolvedModelWithUniqueKeys<T>>(item: U) {
+  getIDBValidKeys<U extends ModelRecord<T>>(item: U) {
     return Object.keys(this.definition)
       .filter((field) => this.definition[field].options.primaryKey)
       .map((field) => item[field as keyof U])

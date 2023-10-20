@@ -1,9 +1,11 @@
-import { idb } from "idb";
-import { Field, model } from "model";
+import { idb } from "./idb.js";
+import { Field, model } from "./model.js";
+export { idb, Field, model };
 const users = model("User", {
     id: Field.number({ primaryKey: true }),
-    name: Field.string({ default: "John Doe", optional: true }),
+    name: Field.string({ default: "John Doe" }),
     age: Field.number({ index: true }),
+    birthday: Field.date({ default: () => new Date() }),
     pets: Field.array(model("Pet", {
         name: Field.string({ optional: true }),
         age: Field.number(),
@@ -12,32 +14,21 @@ const users = model("User", {
     })),
     alive: Field.boolean(),
 });
-users.on("beforewrite", (data, cancel) => {
-    console.log(data.id);
-    return cancel();
+const db = idb("demo", { users });
+async function addUser() {
+    const user = await db.users.create({
+        id: 1,
+        age: 25,
+        pets: [
+            {
+                age: 1,
+                species: "dog",
+            },
+        ],
+        alive: true,
+    });
+    return user;
+}
+addUser().then((user) => {
+    console.log(user.pets[0].birthday);
 });
-users.on("beforedelete", (data, cancel) => {
-    console.log(data.id);
-    return cancel();
-});
-users.on("delete", (data) => {
-    console.log(data.id);
-});
-users.on("write", (data) => {
-    console.log(data.id);
-});
-const db = await idb("test", { users });
-const user = await db.users.create({
-    id: 1,
-    age: 20,
-    pets: [
-        {
-            name: "Fluffy",
-            age: 2,
-            species: "cat",
-            birthday: new Date(),
-        },
-    ],
-    alive: true,
-});
-console.log(user.id);

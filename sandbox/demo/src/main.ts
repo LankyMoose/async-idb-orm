@@ -1,24 +1,54 @@
-import './style.css'
-import typescriptLogo from './typescript.svg'
-import viteLogo from '/vite.svg'
-import { setupCounter } from './counter.ts'
+import "./style.css"
+import { model, Field, idb } from "async-idb-orm"
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <div>
-    <a href="https://vitejs.dev" target="_blank">
-      <img src="${viteLogo}" class="logo" alt="Vite logo" />
-    </a>
-    <a href="https://www.typescriptlang.org/" target="_blank">
-      <img src="${typescriptLogo}" class="logo vanilla" alt="TypeScript logo" />
-    </a>
-    <h1>Vite + TypeScript</h1>
-    <div class="card">
-      <button id="counter" type="button"></button>
-    </div>
-    <p class="read-the-docs">
-      Click on the Vite and TypeScript logos to learn more
-    </p>
-  </div>
-`
+const users = model("User", {
+  id: Field.number({ primaryKey: true }),
+  name: Field.string({ default: "John Doe" }),
+  age: Field.number({ index: true }),
+  birthday: Field.date({ default: () => new Date() }),
+  pets: Field.array(
+    model("Pet", {
+      name: Field.string(),
+      age: Field.number(),
+      species: Field.string({ optional: true }),
+      birthday: Field.date({ default: () => new Date() }),
+    })
+  ),
+  alive: Field.boolean(),
+})
 
-setupCounter(document.querySelector<HTMLButtonElement>('#counter')!)
+// users.on("beforewrite", (data, cancel) => {
+//   console.log(data.id)
+//   return cancel()
+// })
+
+// users.on("beforedelete", (data, cancel) => {
+//   console.log(data.id)
+//   return cancel()
+// })
+
+// users.on("delete", (data) => {
+//   console.log(data.id)
+// })
+
+// users.on("write", (data) => {
+//   console.log(data.id)
+// })
+
+const db = idb("demo", { users })
+
+db.users
+  .create({
+    age: 25,
+    pets: [
+      {
+        name: "Fido",
+        age: 1,
+        species: "dog",
+      },
+    ],
+    alive: true,
+  })
+  .then((user) => {
+    console.log(user!.pets[0]!.birthday)
+  })
