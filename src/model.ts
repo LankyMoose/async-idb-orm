@@ -8,13 +8,14 @@ import {
 } from "types"
 
 export enum FieldType {
-  String,
-  Number,
-  BigInt,
-  Boolean,
-  Date,
-  Model,
-  Array,
+  None = "none",
+  String = "string",
+  Number = "number",
+  BigInt = "bigint",
+  Boolean = "boolean",
+  Date = "date",
+  Model = "model",
+  Array = "array",
 }
 
 export class Field<T extends FieldType> {
@@ -32,9 +33,15 @@ export class Field<T extends FieldType> {
     this._default = defaultValue
   }
 
-  unique() {
-    this._unique = true
-    return this
+  uniqueKey() {
+    return new UniqueField(
+      this.type,
+      this.model,
+      this.field,
+      true,
+      // @ts-ignore
+      this._default as ResolvedField<Field<T>>
+    )
   }
 
   optional() {
@@ -81,6 +88,8 @@ export class Field<T extends FieldType> {
   }
 }
 
+export class UniqueField<T extends FieldType> extends Field<T> {}
+
 export class ModelField<T extends Model<ModelDefinition>> extends Field<FieldType.Model> {
   constructor(model: T) {
     super(FieldType.Model, model)
@@ -115,6 +124,12 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
   constructor(public name: string, public definition: T) {
     this.name = name
     this.definition = definition
+  }
+
+  getIDBValidKeys(item: ResolvedModel<T>) {
+    return Object.keys(this.definition)
+      .filter((key) => this.definition[key] instanceof UniqueField)
+      .map((key) => item[key as keyof ResolvedModel<T>])
   }
 
   callbacks<T extends ModelEvent>(evtName: T) {

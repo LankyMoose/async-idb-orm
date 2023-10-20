@@ -17,7 +17,9 @@ export type ResolvedModel<T extends ModelDefinition> = {
     | undefined
 }
 
-export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldType.String>
+export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldType.None>
+  ? never
+  : T extends Field<FieldType.String>
   ? string
   : T extends Field<FieldType.Number>
   ? number
@@ -30,10 +32,10 @@ export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldTyp
   : T extends ModelField<infer U>
   ? ResolvedModel<U["definition"]>
   : T extends ArrayField<infer U>
-  ? U extends IModel<ModelDefinition>
-    ? ResolvedModel<U["definition"]>[]
-    : U extends Field<FieldType>
+  ? U extends Field<FieldType>
     ? ResolvedField<U>[]
+    : U extends IModel<ModelDefinition>
+    ? ResolvedModel<U["definition"]>[]
     : never
   : never
 

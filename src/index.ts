@@ -2,7 +2,7 @@ import { idb } from "idb"
 import { Field, model } from "model"
 
 const pets = model("Pet", {
-  id: Field.number().unique(),
+  id: Field.number().uniqueKey(),
   name: Field.string(),
   age: Field.number(),
   species: Field.string(),
@@ -10,7 +10,7 @@ const pets = model("Pet", {
 })
 
 const users = model("User", {
-  id: Field.number().unique(),
+  id: Field.number().uniqueKey(),
   name: Field.string().default("John"),
   age: Field.number().optional(),
   pets: Field.array(pets),

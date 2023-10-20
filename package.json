@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc ./src/index.ts"
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",

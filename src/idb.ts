@@ -1,4 +1,4 @@
-import { Model } from "model"
+import { Model, UniqueField } from "model"
 import { ModelSchema, ModelDefinition, ResolvedModel, IModel, ModelEventCallback } from "types"
 
 class AsyncIDB {
@@ -20,8 +20,8 @@ class AsyncIDB {
 
         for (const model of _models) {
           if (this.db.objectStoreNames.contains(model.name)) continue
-          const uniqueKeys = Object.keys(model.definition).filter((key) =>
-            model.definition[key].unique()
+          const uniqueKeys = Object.keys(model.definition).filter(
+            (key) => model.definition[key] instanceof UniqueField
           )
 
           this.db.createObjectStore(model.name, {
