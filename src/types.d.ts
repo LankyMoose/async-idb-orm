@@ -10,24 +10,26 @@ export type ModelDefinition = Record<string, Field<FieldType>>
 export type ModelSchema = Record<string, IModel<ModelDefinition>>
 
 export type ResolvedModel<T extends ModelDefinition> = {
-  [key in keyof T as T[key] extends OptionalField<FieldType> ? never : key]: ResolvedField<T[key]>
+  [key in keyof T as T[key] extends OptionalField<FieldType> ? never : key]: ResolvedField<
+    T[key]["type"]
+  >
 } & {
   [key in keyof T as T[key] extends OptionalField<FieldType> ? key : never]?:
-    | ResolvedField<T[key]>
+    | ResolvedField<T[key]["type"]>
     | undefined
 }
 
-export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldType.None>
+export type ResolvedField<T extends FieldType> = T extends FieldType.None
   ? never
-  : T extends Field<FieldType.String>
+  : T extends FieldType.String
   ? string
-  : T extends Field<FieldType.Number>
+  : T extends FieldType.Number
   ? number
-  : T extends Field<FieldType.BigInt>
+  : T extends FieldType.BigInt
   ? bigint
-  : T extends Field<FieldType.Boolean>
+  : T extends FieldType.Boolean
   ? boolean
-  : T extends Field<FieldType.Date>
+  : T extends FieldType.Date
   ? Date
   : T extends ModelField<infer U>
   ? ResolvedModel<U["definition"]>

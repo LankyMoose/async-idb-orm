@@ -31,7 +31,15 @@ const db = await idb("test", { pets, users })
 const key = await db.users.create({
   id: 1,
   name: "John",
-  pets: [],
+  pets: [
+    {
+      id: 1,
+      name: "Fluffy",
+      age: 2,
+      species: "cat",
+      alive: true,
+    },
+  ],
 })
 
 if (key === undefined) throw new Error("key is undefined")
