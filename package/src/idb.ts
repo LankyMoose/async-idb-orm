@@ -1,4 +1,4 @@
-import { Model } from "./model.js"
+import { Field, FieldType, Model } from "./model.js"
 import {
   ModelSchema,
   ModelDefinition,
@@ -10,7 +10,7 @@ import {
 
 class AsyncIDB {
   db: IDBDatabase | null = null
-  stores: { [key: string]: AsyncIDBStore<any> } = {}
+  stores: { [key: string]: AsyncIDBStore<ModelDefinition> } = {}
   initialization: Promise<this> | undefined = undefined
   constructor(private name: string, private models: ModelSchema, private version?: number) {
     for (const [key, model] of Object.entries(this.models)) {
@@ -46,7 +46,7 @@ class AsyncIDB {
   }
 
   private initializeStore(store: AsyncIDBStore<any>, db: IDBDatabase) {
-    const primaryKeys = Object.keys(store.model.definition).find(
+    const primaryKeys = Object.keys(store.model.definition).filter(
       (key) => store.model.definition[key].options.primaryKey
     )
 
@@ -55,12 +55,12 @@ class AsyncIDB {
       ? db.transaction(store.name, "readwrite").objectStore(store.name)
       : db.createObjectStore(store.name, {
           keyPath: primaryKeys,
-          autoIncrement: !!primaryKeys,
+          autoIncrement: primaryKeys.length > 0,
         })
 
     if (!hasStore) {
-      const indexes = Object.keys(store.model.definition).filter(
-        (key) => store.model.definition[key].options.index
+      const indexes = Object.entries(store.model.definition).filter(
+        ([key, val]) => val.options.index
       )
       for (const index of indexes) {
         store.store.createIndex(`idx_${index}_${store.name}_${this.name}`, index, { unique: true })

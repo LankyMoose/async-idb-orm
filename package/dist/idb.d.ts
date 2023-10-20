@@ -6,7 +6,7 @@ declare class AsyncIDB {
     private version?;
     db: IDBDatabase | null;
     stores: {
-        [key: string]: AsyncIDBStore<any>;
+        [key: string]: AsyncIDBStore<ModelDefinition>;
     };
     initialization: Promise<this> | undefined;
     constructor(name: string, models: ModelSchema, version?: number | undefined);

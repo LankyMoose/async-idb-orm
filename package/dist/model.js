@@ -92,7 +92,6 @@ export class Model {
     };
     constructor(definition) {
         this.definition = definition;
-        this.definition = definition;
     }
     getIDBValidKeys(item) {
         return Object.keys(this.definition)

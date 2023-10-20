@@ -109,6 +109,7 @@ export class ArrayField<
 }
 
 export class Model<T extends ModelDefinition> implements IModel<T> {
+  definition: T
   private _callbacks: Record<ModelEvent, ModelEventCallback<T, ModelEvent>[]> = {
     write: [],
     beforewrite: [],
@@ -116,7 +117,7 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
     beforedelete: [],
   }
 
-  constructor(public definition: T) {
+  constructor(definition: T) {
     this.definition = definition
   }
 

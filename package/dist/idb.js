@@ -40,16 +40,16 @@ class AsyncIDB {
         }
     }
     initializeStore(store, db) {
-        const primaryKeys = Object.keys(store.model.definition).find((key) => store.model.definition[key].options.primaryKey);
+        const primaryKeys = Object.keys(store.model.definition).filter((key) => store.model.definition[key].options.primaryKey);
         const hasStore = db.objectStoreNames.contains(store.name);
         store.store = hasStore
             ? db.transaction(store.name, "readwrite").objectStore(store.name)
             : db.createObjectStore(store.name, {
                 keyPath: primaryKeys,
-                autoIncrement: !!primaryKeys,
+                autoIncrement: primaryKeys.length > 0,
             });
         if (!hasStore) {
-            const indexes = Object.keys(store.model.definition).filter((key) => store.model.definition[key].options.index);
+            const indexes = Object.entries(store.model.definition).filter(([key, val]) => val.options.index);
             for (const index of indexes) {
                 store.store.createIndex(`idx_${index}_${store.name}_${this.name}`, index, { unique: true });
             }
