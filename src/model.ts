@@ -27,23 +27,23 @@ export abstract class Field<T extends FieldType, U extends FieldArgs<any> = Fiel
     this.options = args
   }
 
-  static string<const T extends FieldArgs<string>>(args: T = {} as T) {
+  static string<T extends FieldArgs<string>>(args: T = {} as T) {
     return new StringField(args)
   }
 
-  static number<const T extends FieldArgs<number>>(args: T = {} as T) {
+  static number<T extends FieldArgs<number>>(args: T = {} as T) {
     return new NumberField(args)
   }
 
-  static bigint<const T extends FieldArgs<bigint>>(args: T = {} as T) {
+  static bigint<T extends FieldArgs<bigint>>(args: T = {} as T) {
     return new BigIntField(args)
   }
 
-  static boolean<const T extends FieldArgs<boolean>>(args: T = {} as T) {
+  static boolean<T extends FieldArgs<boolean>>(args: T = {} as T) {
     return new BooleanField(args)
   }
 
-  static date<const T extends FieldArgs<Date>>(args: T = {} as T) {
+  static date<T extends FieldArgs<Date>>(args: T = {} as T) {
     return new DateField(args)
   }
 

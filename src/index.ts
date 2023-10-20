@@ -32,7 +32,6 @@ const db = await idb("test", { pets, users })
 const user = await db.users.create({
   id: 1,
   age: 20,
-  name: "John",
   pets: [
     {
       id: 1,
