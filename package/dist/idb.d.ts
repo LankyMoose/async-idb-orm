@@ -11,8 +11,8 @@ declare class AsyncIDB {
     initialization: Promise<this> | undefined;
     constructor(name: string, models: ModelSchema, version?: number | undefined);
     init(): Promise<this>;
-    onConnected(db: IDBDatabase): void;
-    initializeStore(store: AsyncIDBStore<ModelDefinition>, db: IDBDatabase): void;
+    restart(): Promise<this>;
+    initializeStores<T extends ModelDefinition>(db: IDBDatabase, ...stores: AsyncIDBStore<T>[]): void;
 }
 export declare class AsyncIDBStore<T extends ModelDefinition> {
     model: Model<T>;

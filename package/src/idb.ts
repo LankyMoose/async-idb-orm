@@ -17,6 +17,10 @@ class AsyncIDB {
       this.stores[key] = new AsyncIDBStore(model, this, key)
     }
     this.init()
+
+    window.addEventListener("beforeunload", () => {
+      if (this.db) this.db.close()
+    })
   }
 
   async init(): Promise<this> {
@@ -26,38 +30,41 @@ class AsyncIDB {
       request.onerror = (e) => reject(e)
       request.onsuccess = () => {
         this.db = request.result
-        this.onConnected(this.db)
+        this.initializeStores(this.db, ...Object.values(this.stores))
         resolve(this)
       }
       request.onupgradeneeded = () => {
         this.db = request.result
-        this.onConnected(this.db)
+        this.initializeStores(this.db, ...Object.values(this.stores))
         resolve(this)
       }
     })
     return this
   }
 
-  onConnected(db: IDBDatabase) {
-    for (const store of Object.values(this.stores)) {
-      this.initializeStore(store, db)
-    }
+  async restart(): Promise<this> {
+    if (this.db) this.db.close()
+    this.db = null
+    this.initialization = undefined
+    return await this.init()
   }
 
-  initializeStore(store: AsyncIDBStore<ModelDefinition>, db: IDBDatabase) {
-    const primaryKeys = Object.keys(store.model.definition).filter(
-      (key) => store.model.definition[key].options.primaryKey
-    )
+  initializeStores<T extends ModelDefinition>(db: IDBDatabase, ...stores: AsyncIDBStore<T>[]) {
+    for (const store of stores) {
+      if (db.objectStoreNames.contains(store.name)) {
+        store.store = db.transaction(store.name, "readwrite").objectStore(store.name)
+        continue
+      }
 
-    const hasStore = db.objectStoreNames.contains(store.name)
-    store.store = hasStore
-      ? db.transaction(store.name, "readwrite").objectStore(store.name)
-      : db.createObjectStore(store.name, {
-          keyPath: primaryKeys.length === 1 ? primaryKeys[0] : primaryKeys,
-          autoIncrement: primaryKeys.length === 1,
-        })
+      const primaryKeys = Object.keys(store.model.definition).filter(
+        (key) => store.model.definition[key].options.primaryKey
+      )
 
-    if (!hasStore) {
+      store.store = db.createObjectStore(store.name, {
+        keyPath: primaryKeys.length === 1 ? primaryKeys[0] : primaryKeys,
+        autoIncrement: primaryKeys.length === 1,
+      })
+
       const indexes = Object.entries(
         store.model.definition as Record<string, Field<FieldType>>
       ).filter(([_, val]) => val.options.index)
@@ -238,7 +245,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
 export function idb<T extends ModelSchema>(
   name: string,
   models: T,
-  version?: number
+  version: number = 1
 ): {
   [key in keyof T]: AsyncIDBStore<T[key]["definition"]>
 } {

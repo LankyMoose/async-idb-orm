@@ -17,21 +17,18 @@ const users = model({
   alive: Field.boolean(),
 })
 
-users.on("beforewrite", console.log)
+// users.on("beforewrite", console.log)
 
-users.on("beforedelete", console.log)
+// users.on("beforedelete", console.log)
 
-users.on("delete", console.log)
+// users.on("delete", console.log)
 
-users.on("write", console.log)
+// users.on("write", console.log)
 
 const db = idb("demo", { users })
 
-db.users.clear()
-
-db.users
-  .create({
-    id: 1,
+async function main() {
+  const user1 = await db.users.create({
     age: 25,
     pets: [
       {
@@ -42,13 +39,7 @@ db.users
     ],
     alive: true,
   })
-  .then((user) => {
-    console.log(user)
-  })
-
-db.users
-  .create({
-    id: 2,
+  const user2 = await db.users.create({
     age: 25,
     pets: [
       {
@@ -59,6 +50,10 @@ db.users
     ],
     alive: true,
   })
-  .then((user) => {
-    console.log(user)
+  console.log({
+    user1,
+    user2,
   })
+}
+
+main()

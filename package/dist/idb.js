@@ -13,6 +13,10 @@ class AsyncIDB {
             this.stores[key] = new AsyncIDBStore(model, this, key);
         }
         this.init();
+        window.addEventListener("beforeunload", () => {
+            if (this.db)
+                this.db.close();
+        });
     }
     async init() {
         if (this.initialization)
@@ -22,32 +26,35 @@ class AsyncIDB {
             request.onerror = (e) => reject(e);
             request.onsuccess = () => {
                 this.db = request.result;
-                this.onConnected(this.db);
+                this.initializeStores(this.db, ...Object.values(this.stores));
                 resolve(this);
             };
             request.onupgradeneeded = () => {
                 this.db = request.result;
-                this.onConnected(this.db);
+                this.initializeStores(this.db, ...Object.values(this.stores));
                 resolve(this);
             };
         });
         return this;
     }
-    onConnected(db) {
-        for (const store of Object.values(this.stores)) {
-            this.initializeStore(store, db);
-        }
+    async restart() {
+        if (this.db)
+            this.db.close();
+        this.db = null;
+        this.initialization = undefined;
+        return await this.init();
     }
-    initializeStore(store, db) {
-        const primaryKeys = Object.keys(store.model.definition).filter((key) => store.model.definition[key].options.primaryKey);
-        const hasStore = db.objectStoreNames.contains(store.name);
-        store.store = hasStore
-            ? db.transaction(store.name, "readwrite").objectStore(store.name)
-            : db.createObjectStore(store.name, {
+    initializeStores(db, ...stores) {
+        for (const store of stores) {
+            if (db.objectStoreNames.contains(store.name)) {
+                store.store = db.transaction(store.name, "readwrite").objectStore(store.name);
+                continue;
+            }
+            const primaryKeys = Object.keys(store.model.definition).filter((key) => store.model.definition[key].options.primaryKey);
+            store.store = db.createObjectStore(store.name, {
                 keyPath: primaryKeys.length === 1 ? primaryKeys[0] : primaryKeys,
                 autoIncrement: primaryKeys.length === 1,
             });
-        if (!hasStore) {
             const indexes = Object.entries(store.model.definition).filter(([_, val]) => val.options.index);
             for (const [key, val] of indexes) {
                 store.store.createIndex(`idx_${key}_${store.name}_${this.name}`, key, {
@@ -214,7 +221,7 @@ export class AsyncIDBStore {
         });
     }
 }
-export function idb(name, models, version) {
+export function idb(name, models, version = 1) {
     const db = new AsyncIDB(name, models, version);
     return Object.entries(models).reduce((acc, [key]) => {
         return {
