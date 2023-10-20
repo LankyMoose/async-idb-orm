@@ -8,17 +8,18 @@ declare class AsyncIDB {
     stores: {
         [key: string]: AsyncIDBStore<any>;
     };
-    initialization: Promise<this> | null;
+    initialization: Promise<this> | undefined;
     constructor(name: string, models: ModelSchema, version?: number | undefined);
     init(): Promise<this>;
+    private onConnected;
     private initializeStore;
 }
 export declare class AsyncIDBStore<T extends ModelDefinition> {
     model: Model<T>;
     name: string;
-    store: IDBObjectStore | null;
+    store: IDBObjectStore | undefined;
     db: AsyncIDB;
-    constructor(model: IModel<T>, db: AsyncIDB);
+    constructor(model: IModel<T>, db: AsyncIDB, name: string);
     private onBefore;
     private onAfter;
     private getStore;

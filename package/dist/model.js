@@ -83,7 +83,6 @@ export class ArrayField extends Field {
     }
 }
 export class Model {
-    name;
     definition;
     _callbacks = {
         write: [],
@@ -91,10 +90,8 @@ export class Model {
         delete: [],
         beforedelete: [],
     };
-    constructor(name, definition) {
-        this.name = name;
+    constructor(definition) {
         this.definition = definition;
-        this.name = name;
         this.definition = definition;
     }
     getIDBValidKeys(item) {
@@ -124,6 +121,6 @@ export class Model {
         }
     }
 }
-export function model(name, definition) {
-    return new Model(name, definition);
+export function model(definition) {
+    return new Model(definition);
 }

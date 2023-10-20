@@ -4,16 +4,18 @@ class AsyncIDB {
     version;
     db = null;
     stores = {};
-    initialization = null;
+    initialization = undefined;
     constructor(name, models, version) {
         this.name = name;
         this.models = models;
         this.version = version;
-        for (const model of Object.values(this.models)) {
-            this.stores[model.name] = new AsyncIDBStore(model, this);
+        for (const [key, model] of Object.entries(this.models)) {
+            this.stores[key] = new AsyncIDBStore(model, this, key);
         }
+        this.init();
     }
     async init() {
+        console.log("init");
         if (this.initialization)
             return this.initialization;
         this.initialization = new Promise((resolve, reject) => {
@@ -21,42 +23,47 @@ class AsyncIDB {
             request.onerror = (e) => reject(e);
             request.onsuccess = () => {
                 this.db = request.result;
+                this.onConnected(this.db);
                 resolve(this);
             };
             request.onupgradeneeded = () => {
                 this.db = request.result;
-                for (const store of Object.values(this.stores)) {
-                    if (this.db.objectStoreNames.contains(store.name)) {
-                        console.debug(`Store ${store.name} already exists, skipping...`);
-                        continue;
-                    }
-                    this.initializeStore(store, this.db);
-                }
+                this.onConnected(this.db);
                 resolve(this);
             };
         });
-        return this.initialization;
+        return this;
     }
-    initializeStore(wrapper, db) {
-        const primaryKeys = Object.keys(wrapper.model.definition).filter((key) => wrapper.model.definition[key].options.primaryKey);
-        const indexes = Object.keys(wrapper.model.definition).filter((key) => wrapper.model.definition[key].options.index);
-        wrapper.store = db.createObjectStore(wrapper.model.name, {
-            keyPath: primaryKeys ?? undefined,
-            autoIncrement: primaryKeys.length > 0,
-        });
-        for (const index of indexes) {
-            wrapper.store.createIndex(`idx_${this.name}_${index}`, index, { unique: true });
+    onConnected(db) {
+        for (const store of Object.values(this.stores)) {
+            this.initializeStore(store, db);
+        }
+    }
+    initializeStore(store, db) {
+        const primaryKeys = Object.keys(store.model.definition).find((key) => store.model.definition[key].options.primaryKey);
+        const hasStore = db.objectStoreNames.contains(store.name);
+        store.store = hasStore
+            ? db.transaction(store.name, "readwrite").objectStore(store.name)
+            : db.createObjectStore(store.name, {
+                keyPath: primaryKeys,
+                autoIncrement: !!primaryKeys,
+            });
+        if (!hasStore) {
+            const indexes = Object.keys(store.model.definition).filter((key) => store.model.definition[key].options.index);
+            for (const index of indexes) {
+                store.store.createIndex(`idx_${index}_${store.name}_${this.name}`, index, { unique: true });
+            }
         }
     }
 }
 export class AsyncIDBStore {
     model;
     name;
-    store = null;
+    store = undefined;
     db;
-    constructor(model, db) {
+    constructor(model, db, name) {
         this.model = model;
-        this.name = model.name;
+        this.name = name;
         this.db = db;
     }
     onBefore(evtName, data) {
@@ -79,8 +86,7 @@ export class AsyncIDBStore {
     async getStore() {
         if (this.store)
             return this.store;
-        const db = await this.db.init();
-        this.store = db.db.transaction(this.name, "readwrite").objectStore(this.name);
+        await this.db.init();
         return this.store;
     }
     async create(data) {
@@ -137,11 +143,10 @@ export class AsyncIDBStore {
 }
 export function idb(name, models, version) {
     const db = new AsyncIDB(name, models, version);
-    db.init();
-    return Object.values(models).reduce((acc, store) => {
+    return Object.entries(models).reduce((acc, [key]) => {
         return {
             ...acc,
-            [store.name]: db.stores[store.name],
+            [key]: db.stores[key],
         };
     }, {});
 }

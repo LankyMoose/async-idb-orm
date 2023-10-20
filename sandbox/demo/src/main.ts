@@ -1,13 +1,13 @@
 import "./style.css"
 import { model, Field, idb } from "async-idb-orm"
 
-const users = model("User", {
+const users = model({
   id: Field.number({ primaryKey: true }),
   name: Field.string({ default: "John Doe" }),
   age: Field.number({ index: true }),
   birthday: Field.date({ default: () => new Date() }),
   pets: Field.array(
-    model("Pet", {
+    model({
       name: Field.string(),
       age: Field.number(),
       species: Field.string({ optional: true }),
@@ -36,6 +36,8 @@ const users = model("User", {
 // })
 
 const db = idb("demo", { users })
+
+console.log(db)
 
 db.users
   .create({

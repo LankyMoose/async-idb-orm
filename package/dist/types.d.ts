@@ -1,6 +1,5 @@
 import { Field, ArrayField, FieldType, ModelField, StringField, NumberField, BigIntField, BooleanField, DateField } from "./model.js";
 export interface IModel<T extends ModelDefinition> {
-    name: string;
     definition: T;
 }
 export type ModelDefinition = Record<string, Field<FieldType>>;

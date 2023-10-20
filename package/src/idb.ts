@@ -11,52 +11,60 @@ import {
 class AsyncIDB {
   db: IDBDatabase | null = null
   stores: { [key: string]: AsyncIDBStore<any> } = {}
-  initialization: Promise<this> | null = null
+  initialization: Promise<this> | undefined = undefined
   constructor(private name: string, private models: ModelSchema, private version?: number) {
-    for (const model of Object.values(this.models)) {
-      this.stores[model.name] = new AsyncIDBStore(model, this)
+    for (const [key, model] of Object.entries(this.models)) {
+      this.stores[key] = new AsyncIDBStore(model, this, key)
     }
+    this.init()
   }
 
   async init(): Promise<this> {
+    console.log("init")
     if (this.initialization) return this.initialization
     this.initialization = new Promise((resolve, reject) => {
       const request = indexedDB.open(this.name, this.version)
       request.onerror = (e) => reject(e)
       request.onsuccess = () => {
         this.db = request.result
+        this.onConnected(this.db)
         resolve(this)
       }
       request.onupgradeneeded = () => {
         this.db = request.result
-
-        for (const store of Object.values(this.stores)) {
-          if (this.db.objectStoreNames.contains(store.name)) {
-            console.debug(`Store ${store.name} already exists, skipping...`)
-            continue
-          }
-
-          this.initializeStore(store, this.db)
-        }
+        this.onConnected(this.db)
         resolve(this)
       }
     })
-    return this.initialization
+    return this
   }
 
-  private initializeStore(wrapper: AsyncIDBStore<any>, db: IDBDatabase) {
-    const primaryKeys = Object.keys(wrapper.model.definition).filter(
-      (key) => wrapper.model.definition[key].options.primaryKey
+  private onConnected(db: IDBDatabase) {
+    for (const store of Object.values(this.stores)) {
+      this.initializeStore(store, db)
+    }
+  }
+
+  private initializeStore(store: AsyncIDBStore<any>, db: IDBDatabase) {
+    const primaryKeys = Object.keys(store.model.definition).find(
+      (key) => store.model.definition[key].options.primaryKey
     )
-    const indexes = Object.keys(wrapper.model.definition).filter(
-      (key) => wrapper.model.definition[key].options.index
-    )
-    wrapper.store = db.createObjectStore(wrapper.model.name, {
-      keyPath: primaryKeys ?? undefined,
-      autoIncrement: primaryKeys.length > 0,
-    })
-    for (const index of indexes) {
-      wrapper.store.createIndex(`idx_${this.name}_${index}`, index, { unique: true })
+
+    const hasStore = db.objectStoreNames.contains(store.name)
+    store.store = hasStore
+      ? db.transaction(store.name, "readwrite").objectStore(store.name)
+      : db.createObjectStore(store.name, {
+          keyPath: primaryKeys,
+          autoIncrement: !!primaryKeys,
+        })
+
+    if (!hasStore) {
+      const indexes = Object.keys(store.model.definition).filter(
+        (key) => store.model.definition[key].options.index
+      )
+      for (const index of indexes) {
+        store.store.createIndex(`idx_${index}_${store.name}_${this.name}`, index, { unique: true })
+      }
     }
   }
 }
@@ -64,11 +72,11 @@ class AsyncIDB {
 export class AsyncIDBStore<T extends ModelDefinition> {
   model: Model<T>
   name: string
-  store: IDBObjectStore | null = null
+  store: IDBObjectStore | undefined = undefined
   db: AsyncIDB
-  constructor(model: IModel<T>, db: AsyncIDB) {
+  constructor(model: IModel<T>, db: AsyncIDB, name: string) {
     this.model = model as Model<T>
-    this.name = model.name
+    this.name = name
     this.db = db
   }
 
@@ -92,9 +100,8 @@ export class AsyncIDBStore<T extends ModelDefinition> {
 
   private async getStore() {
     if (this.store) return this.store
-    const db = await this.db.init()
-    this.store = db.db!.transaction(this.name, "readwrite").objectStore(this.name)
-    return this.store
+    await this.db.init()
+    return this.store as unknown as IDBObjectStore
   }
 
   async create(data: ResolvedModel<T>) {
@@ -161,12 +168,11 @@ export function idb<T extends ModelSchema>(
   [key in keyof T]: AsyncIDBStore<T[key]["definition"]>
 } {
   const db = new AsyncIDB(name, models, version)
-  db.init()
 
-  return Object.values(models).reduce((acc, store) => {
+  return Object.entries(models).reduce((acc, [key]) => {
     return {
       ...acc,
-      [store.name]: db.stores[store.name],
+      [key]: db.stores[key],
     }
   }, {} as any)
 }

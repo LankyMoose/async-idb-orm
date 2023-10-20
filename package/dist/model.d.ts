@@ -45,12 +45,11 @@ export declare class ArrayField<T extends IModel<ModelDefinition> | Field<FieldT
     constructor(modalOrField: T);
 }
 export declare class Model<T extends ModelDefinition> implements IModel<T> {
-    name: string;
     definition: T;
     private _callbacks;
-    constructor(name: string, definition: T);
+    constructor(definition: T);
     getIDBValidKeys<U extends ModelRecord<T>>(item: U): U[keyof U][];
     callbacks<T extends ModelEvent>(evtName: T): Record<ModelEvent, ModelEventCallback<T, ModelEvent>[]>[T];
     on<U extends ModelEvent>(evtName: U, callback: ModelEventCallback<T, U>): void;
 }
-export declare function model<T extends ModelDefinition>(name: string, definition: T): Model<T>;
+export declare function model<T extends ModelDefinition>(definition: T): Model<T>;

@@ -116,8 +116,7 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
     beforedelete: [],
   }
 
-  constructor(public name: string, public definition: T) {
-    this.name = name
+  constructor(public definition: T) {
     this.definition = definition
   }
 
@@ -151,6 +150,6 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
   }
 }
 
-export function model<T extends ModelDefinition>(name: string, definition: T) {
-  return new Model(name, definition)
+export function model<T extends ModelDefinition>(definition: T) {
+  return new Model(definition)
 }

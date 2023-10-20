@@ -12,7 +12,6 @@ import {
 } from "./model.js"
 
 export interface IModel<T extends ModelDefinition> {
-  name: string
   definition: T
 }
 
