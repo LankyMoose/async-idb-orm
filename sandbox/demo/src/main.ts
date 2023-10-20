@@ -17,27 +17,25 @@ const users = model({
   alive: Field.boolean(),
 })
 
-// users.on("beforewrite", (data, cancel) => {
-//   console.log(data.id)
-//   return cancel()
-// })
+users.on("beforewrite", (data) => {
+  console.log("beforewrite", data.id)
+})
 
-// users.on("beforedelete", (data, cancel) => {
-//   console.log(data.id)
-//   return cancel()
-// })
+users.on("beforedelete", (data) => {
+  console.log("beforedelete", data.id)
+})
 
-// users.on("delete", (data) => {
-//   console.log(data.id)
-// })
+users.on("delete", (data) => {
+  console.log("delete", data.id)
+})
 
-// users.on("write", (data) => {
-//   console.log(data.id)
-// })
+users.on("write", (data) => {
+  console.log("write", data)
+})
 
 const db = idb("demo", { users })
 
-console.log(db)
+db.users.clear()
 
 db.users
   .create({

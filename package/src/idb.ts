@@ -20,7 +20,6 @@ class AsyncIDB {
   }
 
   async init(): Promise<this> {
-    console.log("init")
     if (this.initialization) return this.initialization
     this.initialization = new Promise((resolve, reject) => {
       const request = indexedDB.open(this.name, this.version)
@@ -39,13 +38,13 @@ class AsyncIDB {
     return this
   }
 
-  private onConnected(db: IDBDatabase) {
+  onConnected(db: IDBDatabase) {
     for (const store of Object.values(this.stores)) {
       this.initializeStore(store, db)
     }
   }
 
-  private initializeStore(store: AsyncIDBStore<any>, db: IDBDatabase) {
+  initializeStore(store: AsyncIDBStore<any>, db: IDBDatabase) {
     const primaryKeys = Object.keys(store.model.definition).filter(
       (key) => store.model.definition[key].options.primaryKey
     )
@@ -94,8 +93,8 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     return true
   }
 
-  private onAfter(evtName: "write" | "delete", data: ModelRecord<T>) {
-    const callbacks = this.model.callbacks(evtName) as ModelEventCallback<T, "write">[]
+  private onAfter<U extends "write" | "delete">(evtName: U, data: ModelRecord<T>) {
+    const callbacks = this.model.callbacks(evtName) as ModelEventCallback<T, U>[]
     for (const callback of callbacks) {
       callback(data)
     }

@@ -9,23 +9,41 @@ export { idb, Field, model }
 //   birthday: Field.date({ default: () => new Date() }),
 //   pets: Field.array(
 //     model({
-//       name: Field.string({ optional: true }),
+//       name: Field.string(),
 //       age: Field.number(),
-//       species: Field.string(),
+//       species: Field.string({ optional: true }),
 //       birthday: Field.date({ default: () => new Date() }),
 //     })
 //   ),
 //   alive: Field.boolean(),
 // })
 
+// users.on("beforewrite", (data) => {
+//   console.log("beforewrite", data.id)
+// })
+
+// users.on("beforedelete", (data) => {
+//   console.log("beforedelete", data.id)
+// })
+
+// users.on("delete", (data) => {
+//   console.log("delete", data.id)
+// })
+
+// users.on("write", (data) => {
+//   console.log("write", data)
+// })
+
 // const db = idb("demo", { users })
+
+// db.users.clear()
 
 // db.users
 //   .create({
-//     id: 1,
 //     age: 25,
 //     pets: [
 //       {
+//         name: "Fido",
 //         age: 1,
 //         species: "dog",
 //       },
@@ -33,5 +51,5 @@ export { idb, Field, model }
 //     alive: true,
 //   })
 //   .then((user) => {
-//     console.log(user!.pets[0]!.birthday)
+//     console.log(user)
 //   })

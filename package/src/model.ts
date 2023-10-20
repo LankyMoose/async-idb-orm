@@ -167,7 +167,6 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
         record[key as keyof ResolvedModel<T>] = field.model.applyDefaults(
           record[key as keyof ResolvedModel<T>] as ResolvedModel<T>
         )
-        console.log("model defaults", record[key as keyof ResolvedModel<T>])
         continue
       }
 

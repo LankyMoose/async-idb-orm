@@ -15,7 +15,6 @@ class AsyncIDB {
         this.init();
     }
     async init() {
-        console.log("init");
         if (this.initialization)
             return this.initialization;
         this.initialization = new Promise((resolve, reject) => {

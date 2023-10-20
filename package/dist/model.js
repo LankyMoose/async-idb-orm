@@ -131,7 +131,6 @@ export class Model {
             }
             if (field instanceof ModelField) {
                 record[key] = field.model.applyDefaults(record[key]);
-                console.log("model defaults", record[key]);
                 continue;
             }
             if (field instanceof ArrayField) {
