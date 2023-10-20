@@ -125,7 +125,7 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
 
   getIDBValidKeys<U extends ResolvedModelWithUniqueKeys<T>>(item: U) {
     return Object.keys(this.definition)
-      .filter((field) => this.definition[field].options.unique)
+      .filter((field) => this.definition[field].options.primaryKey)
       .map((field) => item[field as keyof U])
   }
 

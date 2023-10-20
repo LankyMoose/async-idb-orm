@@ -2,16 +2,14 @@ import { idb } from "idb"
 import { Field, model } from "model"
 
 const users = model("User", {
-  id: Field.number({ unique: true }),
+  id: Field.number({ primaryKey: true }),
   name: Field.string({ default: "John Doe", optional: true }),
-  age: Field.number(),
+  age: Field.number({ index: true }),
   pets: Field.array(
     model("Pet", {
-      id: Field.number({ unique: true }),
       name: Field.string({ optional: true }),
       age: Field.number(),
       species: Field.string(),
-      alive: Field.boolean(),
       birthday: Field.date({ default: () => new Date() }),
     })
   ),
@@ -43,11 +41,9 @@ const user = await db.users.create({
   age: 20,
   pets: [
     {
-      id: 1,
       name: "Fluffy",
       age: 2,
       species: "cat",
-      alive: true,
       birthday: new Date(),
     },
   ],

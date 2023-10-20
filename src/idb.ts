@@ -27,13 +27,7 @@ class AsyncIDB {
 
         for (const model of _models) {
           if (this.db.objectStoreNames.contains(model.name)) continue
-          const uniqueKeys = Object.keys(model.definition).filter(
-            (key) => model.definition[key].options.unique
-          )
 
-          this.db.createObjectStore(model.name, {
-            keyPath: uniqueKeys.length > 0 ? uniqueKeys : undefined,
-          })
           this.stores[model.name] = new AsyncIDBStore(model, this.db)
         }
 
@@ -52,7 +46,20 @@ class AsyncIDBStore<T extends ModelDefinition> {
     this.model = model as Model<T>
     this.name = model.name
     this.db = db
-    this.store = db.transaction(model.name, "readwrite").objectStore(model.name)
+
+    const primaryKeys = Object.keys(model.definition).filter(
+      (key) => model.definition[key].options.primaryKey
+    )
+    const indexes = Object.keys(model.definition).filter(
+      (key) => model.definition[key].options.index
+    )
+    this.store = db.createObjectStore(model.name, {
+      keyPath: primaryKeys ?? undefined,
+      autoIncrement: primaryKeys.length > 0,
+    })
+    for (const index of indexes) {
+      this.store.createIndex(`idx_${this.name}_${index}`, index, { unique: true })
+    }
   }
 
   private onBefore(
@@ -130,6 +137,16 @@ class AsyncIDBStore<T extends ModelDefinition> {
       request.onsuccess = () => resolve()
     })
   }
+}
+
+async function getMaxByKey<T extends ModelDefinition>(store: AsyncIDBStore<T>) {
+  const request = store.store.openCursor("id", "prev")
+  return new Promise<number>((resolve, reject) => {
+    request.onerror = (err) => reject(err)
+    request.onsuccess = () => {
+      resolve(request.result?.key as number)
+    }
+  })
 }
 
 export async function idb<T extends ModelSchema>(

@@ -40,7 +40,9 @@ export type ResolvedModelWithUniqueKeys<T extends ModelDefinition> = {
 /** */
 export interface FieldArgs<T> {
   /** Flags the field to be used as an IDBValidKey */
-  unique?: boolean
+  primaryKey?: boolean
+  /** Flags the field to be used as an index */
+  index?: boolean
   /** Makes the field omittable in create() calls, and T | undefined in query results */
   optional?: boolean
   /** Sets a default value for the field */
