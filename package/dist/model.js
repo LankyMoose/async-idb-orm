@@ -10,35 +10,25 @@ export var FieldType;
 })(FieldType || (FieldType = {}));
 export class Field {
     type;
-    model;
-    field;
-    _unique;
-    constructor(type, model, field, unique) {
+    options = {};
+    constructor(type, args) {
         this.type = type;
-        this.model = model;
-        this.field = field;
-        this._unique = unique;
+        this.options = args;
     }
-    uniqueKey() {
-        return new UniqueField(this.type, this.model, this.field, true);
+    static string(args = {}) {
+        return new StringField(args);
     }
-    optional() {
-        return new OptionalField(this.type, this.model, this.field, this._unique);
+    static number(args = {}) {
+        return new NumberField(args);
     }
-    static string() {
-        return new StringField();
+    static bigint(args = {}) {
+        return new BigIntField(args);
     }
-    static number() {
-        return new Field(FieldType.Number);
+    static boolean(args = {}) {
+        return new BooleanField(args);
     }
-    static bigint() {
-        return new Field(FieldType.BigInt);
-    }
-    static boolean() {
-        return new Field(FieldType.Boolean);
-    }
-    static date() {
-        return new Field(FieldType.Date);
+    static date(args = {}) {
+        return new DateField(args);
     }
     static model(model) {
         return new ModelField(model);
@@ -48,68 +38,42 @@ export class Field {
     }
 }
 export class StringField extends Field {
-    _default;
-    constructor() {
-        super(FieldType.String);
-    }
-    default(value) {
-        this._default = value;
-        return this;
+    constructor(args) {
+        super(FieldType.String, args);
     }
 }
 export class NumberField extends Field {
-    _default;
-    constructor() {
-        super(FieldType.Number);
-    }
-    default(value) {
-        this._default = value;
-        return this;
+    constructor(args) {
+        super(FieldType.Number, args);
     }
 }
 export class BigIntField extends Field {
-    _default;
-    constructor() {
-        super(FieldType.BigInt);
-    }
-    default(value) {
-        this._default = value;
-        return this;
+    constructor(args) {
+        super(FieldType.BigInt, args);
     }
 }
 export class BooleanField extends Field {
-    _default;
-    constructor() {
-        super(FieldType.Boolean);
-    }
-    default(value) {
-        this._default = value;
-        return this;
+    constructor(args) {
+        super(FieldType.Boolean, args);
     }
 }
 export class DateField extends Field {
-    _default;
-    constructor() {
-        super(FieldType.Date);
+    constructor(args) {
+        super(FieldType.Date, args);
     }
-    default(value) {
-        this._default = value;
-        return this;
-    }
-}
-export class UniqueField extends Field {
 }
 export class ModelField extends Field {
+    model;
     constructor(model) {
-        super(FieldType.Model, model);
+        super(FieldType.Model, {});
+        this.model = model;
     }
 }
-export class OptionalField extends Field {
-    _optional = true;
-}
 export class ArrayField extends Field {
+    field;
+    model;
     constructor(modalOrField) {
-        super(FieldType.Array);
+        super(FieldType.Array, {});
         if (modalOrField instanceof Field) {
             this.field = modalOrField;
         }
@@ -135,8 +99,8 @@ export class Model {
     }
     getIDBValidKeys(item) {
         return Object.keys(this.definition)
-            .filter((key) => this.definition[key] instanceof UniqueField)
-            .map((key) => item[key]);
+            .filter((field) => this.definition[field].options.primaryKey)
+            .map((field) => item[field]);
     }
     callbacks(evtName) {
         return this._callbacks[evtName];

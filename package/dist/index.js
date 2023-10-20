@@ -1,41 +1,43 @@
 import { idb } from "idb";
 import { Field, model } from "model";
-const pets = model("Pet", {
-    id: Field.number().uniqueKey(),
-    name: Field.string(),
-    age: Field.number(),
-    species: Field.string(),
+const users = model("User", {
+    id: Field.number({ primaryKey: true }),
+    name: Field.string({ default: "John Doe", optional: true }),
+    age: Field.number({ index: true }),
+    pets: Field.array(model("Pet", {
+        name: Field.string({ optional: true }),
+        age: Field.number(),
+        species: Field.string(),
+        birthday: Field.date({ default: () => new Date() }),
+    })),
     alive: Field.boolean(),
 });
-const users = model("User", {
-    id: Field.number().uniqueKey(),
-    name: Field.string().default("John"),
-    age: Field.number().optional(),
-    pets: Field.array(pets),
-    alive: Field.boolean().optional(),
-});
 users.on("beforewrite", (data, cancel) => {
-    console.log(data);
+    console.log(data.id);
+    return cancel();
+});
+users.on("beforedelete", (data, cancel) => {
+    console.log(data.id);
     return cancel();
 });
 users.on("delete", (data) => {
-    console.log(data);
+    console.log(data.id);
 });
-const db = await idb("test", { pets, users });
-const key = await db.users.create({
+users.on("write", (data) => {
+    console.log(data.id);
+});
+const db = await idb("test", { users });
+const user = await db.users.create({
     id: 1,
-    name: "John",
+    age: 20,
     pets: [
         {
-            id: 1,
             name: "Fluffy",
             age: 2,
             species: "cat",
-            alive: true,
+            birthday: new Date(),
         },
     ],
+    alive: true,
 });
-if (key === undefined)
-    throw new Error("key is undefined");
-const user = await db.users.read(key);
-user.pets;
+console.log(user.id);
