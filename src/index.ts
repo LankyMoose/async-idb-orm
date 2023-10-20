@@ -2,22 +2,20 @@ import { idb } from "idb"
 import { Field, model } from "model"
 
 const pets = model("Pet", {
-  id: Field.number().uniqueKey(),
-  name: Field.string(),
+  id: Field.number({ unique: true }),
+  name: Field.string({ optional: true }),
   age: Field.number(),
   species: Field.string(),
   alive: Field.boolean(),
-  birthday: Field.date()
-    .default(() => new Date())
-    .optional(),
+  birthday: Field.date({ default: () => new Date() }),
 })
 
 const users = model("User", {
-  id: Field.number().uniqueKey(),
-  name: Field.string().default("John"),
-  age: Field.number().optional(),
+  id: Field.number({ unique: true }),
+  name: Field.string({ default: "John", optional: true }),
+  age: Field.number(),
   pets: Field.array(pets),
-  alive: Field.boolean().optional(),
+  alive: Field.boolean(),
 })
 
 users.on("beforewrite", (data, cancel) => {
@@ -33,6 +31,7 @@ const db = await idb("test", { pets, users })
 
 const key = await db.users.create({
   id: 1,
+  age: 20,
   name: "John",
   pets: [
     {
@@ -41,8 +40,10 @@ const key = await db.users.create({
       age: 2,
       species: "cat",
       alive: true,
+      birthday: new Date(),
     },
   ],
+  alive: true,
 })
 
 if (key === undefined) throw new Error("key is undefined")

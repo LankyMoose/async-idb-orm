@@ -1,4 +1,12 @@
-import { IModel, ModelDefinition, ModelEvent, ModelEventCallback, ResolvedModel } from "types"
+import {
+  FieldArgs,
+  FieldDefault,
+  IModel,
+  ModelDefinition,
+  ModelEvent,
+  ModelEventCallback,
+  ResolvedModel,
+} from "types"
 
 export enum FieldType {
   String = "string",
@@ -10,44 +18,33 @@ export enum FieldType {
   Array = "array",
 }
 
-export class Field<T extends FieldType> {
-  private _unique?: boolean
+export abstract class Field<T extends FieldType, U extends FieldArgs<any> = FieldArgs<any>> {
+  type: T
+  options: U = {} as U
 
-  constructor(
-    public type: T,
-    public model?: IModel<ModelDefinition>,
-    public field?: Field<FieldType>,
-    unique?: boolean
-  ) {
-    this._unique = unique
+  constructor(type: T, args: U) {
+    this.type = type
+    this.options = args
   }
 
-  uniqueKey() {
-    return new UniqueField(this.type, this.model, this.field)
+  static string<const T extends FieldArgs<string>>(args: T = {} as T) {
+    return new StringField(args)
   }
 
-  optional() {
-    return new OptionalField(this.type, this.model, this.field, this._unique)
+  static number<const T extends FieldArgs<number>>(args: T = {} as T) {
+    return new NumberField(args)
   }
 
-  static string() {
-    return new StringField()
+  static bigint<const T extends FieldArgs<bigint>>(args: T = {} as T) {
+    return new BigIntField(args)
   }
 
-  static number() {
-    return new NumberField()
+  static boolean<const T extends FieldArgs<boolean>>(args: T = {} as T) {
+    return new BooleanField(args)
   }
 
-  static bigint() {
-    return new BigIntField()
-  }
-
-  static boolean() {
-    return new BooleanField()
-  }
-
-  static date() {
-    return new DateField()
+  static date<const T extends FieldArgs<Date>>(args: T = {} as T) {
+    return new DateField(args)
   }
 
   static model<T extends Model<ModelDefinition>>(model: T) {
@@ -59,82 +56,51 @@ export class Field<T extends FieldType> {
   }
 }
 
-class StringField extends Field<FieldType.String> {
-  private _default?: string | (() => string)
-  constructor() {
-    super(FieldType.String)
-  }
-  default(value: string | (() => string)): this {
-    this._default = value
-    return this
+export class StringField<T extends FieldArgs<string>> extends Field<FieldType.String, T> {
+  constructor(args: T) {
+    super(FieldType.String, args)
   }
 }
 
-class NumberField extends Field<FieldType.Number> {
-  private _default?: number | (() => number)
-  constructor() {
-    super(FieldType.Number)
-  }
-  default(value: number | (() => number)): this {
-    this._default = value
-    return this
+export class NumberField<T extends FieldArgs<number>> extends Field<FieldType.Number, T> {
+  constructor(args: T) {
+    super(FieldType.Number, args)
   }
 }
 
-class BigIntField extends Field<FieldType.BigInt> {
-  private _default?: bigint | (() => bigint)
-  constructor() {
-    super(FieldType.BigInt)
-  }
-  default(value: bigint | (() => bigint)): this {
-    this._default = value
-    return this
+export class BigIntField<T extends FieldArgs<bigint>> extends Field<FieldType.BigInt, T> {
+  constructor(args: T) {
+    super(FieldType.BigInt, args)
   }
 }
 
-class BooleanField extends Field<FieldType.Boolean> {
-  private _default?: boolean | (() => boolean)
-  constructor() {
-    super(FieldType.Boolean)
-  }
-  default(value: boolean | (() => boolean)): this {
-    this._default = value
-    return this
+export class BooleanField<T extends FieldArgs<boolean>> extends Field<FieldType.Boolean, T> {
+  constructor(args: T) {
+    super(FieldType.Boolean, args)
   }
 }
 
-class DateField extends Field<FieldType.Date> {
-  private _default?: Date | (() => Date)
-  constructor() {
-    super(FieldType.Date)
-  }
-  default(value: Date | (() => Date)): this {
-    this._default = value
-    return this
-  }
-}
-
-export class UniqueField<T extends FieldType> extends Field<T> {
-  constructor(type: T, model?: IModel<ModelDefinition>, field?: Field<FieldType>) {
-    super(type, model, field, true)
+export class DateField<T extends FieldArgs<Date>> extends Field<FieldType.Date, T> {
+  constructor(args: T) {
+    super(FieldType.Date, args)
   }
 }
 
 export class ModelField<T extends Model<ModelDefinition>> extends Field<FieldType.Model> {
+  model: T
   constructor(model: T) {
-    super(FieldType.Model, model)
+    super(FieldType.Model, {})
+    this.model = model
   }
-}
-
-export class OptionalField<T extends FieldType> extends Field<T> {
-  _optional: boolean = true
 }
 
 export class ArrayField<
   T extends IModel<ModelDefinition> | Field<FieldType>
-> extends Field<FieldType> {
+> extends Field<FieldType.Array> {
+  field?: T
+  model?: IModel<ModelDefinition>
   constructor(modalOrField: T) {
-    super(FieldType.Array)
+    super(FieldType.Array, {})
     if (modalOrField instanceof Field) {
       this.field = modalOrField
     } else {
@@ -158,7 +124,7 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
 
   getIDBValidKeys(item: ResolvedModel<T>) {
     return Object.keys(this.definition)
-      .filter((key) => this.definition[key] instanceof UniqueField)
+      .filter((key) => this.definition[key].options.unique)
       .map((key) => item[key as keyof ResolvedModel<T>])
   }
 
@@ -183,10 +149,6 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
       default:
         throw new Error(`Unknown event ${evtName}`)
     }
-  }
-
-  maxKey() {
-    return this.definition.id.type === FieldType.Number ? Infinity : undefined
   }
 }
 

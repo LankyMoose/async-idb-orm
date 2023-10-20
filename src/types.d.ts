@@ -1,4 +1,14 @@
-import { Field, ArrayField, FieldType, ModelField, OptionalField, Model } from "model"
+import {
+  Field,
+  ArrayField,
+  FieldType,
+  ModelField,
+  StringField,
+  NumberField,
+  BigIntField,
+  BooleanField,
+  DateField,
+} from "model"
 
 export interface IModel<T extends ModelDefinition> {
   name: string
@@ -10,22 +20,32 @@ export type ModelDefinition = Record<string, Field<FieldType>>
 export type ModelSchema = Record<string, IModel<ModelDefinition>>
 
 export type ResolvedModel<T extends ModelDefinition> = {
-  [key in keyof T as T[key] extends OptionalField<FieldType> ? never : key]: ResolvedField<T[key]>
+  [key in keyof T as T[key] extends { options: { optional: true } } ? never : key]: ResolvedField<
+    T[key]
+  >
 } & {
-  [key in keyof T as T[key] extends OptionalField<FieldType> ? key : never]?:
+  [key in keyof T as T[key] extends { options: { optional: true } } ? key : never]?:
     | ResolvedField<T[key]>
     | undefined
 }
 
-export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldType.String>
+export type FieldArgs<T> = {
+  unique?: boolean
+  default?: FieldDefault<T>
+  optional?: boolean
+}
+
+export type FieldDefault<T> = T | (() => T)
+
+export type ResolvedField<T extends Field<FieldType>> = T extends StringField<any>
   ? string
-  : T extends Field<FieldType.Number>
+  : T extends NumberField<any>
   ? number
-  : T extends Field<FieldType.BigInt>
+  : T extends BigIntField<any>
   ? bigint
-  : T extends Field<FieldType.Boolean>
+  : T extends BooleanField<any>
   ? boolean
-  : T extends Field<FieldType.Date>
+  : T extends DateField<any>
   ? Date
   : T extends ModelField<infer U>
   ? ResolvedModel<U["definition"]>
