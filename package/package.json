@@ -1,5 +1,5 @@
 {
-  "name": "orm-idb",
+  "name": "async-idb-orm",
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
@@ -10,8 +10,5 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "matcha-js": "^1.0.14"
-  }
+  "license": "ISC"
 }

@@ -1,0 +1,16 @@
+lockfileVersion: '6.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+dependencies:
+  matcha-js:
+    specifier: ^1.0.14
+    version: 1.0.14
+
+packages:
+
+  /matcha-js@1.0.14:
+    resolution: {integrity: sha512-KYe+FxL5o7BbfZlzb/96nrT35xnGtp9r/97QGv5QgafJ0UeyRexPlTvwHWGLPKeWYKwFgLHcZ2mORF+0tmZXOA==}
+    dev: false
