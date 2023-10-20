@@ -52,5 +52,5 @@ db.users
     alive: true,
   })
   .then((user) => {
-    console.log(user!.pets[0]!.birthday)
+    console.log(user)
   })

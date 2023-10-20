@@ -45,13 +45,15 @@ class AsyncIDB {
         store.store = hasStore
             ? db.transaction(store.name, "readwrite").objectStore(store.name)
             : db.createObjectStore(store.name, {
-                keyPath: primaryKeys,
-                autoIncrement: primaryKeys.length > 0,
+                keyPath: primaryKeys.length === 1 ? primaryKeys[0] : primaryKeys,
+                autoIncrement: primaryKeys.length === 1,
             });
         if (!hasStore) {
-            const indexes = Object.entries(store.model.definition).filter(([key, val]) => val.options.index);
-            for (const index of indexes) {
-                store.store.createIndex(`idx_${index}_${store.name}_${this.name}`, index, { unique: true });
+            const indexes = Object.entries(store.model.definition).filter(([_, val]) => val.options.index);
+            for (const [key, val] of indexes) {
+                store.store.createIndex(`idx_${key}_${store.name}_${this.name}`, key, {
+                    unique: val.options.primaryKey,
+                });
             }
         }
     }
@@ -90,16 +92,21 @@ export class AsyncIDBStore {
         return this.store;
     }
     async create(data) {
-        if (!this.onBefore("write", data))
-            return;
-        const request = (this.store ?? (await this.getStore())).add(data);
-        return new Promise((resolve, reject) => {
-            request.onerror = (err) => reject(err);
-            request.onsuccess = () => this.read(request.result).then((data) => {
-                this.onAfter("write", data);
-                resolve(data);
+        try {
+            if (!this.onBefore("write", data))
+                return;
+            const request = (this.store ?? (await this.getStore())).add(data);
+            return new Promise((resolve, reject) => {
+                request.onerror = (err) => reject(err);
+                request.onsuccess = () => this.read(request.result).then((data) => {
+                    this.onAfter("write", data);
+                    resolve(data);
+                });
             });
-        });
+        }
+        catch (error) {
+            console.log("create error", error);
+        }
     }
     async read(id) {
         const request = (this.store ?? (await this.getStore())).get(id);
