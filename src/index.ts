@@ -12,7 +12,7 @@ const pets = model("Pet", {
 
 const users = model("User", {
   id: Field.number({ unique: true }),
-  name: Field.string({ default: "John", optional: true }),
+  name: Field.string({ default: "John Doe", optional: true }),
   age: Field.number(),
   pets: Field.array(pets),
   alive: Field.boolean(),
@@ -29,7 +29,7 @@ users.on("delete", (data) => {
 
 const db = await idb("test", { pets, users })
 
-const key = await db.users.create({
+const user = await db.users.create({
   id: 1,
   age: 20,
   name: "John",
@@ -46,7 +46,4 @@ const key = await db.users.create({
   alive: true,
 })
 
-if (key === undefined) throw new Error("key is undefined")
-
-const user = await db.users.read(key)
-user.pets
+console.log(user?.pets)

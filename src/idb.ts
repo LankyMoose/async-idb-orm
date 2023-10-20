@@ -69,12 +69,13 @@ class AsyncIDBStore<T extends ModelDefinition> {
     if (!this.onBefore("write", data)) return
 
     const request = this.store.add(data)
-    return new Promise<IDBValidKey>((resolve, reject) => {
+    return new Promise<ResolvedModel<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        this.onAfter("write", data)
-        resolve(request.result)
-      }
+      request.onsuccess = () =>
+        this.read(request.result).then((data) => {
+          this.onAfter("write", data)
+          resolve(data)
+        })
     })
   }
   async read(id: IDBValidKey) {

@@ -19,14 +19,12 @@ export type ModelDefinition = Record<string, Field<FieldType>>
 
 export type ModelSchema = Record<string, IModel<ModelDefinition>>
 
+type OptionalField = { options: { optional: true } }
+
 export type ResolvedModel<T extends ModelDefinition> = {
-  [key in keyof T as T[key] extends { options: { optional: true } } ? never : key]: ResolvedField<
-    T[key]
-  >
+  [key in keyof T as T[key] extends OptionalField ? never : key]: ResolvedField<T[key]>
 } & {
-  [key in keyof T as T[key] extends { options: { optional: true } } ? key : never]?:
-    | ResolvedField<T[key]>
-    | undefined
+  [key in keyof T as T[key] extends OptionalField ? key : never]?: ResolvedField<T[key]> | undefined
 }
 
 export type FieldArgs<T> = {
