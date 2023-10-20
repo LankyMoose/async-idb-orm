@@ -91,22 +91,8 @@ export class AsyncIDBStore {
         await this.db.init();
         return this.store;
     }
-    applyDefaults(data) {
-        const record = { ...data };
-        for (const [key, field] of Object.entries(this.model.definition)) {
-            if (record[key] === undefined) {
-                if (field.options.default) {
-                    record[key] =
-                        typeof field.options.default === "function"
-                            ? field.options.default()
-                            : field.options.default;
-                }
-            }
-        }
-        return record;
-    }
     async create(data) {
-        const record = this.applyDefaults(data);
+        const record = this.model.applyDefaults(data);
         if (!this.onBefore("write", record))
             return;
         const request = (this.store ?? (await this.getStore())).add(record);
@@ -126,9 +112,10 @@ export class AsyncIDBStore {
         });
     }
     async update(id, data) {
-        if (!this.onBefore("write", data))
+        const record = this.model.applyDefaults(data);
+        if (!this.onBefore("write", record))
             return;
-        const request = (this.store ?? (await this.getStore())).put(data, id);
+        const request = (this.store ?? (await this.getStore())).put(record, id);
         return new Promise((resolve, reject) => {
             request.onerror = (err) => reject(err);
             request.onsuccess = () => this.read(request.result).then((data) => {

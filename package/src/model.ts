@@ -5,6 +5,7 @@ import {
   ModelEvent,
   ModelEventCallback,
   ModelRecord,
+  ResolvedModel,
 } from "./types.js"
 
 export enum FieldType {
@@ -148,6 +149,42 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
       default:
         throw new Error(`Unknown event ${evtName}`)
     }
+  }
+
+  applyDefaults<U extends ResolvedModel<T>>(data: U): ResolvedModel<T> {
+    const record = { ...data } as ResolvedModel<T>
+
+    for (const [key, field] of Object.entries(this.definition)) {
+      if (field.options.default && record[key as keyof ResolvedModel<T>] === undefined) {
+        record[key as keyof ResolvedModel<T>] =
+          typeof field.options.default === "function"
+            ? field.options.default()
+            : field.options.default
+        continue
+      }
+
+      if (field instanceof ModelField) {
+        record[key as keyof ResolvedModel<T>] = field.model.applyDefaults(
+          record[key as keyof ResolvedModel<T>] as ResolvedModel<T>
+        )
+        console.log("model defaults", record[key as keyof ResolvedModel<T>])
+        continue
+      }
+
+      if (field instanceof ArrayField) {
+        // @ts-expect-error TODO: fix this
+        record[key as keyof ResolvedModel<T>] = (
+          record[key as keyof ResolvedModel<T>] as ResolvedModel<T>[]
+        ).map((item) => {
+          if (field.model) {
+            return (field.model as Model<any>).applyDefaults(item)
+          }
+          return item
+        })
+        continue
+      }
+    }
+    return record
   }
 }
 

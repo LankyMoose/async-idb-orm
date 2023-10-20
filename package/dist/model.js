@@ -119,6 +119,34 @@ export class Model {
                 throw new Error(`Unknown event ${evtName}`);
         }
     }
+    applyDefaults(data) {
+        const record = { ...data };
+        for (const [key, field] of Object.entries(this.definition)) {
+            if (field.options.default && record[key] === undefined) {
+                record[key] =
+                    typeof field.options.default === "function"
+                        ? field.options.default()
+                        : field.options.default;
+                continue;
+            }
+            if (field instanceof ModelField) {
+                record[key] = field.model.applyDefaults(record[key]);
+                console.log("model defaults", record[key]);
+                continue;
+            }
+            if (field instanceof ArrayField) {
+                // @ts-expect-error TODO: fix this
+                record[key] = record[key].map((item) => {
+                    if (field.model) {
+                        return field.model.applyDefaults(item);
+                    }
+                    return item;
+                });
+                continue;
+            }
+        }
+        return record;
+    }
 }
 export function model(definition) {
     return new Model(definition);

@@ -1,4 +1,4 @@
-import { FieldArgs, IModel, ModelDefinition, ModelEvent, ModelEventCallback, ModelRecord } from "./types.js";
+import { FieldArgs, IModel, ModelDefinition, ModelEvent, ModelEventCallback, ModelRecord, ResolvedModel } from "./types.js";
 export declare enum FieldType {
     String = "string",
     Number = "number",
@@ -51,5 +51,6 @@ export declare class Model<T extends ModelDefinition> implements IModel<T> {
     getIDBValidKeys<U extends ModelRecord<T>>(item: U): U[keyof U][];
     callbacks<T extends ModelEvent>(evtName: T): Record<ModelEvent, ModelEventCallback<T, ModelEvent>[]>[T];
     on<U extends ModelEvent>(evtName: U, callback: ModelEventCallback<T, U>): void;
+    applyDefaults<U extends ResolvedModel<T>>(data: U): ResolvedModel<T>;
 }
 export declare function model<T extends ModelDefinition>(definition: T): Model<T>;
