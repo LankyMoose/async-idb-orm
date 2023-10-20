@@ -8,7 +8,6 @@ import {
 } from "types"
 
 export enum FieldType {
-  None = "none",
   String = "string",
   Number = "number",
   BigInt = "bigint",
@@ -20,46 +19,26 @@ export enum FieldType {
 
 export class Field<T extends FieldType> {
   private _unique?: boolean
-  private _default?: ResolvedField<Field<T>>
 
   constructor(
     public type: T,
     public model?: IModel<ModelDefinition>,
     public field?: Field<FieldType>,
-    unique?: boolean,
-    defaultValue?: ResolvedField<Field<T>>
+    unique?: boolean
   ) {
     this._unique = unique
-    this._default = defaultValue
   }
 
   uniqueKey() {
-    return new UniqueField(
-      this.type,
-      this.model,
-      this.field,
-      true,
-      this._default as ResolvedField<Field<T>>
-    )
+    return new UniqueField(this.type, this.model, this.field, true)
   }
 
   optional() {
-    return new OptionalField(
-      this.type,
-      this.model,
-      this.field,
-      this._unique,
-      this._default as ResolvedField<Field<T>>
-    )
-  }
-
-  default(value: ResolvedField<Field<T>>) {
-    this._default = value
-    return this
+    return new OptionalField(this.type, this.model, this.field, this._unique)
   }
 
   static string() {
-    return new Field(FieldType.String)
+    return new StringField()
   }
 
   static number() {
@@ -84,6 +63,61 @@ export class Field<T extends FieldType> {
 
   static array<U extends IModel<ModelDefinition> | Field<FieldType>>(modelOrField: U) {
     return new ArrayField(modelOrField)
+  }
+}
+
+export class StringField extends Field<FieldType.String> {
+  private _default?: string
+  constructor() {
+    super(FieldType.String)
+  }
+  default(value: string): this {
+    this._default = value
+    return this
+  }
+}
+
+export class NumberField extends Field<FieldType.Number> {
+  private _default?: number
+  constructor() {
+    super(FieldType.Number)
+  }
+  default(value: number): this {
+    this._default = value
+    return this
+  }
+}
+
+export class BigIntField extends Field<FieldType.BigInt> {
+  private _default?: bigint
+  constructor() {
+    super(FieldType.BigInt)
+  }
+  default(value: bigint): this {
+    this._default = value
+    return this
+  }
+}
+
+export class BooleanField extends Field<FieldType.Boolean> {
+  private _default?: boolean
+  constructor() {
+    super(FieldType.Boolean)
+  }
+  default(value: boolean): this {
+    this._default = value
+    return this
+  }
+}
+
+export class DateField extends Field<FieldType.Date> {
+  private _default?: Date
+  constructor() {
+    super(FieldType.Date)
+  }
+  default(value: Date): this {
+    this._default = value
+    return this
   }
 }
 

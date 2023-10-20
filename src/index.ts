@@ -37,7 +37,6 @@ const key = await db.users.create({
       name: "Fluffy",
       age: 2,
       species: "cat",
-      asd: 123,
       alive: true,
     },
   ],

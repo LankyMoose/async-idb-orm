@@ -17,9 +17,7 @@ export type ResolvedModel<T extends ModelDefinition> = {
     | undefined
 }
 
-export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldType.None>
-  ? never
-  : T extends Field<FieldType.String>
+export type ResolvedField<T extends Field<FieldType>> = T extends Field<FieldType.String>
   ? string
   : T extends Field<FieldType.Number>
   ? number
