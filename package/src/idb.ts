@@ -28,14 +28,12 @@ class AsyncIDB {
     this.initialization = new Promise((resolve, reject) => {
       const request = indexedDB.open(this.name, this.version)
       request.onerror = (e) => reject(e)
-      request.onsuccess = () => {
-        this.db = request.result
-        this.initializeStores(this.db, ...Object.values(this.stores))
-        resolve(this)
-      }
       request.onupgradeneeded = () => {
         this.db = request.result
-        this.initializeStores(this.db, ...Object.values(this.stores))
+        this.initializeStores(this.db)
+      }
+      request.onsuccess = () => {
+        this.db = request.result
         resolve(this)
       }
     })
@@ -49,28 +47,27 @@ class AsyncIDB {
     return await this.init()
   }
 
-  initializeStores<T extends ModelDefinition>(db: IDBDatabase, ...stores: AsyncIDBStore<T>[]) {
-    for (const store of stores) {
-      if (db.objectStoreNames.contains(store.name)) {
-        store.store = db.transaction(store.name, "readwrite").objectStore(store.name)
+  initializeStores(db: IDBDatabase) {
+    for (const wrapper of Object.values(this.stores)) {
+      if (db.objectStoreNames.contains(wrapper.name)) {
         continue
       }
 
-      const primaryKeys = Object.keys(store.model.definition).filter(
-        (key) => store.model.definition[key].options.primaryKey
+      const primaryKeys = Object.keys(wrapper.model.definition).filter(
+        (key) => wrapper.model.definition[key].options.primaryKey
       )
 
-      store.store = db.createObjectStore(store.name, {
+      const store = db.createObjectStore(wrapper.name, {
         keyPath: primaryKeys.length === 1 ? primaryKeys[0] : primaryKeys,
         autoIncrement: primaryKeys.length === 1,
       })
 
-      const indexes = Object.entries(
-        store.model.definition as Record<string, Field<FieldType>>
-      ).filter(([_, val]) => val.options.index)
+      const indexes = Object.entries(wrapper.model.definition as ModelDefinition).filter(
+        ([_, val]) => val.options.index
+      )
 
       for (const [key, val] of indexes) {
-        store.store.createIndex(`idx_${key}_${store.name}_${this.name}`, key, {
+        store.createIndex(`idx_${key}_${wrapper.name}_${this.name}`, key, {
           unique: val.options.primaryKey,
         })
       }
@@ -81,12 +78,11 @@ class AsyncIDB {
 export class AsyncIDBStore<T extends ModelDefinition> {
   model: Model<T>
   name: string
-  store: IDBObjectStore | undefined = undefined
   db: AsyncIDB
   constructor(model: IModel<T>, db: AsyncIDB, name: string) {
     this.model = model as Model<T>
-    this.name = name
     this.db = db
+    this.name = name
   }
 
   private onBefore(evtName: "write" | "delete", data: ResolvedModel<T> | ModelRecord<T>) {
@@ -108,15 +104,15 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   private async getStore() {
-    if (this.store) return this.store
     await this.db.init()
-    return this.store as unknown as IDBObjectStore
+    if (!this.db.db) throw new Error("Database not initialized")
+    return this.db.db.transaction(this.name, "readwrite").objectStore(this.name)
   }
 
   async create(data: ResolvedModel<T>) {
     const record = this.model.applyDefaults(data)
     if (!this.onBefore("write", record)) return
-    const request = (this.store ?? (await this.getStore())).add(record)
+    const request = (await this.getStore()).add(record)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () =>
@@ -127,7 +123,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     })
   }
   async read(id: IDBValidKey) {
-    const request = (this.store ?? (await this.getStore())).get(id)
+    const request = (await this.getStore()).get(id)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
@@ -138,7 +134,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     const record = this.model.applyDefaults(data)
     if (!this.onBefore("write", record)) return
 
-    const request = (this.store ?? (await this.getStore())).put(record)
+    const request = (await this.getStore()).put(record)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () =>
@@ -152,7 +148,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     const data = await this.read(id)
     if (!this.onBefore("delete", data)) return
 
-    const request = (this.store ?? (await this.getStore())).delete(id)
+    const request = (await this.getStore()).delete(id)
     return new Promise<void>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -162,7 +158,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     })
   }
   async clear() {
-    const request = (this.store ?? (await this.getStore())).clear()
+    const request = (await this.getStore()).clear()
     return new Promise<void>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve()
@@ -170,7 +166,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   async find(predicate: (item: ModelRecord<T>) => boolean) {
-    const request = (this.store ?? (await this.getStore())).openCursor()
+    const request = (await this.getStore()).openCursor()
     return new Promise<ModelRecord<T> | void>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -188,7 +184,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   async findMany(predicate: (item: ModelRecord<T>) => boolean) {
-    const request = (this.store ?? (await this.getStore())).openCursor()
+    const request = (await this.getStore()).openCursor()
     return new Promise<ModelRecord<T>[]>((resolve, reject) => {
       const results: ModelRecord<T>[] = []
       request.onerror = (err) => reject(err)
@@ -211,7 +207,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   async count() {
-    const request = (this.store ?? (await this.getStore())).count()
+    const request = (await this.getStore()).count()
     return new Promise<number>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
@@ -227,7 +223,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     if (!fieldDef) throw new Error(`Unknown field ${field}`)
     if (!fieldDef.options.index) throw new Error(`Field ${field} is not indexed`)
 
-    const request = (this.store ?? (await this.getStore())).index(field).openCursor(null, "prev")
+    const request = (await this.getStore()).index(field).openCursor(null, "prev")
     return new Promise<IDBValidKey>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {

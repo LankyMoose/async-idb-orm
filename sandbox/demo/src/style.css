@@ -95,3 +95,9 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+
+.card-body {
+  display: flex;
+  gap: 1rem;
+}

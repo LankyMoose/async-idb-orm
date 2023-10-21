@@ -12,12 +12,11 @@ declare class AsyncIDB {
     constructor(name: string, models: ModelSchema, version?: number | undefined);
     init(): Promise<this>;
     restart(): Promise<this>;
-    initializeStores<T extends ModelDefinition>(db: IDBDatabase, ...stores: AsyncIDBStore<T>[]): void;
+    initializeStores(db: IDBDatabase): void;
 }
 export declare class AsyncIDBStore<T extends ModelDefinition> {
     model: Model<T>;
     name: string;
-    store: IDBObjectStore | undefined;
     db: AsyncIDB;
     constructor(model: IModel<T>, db: AsyncIDB, name: string);
     private onBefore;

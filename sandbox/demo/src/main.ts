@@ -17,18 +17,30 @@ const users = model({
   alive: Field.boolean(),
 })
 
-// users.on("beforewrite", console.log)
-
-// users.on("beforedelete", console.log)
-
-// users.on("delete", console.log)
-
-// users.on("write", console.log)
+function createUserCard(user: any) {
+  const card = document.createElement("div")
+  card.className = "card"
+  card.innerHTML = `
+    <div class="card-header">
+      <h2>${user.name}</h2>
+    </div>
+    <div class="card-body">
+      <p>Age: ${user.age}</p>
+      <p>Birthday: ${user.birthday}</p>
+      <p>Alive: ${user.alive}</p>
+      <p>Pets: ${user.pets.length}</p>
+    </div>
+  `
+  return card
+}
 
 const db = idb("demo", { users })
 
+const list = document.createElement("ul")
+document.body.appendChild(list)
+
 async function main() {
-  const user1 = await db.users.create({
+  await db.users.create({
     age: 25,
     pets: [
       {
@@ -39,21 +51,25 @@ async function main() {
     ],
     alive: true,
   })
-  const user2 = await db.users.create({
-    age: 25,
-    pets: [
-      {
-        name: "Fido",
-        age: 1,
-        species: "dog",
-      },
-    ],
-    alive: true,
-  })
-  console.log({
-    user1,
-    user2,
+
+  const users = await db.users.all()
+  list.innerHTML = ""
+  users.forEach((user) => {
+    const li = document.createElement("li")
+    li.appendChild(createUserCard(user))
+    list.appendChild(li)
   })
 }
 
-main()
+const btn = document.createElement("button")
+btn.textContent = "Click me"
+btn.onclick = main
+document.body.appendChild(btn)
+
+const clearBtn = document.createElement("button")
+clearBtn.textContent = "Clear"
+clearBtn.onclick = () => {
+  db.users.clear()
+  list.innerHTML = ""
+}
+document.body.appendChild(clearBtn)
