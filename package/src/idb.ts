@@ -103,7 +103,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     }
   }
 
-  private async getStore() {
+  private async createTx() {
     await this.db.init()
     if (!this.db.db) throw new Error("Database not initialized")
     return this.db.db.transaction(this.name, "readwrite").objectStore(this.name)
@@ -112,7 +112,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   async create(data: ResolvedModel<T>) {
     const record = this.model.applyDefaults(data)
     if (!this.onBefore("write", record)) return
-    const request = (await this.getStore()).add(record)
+    const request = (await this.createTx()).add(record)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () =>
@@ -123,7 +123,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     })
   }
   async read(id: IDBValidKey) {
-    const request = (await this.getStore()).get(id)
+    const request = (await this.createTx()).get(id)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
@@ -134,7 +134,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     const record = this.model.applyDefaults(data)
     if (!this.onBefore("write", record)) return
 
-    const request = (await this.getStore()).put(record)
+    const request = (await this.createTx()).put(record)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () =>
@@ -148,7 +148,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     const data = await this.read(id)
     if (!this.onBefore("delete", data)) return
 
-    const request = (await this.getStore()).delete(id)
+    const request = (await this.createTx()).delete(id)
     return new Promise<void>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -158,7 +158,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     })
   }
   async clear() {
-    const request = (await this.getStore()).clear()
+    const request = (await this.createTx()).clear()
     return new Promise<void>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve()
@@ -166,7 +166,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   async find(predicate: (item: ModelRecord<T>) => boolean) {
-    const request = (await this.getStore()).openCursor()
+    const request = (await this.createTx()).openCursor()
     return new Promise<ModelRecord<T> | void>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -184,7 +184,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   async findMany(predicate: (item: ModelRecord<T>) => boolean) {
-    const request = (await this.getStore()).openCursor()
+    const request = (await this.createTx()).openCursor()
     return new Promise<ModelRecord<T>[]>((resolve, reject) => {
       const results: ModelRecord<T>[] = []
       request.onerror = (err) => reject(err)
@@ -207,7 +207,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   async count() {
-    const request = (await this.getStore()).count()
+    const request = (await this.createTx()).count()
     return new Promise<number>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
@@ -223,7 +223,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     if (!fieldDef) throw new Error(`Unknown field ${field}`)
     if (!fieldDef.options.index) throw new Error(`Field ${field} is not indexed`)
 
-    const request = (await this.getStore()).index(field).openCursor(null, "prev")
+    const request = (await this.createTx()).index(field).openCursor(null, "prev")
     return new Promise<IDBValidKey>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {

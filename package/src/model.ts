@@ -100,7 +100,7 @@ export class ModelField<T extends Model<ModelDefinition>> extends Field<FieldTyp
 export class ArrayField<
   T extends IModel<ModelDefinition> | Field<FieldType>
 > extends Field<FieldType.Array> {
-  field?: T
+  field?: Field<FieldType>
   model?: IModel<ModelDefinition>
   constructor(modalOrField: T) {
     super(FieldType.Array, {})
@@ -174,9 +174,9 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
       }
 
       if (field instanceof ArrayField) {
-        // @ts-expect-error TODO: fix this
+        // @ts-expect-error TODO: improve this
         record[key as keyof ResolvedModel<T>] = (
-          record[key as keyof ResolvedModel<T>] as ResolvedModel<T>[]
+          (record[key as keyof ResolvedModel<T>] ?? []) as ResolvedModel<T>[]
         ).map((item) => {
           if (field.model) {
             return (field.model as Model<ModelDefinition>).applyDefaults(item)

@@ -18,12 +18,14 @@ export { idb, Field, model }
 //   alive: Field.boolean(),
 // })
 
-// users.on("beforewrite", (data) => {
+// users.on("beforewrite", (data, cancel) => {
 //   console.log("beforewrite", data.id)
+//   // cancel is a function we can call to abort the transaction
 // })
 
-// users.on("beforedelete", (data) => {
+// users.on("beforedelete", (data, cancel) => {
 //   console.log("beforedelete", data.id)
+//   // cancel is a function we can call to abort the transaction
 // })
 
 // users.on("delete", (data) => {
