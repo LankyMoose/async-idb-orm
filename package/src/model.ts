@@ -153,6 +153,24 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
         throw new Error(`Unknown event ${evtName}`)
     }
   }
+  off<U extends ModelEvent>(evtName: U, callback: ModelEventCallback<T, U>) {
+    switch (evtName) {
+      case "write":
+        this._callbacks.write = this._callbacks.write.filter((cb) => cb !== callback)
+        break
+      case "beforewrite":
+        this._callbacks.beforewrite = this._callbacks.beforewrite.filter((cb) => cb !== callback)
+        break
+      case "delete":
+        this._callbacks.delete = this._callbacks.delete.filter((cb) => cb !== callback)
+        break
+      case "beforedelete":
+        this._callbacks.beforedelete = this._callbacks.beforedelete.filter((cb) => cb !== callback)
+        break
+      default:
+        throw new Error(`Unknown event ${evtName}`)
+    }
+  }
 
   applyDefaults<U extends ResolvedModel<T>>(data: U): ResolvedModel<T> {
     const record = { ...data } as ResolvedModel<T>
