@@ -1,7 +1,7 @@
 import { model, Field, idb } from "async-idb-orm"
 
 export const users = model({
-  id: Field.number({ primaryKey: true }),
+  id: Field.number({ key: true }),
   name: Field.string({ default: "John Doe" }),
   age: Field.number({ index: true }),
   //birthday: Field.date({ default: () => new Date(), optional: true }),
@@ -17,14 +17,14 @@ export const users = model({
 })
 
 const pairs = model({
-  itemA: Field.string({ primaryKey: true }),
-  itemB: Field.string({ primaryKey: true }),
+  itemA: Field.string({ key: true }),
+  itemB: Field.string({ key: true }),
 })
 
 export const db = idb("demo", { users, pairs })
 
 //db.pairs.create({ itemA: "a", itemB: "b" })
-const pair = await db.pairs.find(["a", "b"])
+const pair = await db.pairs.find([1, "b"])
 console.log(pair)
 export type Pet = {
   id: string

@@ -127,7 +127,7 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
 
   getIDBValidKeys<U extends ModelRecord<T>>(item: U) {
     return Object.keys(this.definition)
-      .filter((field) => this.definition[field].options.primaryKey)
+      .filter((field) => this.definition[field].options.key)
       .map((field) => item[field as keyof U])
   }
 

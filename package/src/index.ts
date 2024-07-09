@@ -3,7 +3,7 @@ import { Field, model } from "./model.js"
 export { idb, Field, model }
 
 // const users = model({
-//   id: Field.number({ primaryKey: true }),
+//   id: Field.number({ key: true }),
 //   name: Field.string({ default: "John Doe" }),
 //   age: Field.number({ index: true }),
 //   birthday: Field.date({ default: () => new Date() }),

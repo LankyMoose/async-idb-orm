@@ -53,13 +53,13 @@ class AsyncIDB {
         continue
       }
 
-      const primaryKeys = Object.keys(wrapper.model.definition).filter(
-        (key) => wrapper.model.definition[key].options.primaryKey
+      const keys = Object.keys(wrapper.model.definition).filter(
+        (key) => wrapper.model.definition[key].options.key
       )
 
       const store = db.createObjectStore(wrapper.name, {
-        keyPath: primaryKeys.length === 1 ? primaryKeys[0] : primaryKeys,
-        autoIncrement: primaryKeys.length === 1,
+        keyPath: keys.length === 1 ? keys[0] : keys,
+        autoIncrement: keys.length === 1,
       })
 
       const indexes = Object.entries(wrapper.model.definition as ModelDefinition).filter(
@@ -68,7 +68,7 @@ class AsyncIDB {
 
       for (const [key, val] of indexes) {
         store.createIndex(`idx_${key}_${wrapper.name}_${this.name}`, key, {
-          unique: val.options.primaryKey,
+          unique: val.options.key,
         })
       }
     }

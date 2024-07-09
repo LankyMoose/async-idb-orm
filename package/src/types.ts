@@ -22,14 +22,14 @@ export type ModelSchema = Record<string, IModel<ModelDefinition>>
 type OptionalField = { options: { optional: true } }
 type UniqueField = { options: { unique: true } }
 type DefaultField = { options: { default: FieldDefault<unknown> } }
-type PrimaryKeyField = { options: { primaryKey: true } }
+type KeyField = { options: { key: true } }
 
 export type ResolvedModel<T extends ModelDefinition> = {
-  [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField | PrimaryKeyField
+  [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField | KeyField
     ? never
     : key]: ResolvedField<T[key]>
 } & {
-  [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField | PrimaryKeyField
+  [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField | KeyField
     ? key
     : never]?: ResolvedField<T[key]> | undefined
 }
@@ -42,7 +42,7 @@ export type ModelRecord<T extends ModelDefinition> = {
 /** */
 export interface FieldArgs<T> {
   /** Flags the field to be used as an IDBValidKey */
-  primaryKey?: boolean
+  key?: boolean
   /** Flags the field to be used as an index */
   index?: boolean
   /** Makes the field omittable in create() calls, and T | undefined in query results */
