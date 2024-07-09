@@ -1,4 +1,4 @@
-import { Model } from "./model.js"
+import { FieldType, Model } from "./model.js"
 import {
   ModelSchema,
   ModelDefinition,
@@ -15,6 +15,7 @@ export function idb<T extends ModelSchema>(
 ): {
   [key in keyof T]: AsyncIDBStore<T[key]["definition"]>
 } {
+  validateModelSchema(models)
   const db = new AsyncIDB(name, models, version)
 
   return Object.entries(models).reduce((acc, [key]) => {
@@ -23,6 +24,21 @@ export function idb<T extends ModelSchema>(
       [key]: db.stores[key],
     }
   }, {} as any)
+}
+
+function validateModelSchema(models: ModelSchema) {
+  for (const [modelName, model] of Object.entries(models)) {
+    let foundKey = false
+    for (const [_, field] of Object.entries(model.definition)) {
+      if (field.options.key) {
+        foundKey = true
+        break
+      }
+    }
+    if (!foundKey) {
+      throw new Error(`[async-idb-orm]: Model "${modelName}" must have a key field`)
+    }
+  }
 }
 
 //scan for multiple in range - https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getKey
@@ -78,7 +94,8 @@ class AsyncIDB {
 
       const store = db.createObjectStore(wrapper.name, {
         keyPath: keys.length === 1 ? keys[0] : keys,
-        autoIncrement: keys.length === 1,
+        autoIncrement:
+          keys.length === 1 && wrapper.model.definition[keys[0]].type === FieldType.Number,
       })
 
       const indexes = Object.entries(wrapper.model.definition as ModelDefinition).filter(
