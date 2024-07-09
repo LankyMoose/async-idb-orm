@@ -4,9 +4,12 @@ import {
   ModelDefinition,
   ModelEvent,
   ModelEventCallback,
-  ModelRecord,
   ResolvedModel,
 } from "./types.js"
+
+export function model<T extends ModelDefinition>(definition: T) {
+  return new Model(definition)
+}
 
 export enum FieldType {
   String = "string",
@@ -125,11 +128,11 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
     this.definition = definition
   }
 
-  getIDBValidKeys<U extends ModelRecord<T>>(item: U) {
-    return Object.keys(this.definition)
-      .filter((field) => this.definition[field].options.key)
-      .map((field) => item[field as keyof U])
-  }
+  // getIDBValidKeys<U extends ModelRecord<T>>(item: U) {
+  //   return Object.keys(this.definition)
+  //     .filter((field) => this.definition[field].options.key)
+  //     .map((field) => item[field as keyof U])
+  // }
 
   callbacks<T extends ModelEvent>(evtName: T) {
     return this._callbacks[evtName]
@@ -206,8 +209,4 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
     }
     return record
   }
-}
-
-export function model<T extends ModelDefinition>(definition: T) {
-  return new Model(definition)
 }

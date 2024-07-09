@@ -8,6 +8,25 @@ import {
   ModelRecord,
 } from "./types.js"
 
+export function idb<T extends ModelSchema>(
+  name: string,
+  models: T,
+  version: number = 1
+): {
+  [key in keyof T]: AsyncIDBStore<T[key]["definition"]>
+} {
+  const db = new AsyncIDB(name, models, version)
+
+  return Object.entries(models).reduce((acc, [key]) => {
+    return {
+      ...acc,
+      [key]: db.stores[key],
+    }
+  }, {} as any)
+}
+
+//scan for multiple in range - https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getKey
+
 class AsyncIDB {
   db: IDBDatabase | null = null
   stores: { [key: string]: AsyncIDBStore<ModelDefinition> } = {}
@@ -249,22 +268,3 @@ export class AsyncIDBStore<T extends ModelDefinition> {
       .objectStore(this.name)
   }
 }
-
-export function idb<T extends ModelSchema>(
-  name: string,
-  models: T,
-  version: number = 1
-): {
-  [key in keyof T]: AsyncIDBStore<T[key]["definition"]>
-} {
-  const db = new AsyncIDB(name, models, version)
-
-  return Object.entries(models).reduce((acc, [key]) => {
-    return {
-      ...acc,
-      [key]: db.stores[key],
-    }
-  }, {} as any)
-}
-
-//scan for multiple in range - https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getKey

@@ -34,11 +34,17 @@ export type ResolvedModel<T extends ModelDefinition> = {
     : never]?: ResolvedField<T[key]> | undefined
 }
 
-export type ModelRecord<T extends ModelDefinition> = {
-  [key in keyof T as T[key] extends OptionalField ? never : key]: RecordField<T[key]>
-} & {
-  [key in keyof T as T[key] extends OptionalField ? key : never]?: RecordField<T[key]> | undefined
-}
+type Prettify<T> = {
+  [K in keyof T]: T[K]
+} & {}
+
+export type ModelRecord<T extends ModelDefinition> = Prettify<
+  {
+    [key in keyof T as T[key] extends OptionalField ? never : key]: RecordField<T[key]>
+  } & {
+    [key in keyof T as T[key] extends OptionalField ? key : never]?: RecordField<T[key]> | undefined
+  }
+>
 /** */
 export interface FieldArgs<T> {
   /** Flags the field to be used as an IDBValidKey */

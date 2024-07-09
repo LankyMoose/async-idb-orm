@@ -16,16 +16,8 @@ export const users = model({
   alive: Field.boolean({ default: true }),
 })
 
-const pairs = model({
-  itemA: Field.string({ key: true }),
-  itemB: Field.string({ key: true }),
-})
+export const db = idb("demo", { users })
 
-export const db = idb("demo", { users, pairs })
-
-//db.pairs.create({ itemA: "a", itemB: "b" })
-const pair = await db.pairs.find([1, "b"])
-console.log(pair)
 export type Pet = {
   id: string
   name: string
