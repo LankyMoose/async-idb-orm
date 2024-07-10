@@ -112,19 +112,6 @@ export type RecordField<T extends Field<FieldType>> = T extends StringField<Fiel
     : never
   : never
 
-export type ModelEvent = "write" | "beforewrite" | "delete" | "beforedelete"
+export type ModelEvent = "write" | "delete" | "write|delete"
 
-export type NonCancellableModelEventCallback<T extends ModelDefinition> = (
-  data: ModelRecord<T>
-) => void
-
-export type CancellableModelEventCallback<T extends ModelDefinition> = (
-  data: ResolvedModel<T>,
-  cancel: () => void
-) => void
-
-export type ModelEventCallback<T extends ModelDefinition, U extends ModelEvent> = U extends
-  | "write"
-  | "delete"
-  ? NonCancellableModelEventCallback<T>
-  : CancellableModelEventCallback<T>
+export type ModelEventCallback<T extends ModelDefinition> = (data: ModelRecord<T>) => void

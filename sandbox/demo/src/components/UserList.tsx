@@ -6,17 +6,12 @@ export function UsersList() {
 
   useEffect(() => {
     const handleUsersChange = () => invalidate()
-    users.on("write", handleUsersChange)
-    users.on("delete", handleUsersChange)
-
-    return () => {
-      users.off("write", handleUsersChange)
-      users.off("delete", handleUsersChange)
-    }
+    users.on("write|delete", handleUsersChange)
+    return () => users.off("write|delete", handleUsersChange)
   }, [])
 
-  const addRandom = () => {
-    db.users.create({
+  const addRandom = async () => {
+    await db.users.create({
       name: "John Doe",
       age: 30,
       alive: true,

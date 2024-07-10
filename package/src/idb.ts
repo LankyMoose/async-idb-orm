@@ -4,8 +4,8 @@ import {
   ModelDefinition,
   ResolvedModel,
   IModel,
-  ModelEventCallback,
   ModelRecord,
+  ModelEvent,
 } from "./types.js"
 
 export function idb<T extends ModelSchema>(
@@ -121,20 +121,19 @@ export class AsyncIDBStore<T extends ModelDefinition> {
 
   async create(data: ResolvedModel<T>) {
     const record = this.model.applyDefaults(data)
-    if (!this.onBefore("write", record)) return
     const request = (await this.createTx()).add(record)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () =>
         this.read(request.result).then((data) => {
           this.onAfter("write", data)
+          this.onAfter("write|delete", data)
           resolve(data)
         })
     })
   }
   async update(data: ResolvedModel<T>) {
     const record = this.model.applyDefaults(data)
-    if (!this.onBefore("write", record)) return
 
     const request = (await this.createTx()).put(record)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
@@ -142,20 +141,21 @@ export class AsyncIDBStore<T extends ModelDefinition> {
       request.onsuccess = () =>
         this.read(request.result).then((data) => {
           this.onAfter("write", data)
+          this.onAfter("write|delete", data)
           resolve(data)
         })
     })
   }
   async delete(id: IDBValidKey) {
     const data = await this.read(id)
-    if (!this.onBefore("delete", data)) return
 
     const request = (await this.createTx()).delete(id)
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         this.onAfter("delete", data)
-        resolve()
+        this.onAfter("write|delete", data)
+        resolve(data)
       }
     })
   }
@@ -182,14 +182,11 @@ export class AsyncIDBStore<T extends ModelDefinition> {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
-        if (cursor) {
-          if (predicate(cursor.value)) {
-            results.push(cursor.value)
-          }
-          cursor.continue()
-        } else {
-          resolve(results)
+        if (!cursor) return resolve(results)
+        if (predicate(cursor.value)) {
+          results.push(cursor.value)
         }
+        cursor.continue()
       }
     })
   }
@@ -214,21 +211,18 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     return Promise.all(data.map((item) => this.update(item)))
   }
 
-  async max<U extends keyof T & string>(field: U) {
+  async max<U extends keyof T & string>(field: U): Promise<IDBValidKey | null> {
     const fieldDef = this.model.definition[field]
     if (!fieldDef) throw new Error(`Unknown field ${field}`)
     if (!fieldDef.options.index) throw new Error(`Field ${field} is not indexed`)
 
     const request = (await this.createTx()).index(field).openCursor(null, "prev")
-    return new Promise<IDBValidKey>((resolve, reject) => {
+    return new Promise<IDBValidKey | null>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
-        if (cursor) {
-          resolve(cursor.key)
-        } else {
-          resolve(0)
-        }
+        if (!cursor) return resolve(null)
+        resolve(cursor.key)
       }
     })
   }
@@ -247,31 +241,17 @@ export class AsyncIDBStore<T extends ModelDefinition> {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
-        if (cursor) {
-          if (predicate(cursor.value)) {
-            resolve(cursor.value)
-          }
-          cursor.continue()
-        } else {
-          resolve()
+        if (!cursor) return resolve()
+        if (predicate(cursor.value)) {
+          resolve(cursor.value)
         }
+        cursor.continue()
       }
     })
   }
 
-  private onBefore(evtName: "write" | "delete", data: ResolvedModel<T> | ModelRecord<T>) {
-    const callbacks = this.model.callbacks(`before${evtName}`)
-    let cancelled = false
-
-    for (const callback of callbacks) {
-      ;(callback as (data: any, cancel: () => void) => void)(data, () => (cancelled = true))
-      if (cancelled) return false
-    }
-    return true
-  }
-
-  private onAfter<U extends "write" | "delete">(evtName: U, data: ModelRecord<T>) {
-    const callbacks = this.model.callbacks(evtName) as ModelEventCallback<T, U>[]
+  private onAfter<U extends ModelEvent>(evtName: U, data: ModelRecord<T>) {
+    const callbacks = this.model.callbacks(evtName)
     for (const callback of callbacks) {
       callback(data)
     }
@@ -280,8 +260,6 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   private async createTx() {
     await this.db.init()
     if (!this.db.db) throw new Error("Database not initialized")
-    return this.db.db
-      .transaction(this.name, "readwrite", { durability: "strict" })
-      .objectStore(this.name)
+    return this.db.db.transaction(this.name, "readwrite").objectStore(this.name)
   }
 }
