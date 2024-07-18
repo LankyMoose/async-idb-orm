@@ -11,7 +11,7 @@ import {
   DateField,
 } from "./model.js"
 
-type Prettify<T> = {
+export type Prettify<T> = {
   [K in keyof T]: T[K]
 } & {}
 
@@ -27,23 +27,23 @@ type OptionalField = { options: { optional: true } }
 type UniqueField = { options: { unique: true } }
 type DefaultField = { options: { default: FieldDefault<unknown> } }
 type KeyField = { options: { key: true } }
-export type ResolvedModel<T extends ModelDefinition> = {
-  [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField | KeyField
-    ? never
-    : key]: ResolvedField<T[key]>
-} & {
-  [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField | KeyField
-    ? key
-    : never]?: ResolvedField<T[key]> | undefined
-}
-
-export type ModelRecord<T extends ModelDefinition> = Prettify<
+export type ResolvedModel<T extends ModelDefinition> = Prettify<
   {
-    [key in keyof T as T[key] extends OptionalField ? never : key]: RecordField<T[key]>
+    [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField
+      ? never
+      : key]: ResolvedField<T[key]>
   } & {
-    [key in keyof T as T[key] extends OptionalField ? key : never]?: RecordField<T[key]> | undefined
+    [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField ? key : never]?:
+      | ResolvedField<T[key]>
+      | undefined
   }
 >
+
+export type ModelRecord<T extends ModelDefinition> = Prettify<{
+  [key in keyof T]: T[key] extends OptionalField
+    ? RecordField<T[key]> | undefined
+    : RecordField<T[key]>
+}>
 
 export type InferRecord<T extends IModel<ModelDefinition>> = ModelRecord<T["definition"]>
 export type InferDto<T extends IModel<ModelDefinition>> = Prettify<
@@ -54,7 +54,7 @@ export type InferDto<T extends IModel<ModelDefinition>> = Prettify<
   } & {
     [key in keyof T["definition"] as T["definition"][key] extends OptionalField | KeyField
       ? key
-      : never]?: RecordField<T["definition"][key]> | undefined
+      : never]?: RecordField<T["definition"][key]>
   }
 >
 
