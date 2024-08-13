@@ -25,12 +25,17 @@ export abstract class Field<
   T extends FieldType,
   U extends FieldArgs<unknown> = FieldArgs<unknown>
 > {
+  $type = "Field"
   type: T
   options: U = {} as U
 
   constructor(type: T, args: U) {
     this.type = type
     this.options = args
+  }
+
+  static isField(thing: unknown): thing is Field<any> {
+    return typeof thing === "object" && thing !== null && "$type" in thing
   }
 
   static string<T extends FieldArgs<string>>(args: T = {} as T) {
@@ -53,7 +58,7 @@ export abstract class Field<
     return new DateField(args)
   }
 
-  static model<T extends Model<ModelDefinition>>(model: T) {
+  static model<T extends IModel<ModelDefinition>>(model: T) {
     return new ModelField(model)
   }
 
@@ -92,11 +97,16 @@ export class DateField<T extends FieldArgs<Date>> extends Field<FieldType.Date, 
   }
 }
 
-export class ModelField<T extends Model<ModelDefinition>> extends Field<FieldType.Model> {
-  model: T
+export class ModelField<T extends IModel<ModelDefinition>> extends Field<FieldType.Model> {
+  model: IModel<ModelDefinition>
+  __model = true
   constructor(model: T) {
     super(FieldType.Model, {})
     this.model = model
+  }
+
+  static isModelField(thing: unknown): thing is ModelField<any> {
+    return typeof thing === "object" && thing !== null && "__model" in thing
   }
 }
 
@@ -107,11 +117,15 @@ export class ArrayField<
   model?: IModel<ModelDefinition>
   constructor(modalOrField: T) {
     super(FieldType.Array, {})
-    if (modalOrField instanceof Field) {
+    if (Field.isField(modalOrField)) {
       this.field = modalOrField
     } else {
       this.model = modalOrField
     }
+  }
+
+  static isArrayField(thing: unknown): thing is ArrayField<any> {
+    return typeof thing === "object" && thing !== null && "$fieldType" in thing
   }
 }
 
@@ -156,20 +170,22 @@ export class Model<T extends ModelDefinition> implements IModel<T> {
         continue
       }
 
-      if (field instanceof ModelField) {
+      if (ModelField.isModelField(field)) {
+        // @ts-expect-error TODO: improve this
         record[key as keyof ResolvedModel<T>] = field.model.applyDefaults(
           record[key as keyof ResolvedModel<T>] as ResolvedModel<T>
         )
         continue
       }
 
-      if (field instanceof ArrayField) {
+      if (ArrayField.isArrayField(field)) {
         // @ts-expect-error TODO: improve this
         record[key as keyof ResolvedModel<T>] = (
           (record[key as keyof ResolvedModel<T>] ?? []) as ResolvedModel<T>[]
         ).map((item) => {
           if (field.model) {
-            return (field.model as Model<ModelDefinition>).applyDefaults(item)
+            // @ts-expect-error TODO: improve this
+            return (field.model as Model<ModelDefinition>).applyDefaults(item as ResolvedModel<T>)
           }
           return item
         })

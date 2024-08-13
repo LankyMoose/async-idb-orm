@@ -12,6 +12,7 @@ export const users = model({
   name: Field.string({ default: "John Doe" }),
   age: Field.number({ index: true }),
   //birthday: Field.date({ default: () => new Date(), optional: true }),
+  pet: Field.model(petModel),
   pets: Field.array(petModel),
   alive: Field.boolean({ optional: true }),
 })
@@ -28,6 +29,12 @@ const x = await db.users.update({
   name: "John Doe",
   age: 30,
   alive: true,
+  pet: {
+    id: "1",
+    name: "Fido",
+    age: 2,
+    species: "dog",
+  },
   pets: [],
 })
 
