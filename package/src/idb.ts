@@ -6,7 +6,11 @@ import {
   IModel,
   ModelRecord,
   ModelEvent,
-} from "./types.js"
+  Prettify,
+  RecordField,
+  OptionalField,
+  KeyField,
+} from "./types"
 
 export function idb<T extends ModelSchema>(
   name: string,
@@ -111,6 +115,14 @@ class AsyncIDB {
   }
 }
 
+type InferDto<T extends ModelDefinition> = Prettify<
+  {
+    [key in keyof T as T[key] extends OptionalField | KeyField ? never : key]: RecordField<T[key]>
+  } & {
+    [key in keyof T as T[key] extends OptionalField | KeyField ? key : never]?: RecordField<T[key]>
+  }
+>
+
 export class AsyncIDBStore<T extends ModelDefinition> {
   model: Model<T>
   name: string
@@ -119,8 +131,8 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     this.name = name
   }
 
-  async create(data: ResolvedModel<T>) {
-    const record = this.model.applyDefaults(data)
+  async create(data: InferDto<T>) {
+    const record = this.model.applyDefaults(data as any)
     const request = (await this.createTx()).add(record)
     return new Promise<ModelRecord<T>>((resolve, reject) => {
       request.onerror = (err) => reject(err)

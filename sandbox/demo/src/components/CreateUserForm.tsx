@@ -41,6 +41,7 @@ export function UserCreationForm() {
           id: crypto.randomUUID(),
           name: "",
           age: 0,
+          species: "dawg",
         },
       ],
     })

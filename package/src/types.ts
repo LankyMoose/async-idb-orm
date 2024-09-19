@@ -23,10 +23,10 @@ export type ModelDefinition = Record<string, Field<FieldType>>
 
 export type ModelSchema = Record<string, IModel<ModelDefinition>>
 
-type OptionalField = { options: { optional: true } }
-type UniqueField = { options: { unique: true } }
-type DefaultField = { options: { default: FieldDefault<unknown> } }
-type KeyField = { options: { key: true } }
+export type OptionalField = { options: { optional: true } }
+export type UniqueField = { options: { unique: true } }
+export type DefaultField = { options: { default: FieldDefault<unknown> } }
+export type KeyField = { options: { key: true } }
 export type ResolvedModel<T extends ModelDefinition> = Prettify<
   {
     [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField

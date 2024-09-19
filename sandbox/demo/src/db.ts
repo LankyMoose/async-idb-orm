@@ -12,7 +12,7 @@ export const users = model({
   name: Field.string({ default: "John Doe" }),
   age: Field.number({ index: true }),
   //birthday: Field.date({ default: () => new Date(), optional: true }),
-  pet: Field.model(petModel),
+  //pet: Field.model(petModel),
   pets: Field.array(petModel),
   alive: Field.boolean({ optional: true }),
 })
@@ -24,17 +24,18 @@ export type PetDto = InferDto<typeof petModel>
 
 export const db = idb("demo", { users })
 
+await db.users.create({
+  name: "John Doe",
+  age: 30,
+  alive: true,
+  pets: [],
+})
+
 const x = await db.users.update({
   id: 1,
   name: "John Doe",
   age: 30,
   alive: true,
-  pet: {
-    id: "1",
-    name: "Fido",
-    age: 2,
-    species: "dog",
-  },
   pets: [],
 })
 
