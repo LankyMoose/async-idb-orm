@@ -1,5 +1,5 @@
 import { FieldType, Model } from "./model.js"
-import {
+import type {
   ModelSchema,
   ModelDefinition,
   ResolvedModel,
@@ -10,6 +10,7 @@ import {
   RecordField,
   OptionalField,
   KeyField,
+  DefaultField,
 } from "./types"
 
 export function idb<T extends ModelSchema>(
@@ -117,9 +118,13 @@ class AsyncIDB {
 
 type InferDto<T extends ModelDefinition> = Prettify<
   {
-    [key in keyof T as T[key] extends OptionalField | KeyField ? never : key]: RecordField<T[key]>
+    [key in keyof T as T[key] extends DefaultField | OptionalField | KeyField
+      ? never
+      : key]: RecordField<T[key]>
   } & {
-    [key in keyof T as T[key] extends OptionalField | KeyField ? key : never]?: RecordField<T[key]>
+    [key in keyof T as T[key] extends DefaultField | OptionalField | KeyField
+      ? key
+      : never]?: RecordField<T[key]>
   }
 >
 
