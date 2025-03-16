@@ -1,4 +1,3 @@
-import { idb } from "./idb.js"
-import { Field, model } from "./model.js"
-export { idb, Field, model }
-export type { InferRecord, InferDto } from "./types"
+export * from "./collection.js"
+export * from "./idb.js"
+export type * from "./types.ts"

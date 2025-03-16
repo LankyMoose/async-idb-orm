@@ -1,29 +1,23 @@
-import { FieldType, Model } from "./model.js"
+//scan for multiple in range - https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getKey
+import { $COLLECTION_INTERNAL } from "constants"
 import type {
-  ModelSchema,
-  ModelDefinition,
-  ResolvedModel,
-  IModel,
-  ModelRecord,
-  ModelEvent,
-  Prettify,
-  RecordField,
-  OptionalField,
-  KeyField,
-  DefaultField,
+  Collection,
+  CollectionEvent,
+  InferCollectionDTO,
+  InferCollectionIndexes,
+  InferCollectionRecord,
+  Schema,
 } from "./types"
 
-export function idb<T extends ModelSchema>(
-  name: string,
-  models: T,
-  version: number = 1
-): {
-  [key in keyof T]: AsyncIDBStore<T[key]["definition"]>
-} {
-  validateModelSchema(models)
-  const db = new AsyncIDB(name, models, version)
+type AsyncIDBInstance<T extends Schema> = { [key in keyof T]: AsyncIDBStore<T[key]> }
 
-  return Object.entries(models).reduce((acc, [key]) => {
+export function idb<T extends Schema>(
+  name: string,
+  schema: T,
+  version: number = 1
+): AsyncIDBInstance<T> {
+  const db = new AsyncIDB(name, schema, version)
+  return Object.entries(schema).reduce((acc, [key]) => {
     return {
       ...acc,
       [key]: db.stores[key],
@@ -31,30 +25,14 @@ export function idb<T extends ModelSchema>(
   }, {} as any)
 }
 
-function validateModelSchema(models: ModelSchema) {
-  for (const [modelName, model] of Object.entries(models)) {
-    let foundKey = false
-    for (const [_, field] of Object.entries(model.definition)) {
-      if (field.options.key) {
-        foundKey = true
-        break
-      }
-    }
-    if (!foundKey) {
-      throw new Error(`[async-idb-orm]: Model "${modelName}" must have a key field`)
-    }
-  }
-}
-
-//scan for multiple in range - https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getKey
 type DBTaskFn = (db: IDBDatabase) => any
 class AsyncIDB {
   db: IDBDatabase | null = null
-  stores: { [key: string]: AsyncIDBStore<ModelDefinition> } = {}
+  stores: { [key: string]: AsyncIDBStore<any> } = {}
   taskQueue: DBTaskFn[] = []
-  constructor(private name: string, private models: ModelSchema, private version: number) {
-    for (const [key, model] of Object.entries(this.models)) {
-      this.stores[key] = new AsyncIDBStore(this, model, key)
+  constructor(private name: string, private schema: Schema, private version: number) {
+    for (const [key, collection] of Object.entries(this.schema)) {
+      this.stores[key] = new AsyncIDBStore(this, collection, key)
     }
     const request = indexedDB.open(this.name, this.version)
     request.onerror = (e) => {
@@ -66,8 +44,7 @@ class AsyncIDB {
       throw e
     }
     request.onupgradeneeded = () => {
-      this.db = request.result
-      this.initializeStores(this.db)
+      this.initializeStores(request.result)
     }
     request.onsuccess = () => {
       this.db = request.result
@@ -91,90 +68,91 @@ class AsyncIDB {
         continue
       }
 
-      const keys = Object.keys(store.model.definition).filter(
-        (key) => store.model.definition[key].options.key
-      )
+      const { keyPath, autoIncrement, indexes } = AsyncIDBStore.getCollectionConfig(store)
 
       const objectStore = db.createObjectStore(store.name, {
-        keyPath: keys.length === 1 ? keys[0] : keys,
-        autoIncrement:
-          keys.length === 1 && store.model.definition[keys[0]].type === FieldType.Number,
+        keyPath,
+        autoIncrement,
       })
 
-      const indexes = Object.entries(store.model.definition as ModelDefinition).filter(
-        ([_, val]) => val.options.index
-      )
-
-      for (const [key, val] of indexes) {
-        objectStore.createIndex(`idx_${key}_${store.name}_${this.name}`, key, {
-          unique: val.options.key,
-        })
+      for (const { name, keyPath, options } of indexes) {
+        objectStore.createIndex(name, keyPath, options)
       }
     }
   }
 }
 
-type InferDto<T extends ModelDefinition> = Prettify<
-  {
-    [key in keyof T as T[key] extends DefaultField | OptionalField | KeyField
-      ? never
-      : key]: RecordField<T[key]>
-  } & {
-    [key in keyof T as T[key] extends DefaultField | OptionalField | KeyField
-      ? key
-      : never]?: RecordField<T[key]>
-  }
->
-
-export class AsyncIDBStore<T extends ModelDefinition> {
-  model: Model<T>
+export class AsyncIDBStore<T extends Collection<any, any>> {
   name: string
-  constructor(private db: AsyncIDB, model: IModel<T>, name: string) {
-    this.model = model as Model<T>
+  #eventListeners: { [key: string]: ((data: InferCollectionRecord<T>) => void)[] } = {}
+  constructor(private db: AsyncIDB, private collection: T, name: string) {
     this.name = name
   }
 
-  create(data: InferDto<T>) {
-    const record = this.model.applyDefaults(data as any)
-    return this.queueTask<ModelRecord<T>>((ctx, resolve, reject) => {
+  static getCollectionConfig(store: AsyncIDBStore<any>) {
+    return store.collection[$COLLECTION_INTERNAL]
+  }
+
+  addEventListener(event: CollectionEvent, listener: (data: InferCollectionRecord<T>) => void) {
+    const listeners = (this.#eventListeners[event] ??= [])
+    listeners.push(listener)
+  }
+  removeEventListener(event: CollectionEvent, listener: (data: InferCollectionRecord<T>) => void) {
+    const listeners = this.#eventListeners[event]
+    if (!listeners) return
+    this.#eventListeners[event] = listeners.filter((l) => l !== listener)
+  }
+
+  create(data: InferCollectionDTO<T>) {
+    const createTransformer = this.getConfig().transform.create
+    const record = createTransformer ? createTransformer(data) : data
+
+    return this.queueTask<InferCollectionRecord<T>>((ctx, resolve, reject) => {
       const request = ctx.objectStore.add(record)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         this.read(request.result).then((data) => {
-          this.onAfter("write", data!)
-          this.onAfter("write|delete", data!)
-          resolve(data!)
-        })
-      }
-    })
-  }
-  update(data: ResolvedModel<T>) {
-    const record = this.model.applyDefaults(data as any)
-    return this.queueTask<ModelRecord<T>>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.put(record)
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        this.read(request.result).then((data) => {
-          this.onAfter("write", data!)
-          this.onAfter("write|delete", data!)
+          this.emit("write", data!)
+          this.emit("write|delete", data!)
           resolve(data!)
         })
       }
     })
   }
 
-  async delete(predicateOrIdbKey: IDBValidKey | ((item: ModelRecord<T>) => boolean)) {
+  async update(data: InferCollectionRecord<T>) {
+    const keys = this.getObjectIDBValidKey(data)
+    if (keys === null) throw new Error(`[async-idb-orm]: No key found on record`)
+
+    const prev = await this.read(keys)
+    const updateTransformer = this.getConfig().transform.update
+    const record = updateTransformer ? updateTransformer(prev, data) : data
+
+    return this.queueTask<InferCollectionRecord<T>>((ctx, resolve, reject) => {
+      const request = ctx.objectStore.put(record)
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        this.read(request.result).then((data) => {
+          this.emit("write", data!)
+          this.emit("write|delete", data!)
+          resolve(data!)
+        })
+      }
+    })
+  }
+
+  async delete(predicateOrIdbKey: IDBValidKey | ((item: InferCollectionRecord<T>) => boolean)) {
     if (predicateOrIdbKey instanceof Function) {
       return this.deleteByPredicate(predicateOrIdbKey)
     }
     const data = await this.read(predicateOrIdbKey)
     if (data === null) return null
-    return this.queueTask<ModelRecord<T> | null>((ctx, resolve, reject) => {
+    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.delete(predicateOrIdbKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.onAfter("delete", data)
-        this.onAfter("write|delete", data)
+        this.emit("delete", data)
+        this.emit("write|delete", data)
         resolve(data)
       }
     })
@@ -188,17 +166,17 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     })
   }
 
-  find(predicateOrIdbKey: IDBValidKey | ((item: ModelRecord<T>) => boolean)) {
+  find(predicateOrIdbKey: IDBValidKey | ((item: InferCollectionRecord<T>) => boolean)) {
     if (predicateOrIdbKey instanceof Function) {
       return this.findByPredicate(predicateOrIdbKey)
     }
     return this.read(predicateOrIdbKey)
   }
 
-  findMany(predicate: (item: ModelRecord<T>) => boolean, limit = Infinity) {
-    return this.queueTask<ModelRecord<T>[]>((ctx, resolve, reject) => {
+  findMany(predicate: (item: InferCollectionRecord<T>) => boolean, limit = Infinity) {
+    return this.queueTask<InferCollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
-      const results: ModelRecord<T>[] = []
+      const results: InferCollectionRecord<T>[] = []
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
@@ -213,7 +191,7 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   all() {
-    return this.queueTask<ModelRecord<T>[]>((ctx, resolve, reject) => {
+    return this.queueTask<InferCollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.getAll()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
@@ -228,31 +206,28 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     })
   }
 
-  async upsert(...data: ResolvedModel<T>[]) {
+  async upsert(...data: InferCollectionRecord<T>[]) {
     return Promise.all(data.map((item) => this.update(item)))
   }
 
-  max<U extends keyof T & string>(field: U): Promise<IDBValidKey | null> {
+  max(field: InferCollectionIndexes<T>[number]["keyPath"]): Promise<IDBValidKey | null> {
     return this.firstByKeyDirection(field, "prev")
   }
 
-  min<U extends keyof T & string>(field: U): Promise<IDBValidKey | null> {
+  min(field: InferCollectionIndexes<T>[number]["keyPath"]): Promise<IDBValidKey | null> {
     return this.firstByKeyDirection(field, "next")
   }
 
-  private firstByKeyDirection<U extends keyof T & string>(
-    field: U,
+  private firstByKeyDirection(
+    field: InferCollectionIndexes<T>[number]["keyPath"],
     direction: "next" | "prev"
   ): Promise<IDBValidKey | null> {
-    const fieldDef = this.model.definition[field]
-    if (!fieldDef) throw new Error(`Unknown field ${field}`)
-    if (!fieldDef.options.index && !fieldDef.options.key)
-      throw new Error(`Field ${field} is not indexed`)
+    const idxName = this.getConfig().indexes.find((idx) => idx.keyPath === field)?.name
+    if (!idxName) throw new Error(`[async-idb-orm]: No index found on field ${String(field)}`)
 
     return this.queueTask<IDBValidKey | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore
-        .index(`idx_${field}_${this.name}_${ctx.db.name}`)
-        .openCursor(null, direction)
+      const request = ctx.objectStore.index(idxName).openCursor(null, direction)
+
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
@@ -263,15 +238,15 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   }
 
   private read(id: IDBValidKey) {
-    return this.queueTask<ModelRecord<T> | null>((ctx, resolve, reject) => {
+    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.get(id)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result ?? null)
     })
   }
 
-  private deleteByPredicate(predicate: (item: ModelRecord<T>) => boolean) {
-    return this.queueTask<ModelRecord<T> | null>((ctx, resolve, reject) => {
+  private deleteByPredicate(predicate: (item: InferCollectionRecord<T>) => boolean) {
+    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -285,8 +260,8 @@ export class AsyncIDBStore<T extends ModelDefinition> {
       }
     })
   }
-  private findByPredicate(predicate: (item: ModelRecord<T>) => boolean) {
-    return this.queueTask<ModelRecord<T> | null>((ctx, resolve, reject) => {
+  private findByPredicate(predicate: (item: InferCollectionRecord<T>) => boolean) {
+    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -300,10 +275,10 @@ export class AsyncIDBStore<T extends ModelDefinition> {
     })
   }
 
-  private onAfter<U extends ModelEvent>(evtName: U, data: ModelRecord<T>) {
-    const callbacks = this.model.callbacks(evtName)
-    for (const callback of callbacks) {
-      callback(data)
+  private emit<U extends CollectionEvent>(evtName: U, data: InferCollectionRecord<T>) {
+    const listeners = this.#eventListeners[evtName] ?? []
+    for (const listener of listeners) {
+      listener(data)
     }
   }
 
@@ -320,5 +295,22 @@ export class AsyncIDBStore<T extends ModelDefinition> {
         reqHandler({ db, objectStore }, resolve, reject)
       })
     })
+  }
+
+  private getConfig() {
+    return this.collection[$COLLECTION_INTERNAL]
+  }
+
+  private getObjectIDBValidKey(data: InferCollectionRecord<T>): null | IDBValidKey {
+    type CollectionKey = keyof InferCollectionRecord<T>
+    const keyPath = this.getConfig().keyPath as CollectionKey | CollectionKey[] | null | undefined
+
+    return keyPath instanceof Array
+      ? keyPath.reduce<IDBValidKey[]>((acc, key) => {
+          return [...acc, data[key]]
+        }, [])
+      : keyPath
+      ? data[keyPath]
+      : null
   }
 }

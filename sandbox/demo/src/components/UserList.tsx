@@ -1,5 +1,5 @@
 import { useAsync, useEffect } from "kaioken"
-import { Pet, User, db, users } from "../db"
+import { Pet, User, db } from "../db"
 
 export function UsersList() {
   const { data, loading, error, invalidate } = useAsync(() => db.users.all(), [])
@@ -9,8 +9,8 @@ export function UsersList() {
 
   useEffect(() => {
     const handleUsersChange = () => invalidate()
-    users.on("write|delete", handleUsersChange)
-    return () => users.off("write|delete", handleUsersChange)
+    db.users.addEventListener("write|delete", handleUsersChange)
+    return () => db.users.removeEventListener("write|delete", handleUsersChange)
   }, [])
 
   const addRandom = async () => {

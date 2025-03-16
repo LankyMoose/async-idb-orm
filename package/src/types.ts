@@ -1,122 +1,43 @@
-import { AsyncIDBStore } from "idb.js"
-import {
-  Field,
-  ArrayField,
-  FieldType,
-  ModelField,
-  StringField,
-  NumberField,
-  BigIntField,
-  BooleanField,
-  DateField,
-} from "./model.js"
+import type { $COLLECTION_INTERNAL } from "./constants"
+export type CollectionEvent = "write" | "delete" | "write|delete"
 
-export type Prettify<T> = {
-  [K in keyof T]: T[K]
-} & {}
-
-export interface IModel<T extends ModelDefinition> {
-  definition: T
+export type Schema = {
+  [key: string]: Collection<any, any>
 }
 
-export type ModelDefinition = Record<string, Field<FieldType>>
+export type Collection<RecordType extends Record<string, any>, DTO extends Record<string, any>> = {
+  [$COLLECTION_INTERNAL]: CollectionConfig<RecordType, DTO>
+}
+export type CollectionEventCallback<T extends Collection<any, any>> = (
+  data: InferCollectionRecord<T>
+) => void
 
-export type ModelSchema = Record<string, IModel<ModelDefinition>>
+export type InferCollectionRecord<T extends Collection<any, any>> =
+  T[typeof $COLLECTION_INTERNAL] extends CollectionConfig<infer RecordType, any>
+    ? RecordType
+    : never
 
-export type OptionalField = { options: { optional: true } }
-export type UniqueField = { options: { unique: true } }
-export type DefaultField = { options: { default: FieldDefault<unknown> } }
-export type KeyField = { options: { key: true } }
-export type ResolvedModel<T extends ModelDefinition> = Prettify<
-  {
-    [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField
-      ? never
-      : key]: ResolvedField<T[key]>
-  } & {
-    [key in keyof T as T[key] extends OptionalField | UniqueField | DefaultField ? key : never]?:
-      | ResolvedField<T[key]>
-      | undefined
-  }
->
+export type InferCollectionIndexes<T extends Collection<any, any>> =
+  T[typeof $COLLECTION_INTERNAL]["indexes"]
 
-export type ModelRecord<T extends ModelDefinition> = Prettify<{
-  [key in keyof T]: T[key] extends OptionalField
-    ? RecordField<T[key]> | undefined
-    : RecordField<T[key]>
-}>
-// export type ModelRecord<T extends ModelDefinition> = Prettify<{
-//   [key in keyof T]: T[key] extends OptionalField
-//     ? RecordField<T[key]> | undefined
-//     : RecordField<T[key]>
-// }>
+export type InferCollectionDTO<T extends Collection<any, any>> =
+  T[typeof $COLLECTION_INTERNAL] extends CollectionConfig<any, infer DTO> ? DTO : any
 
-export type InferRecord<T extends IModel<ModelDefinition>> = ModelRecord<T["definition"]>
-export type InferDto<T extends IModel<ModelDefinition>> = Prettify<
-  {
-    [key in keyof T["definition"] as T["definition"][key] extends OptionalField | KeyField
-      ? never
-      : key]: RecordField<T["definition"][key]>
-  } & {
-    [key in keyof T["definition"] as T["definition"][key] extends OptionalField | KeyField
-      ? key
-      : never]?: RecordField<T["definition"][key]>
-  }
->
-
-/** */
-export interface FieldArgs<T> {
-  /** Flags the field to be used as an IDBValidKey */
-  key?: boolean
-  /** Flags the field to be used as an index */
-  index?: boolean
-  /** Makes the field omittable in create() calls, and T | undefined in query results */
-  optional?: boolean
-  /** Sets a default value for the field */
-  default?: FieldDefault<T>
+type CollectionIndex<T extends Record<string, any>> = {
+  name: string
+  keyPath: keyof T | Iterable<keyof T>
+  options?: IDBIndexParameters
 }
 
-export type FieldDefault<T> = T | (() => T)
-
-export type ResolvedField<T extends Field<FieldType>> = T extends StringField<FieldArgs<string>>
-  ? string
-  : T extends NumberField<FieldArgs<number>>
-  ? number
-  : T extends BigIntField<FieldArgs<bigint>>
-  ? bigint
-  : T extends BooleanField<FieldArgs<boolean>>
-  ? boolean
-  : T extends DateField<FieldArgs<Date>>
-  ? Date
-  : T extends ModelField<infer U>
-  ? ResolvedModel<U["definition"]>
-  : T extends ArrayField<infer U>
-  ? U extends Field<FieldType>
-    ? ResolvedField<U>[]
-    : U extends IModel<ModelDefinition>
-    ? ResolvedModel<U["definition"]>[]
-    : never
-  : never
-
-export type RecordField<T extends Field<FieldType>> = T extends StringField<FieldArgs<string>>
-  ? string
-  : T extends NumberField<FieldArgs<number>>
-  ? number
-  : T extends BigIntField<FieldArgs<bigint>>
-  ? bigint
-  : T extends BooleanField<FieldArgs<boolean>>
-  ? boolean
-  : T extends DateField<FieldArgs<Date>>
-  ? Date
-  : T extends ModelField<infer U>
-  ? ModelRecord<U["definition"]>
-  : T extends ArrayField<infer U>
-  ? U extends Field<FieldType>
-    ? RecordField<U>[]
-    : U extends IModel<ModelDefinition>
-    ? ModelRecord<U["definition"]>[]
-    : never
-  : never
-
-export type ModelEvent = "write" | "delete" | "write|delete"
-
-export type ModelEventCallback<T extends ModelDefinition> = (data: ModelRecord<T>) => void
+export type CollectionConfig<
+  RecordType extends Record<string, any>,
+  DTO extends Record<string, any> = any
+> = {
+  keyPath?: keyof RecordType | (keyof RecordType)[] | null | undefined
+  autoIncrement?: boolean
+  indexes: CollectionIndex<RecordType>[]
+  transform: {
+    create?: (data: DTO) => RecordType
+    update?: (record: RecordType, data: RecordType) => RecordType
+  }
+}

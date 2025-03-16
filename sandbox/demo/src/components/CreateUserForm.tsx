@@ -1,7 +1,7 @@
 import { useState } from "kaioken"
-import { UserDto, db } from "../db"
+import { UserDTO, db } from "../db"
 
-const createUserDto = (): UserDto => ({
+const createUserDto = (): UserDTO => ({
   name: "",
   age: 0,
   alive: true,

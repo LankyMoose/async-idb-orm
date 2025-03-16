@@ -1,34 +1,44 @@
-import { model, Field, idb, type InferRecord, type InferDto } from "async-idb-orm"
+import { idb, collection } from "async-idb-orm"
 
-const petModel = model({
-  id: Field.string(),
-  name: Field.string({ default: () => "bob" }),
-  age: Field.number(),
-  species: Field.string({ optional: true }),
+export type Pet = {
+  id: string
+  name: string
+  age: number
+  species?: string
+}
+export type User = {
+  id: string
+  name: string
+  age: number
+  pets: Pet[]
+  alive?: boolean
+}
+export type UserDTO = {
+  name?: string
+  age: number
+  pets: Pet[]
+  alive?: boolean
+}
+
+const users = collection<User, UserDTO>({
+  keyPath: "id", // string | string[] | null | undefined
+  autoIncrement: true,
+  indexes: [
+    {
+      keyPath: "id",
+      name: "idx_id",
+      options: { unique: true },
+    },
+    {
+      keyPath: "age",
+      name: "idx_age",
+      //options: { unique: false },
+    },
+  ],
+  transform: {
+    create: (dto) => ({ ...dto, id: crypto.randomUUID(), name: dto.name ?? "John Doe" }),
+    update: (record, dto) => ({ ...record, ...dto }),
+  },
 })
 
-export const users = model({
-  id: Field.number({ key: true }),
-  name: Field.string({ default: "John Doe" }),
-  age: Field.number({ index: true }),
-  //birthday: Field.date({ default: () => new Date(), optional: true }),
-  //pet: Field.model(petModel),
-  pets: Field.array(Field.model(petModel)),
-  alive: Field.boolean({ optional: true }),
-})
-
-const boards = model({
-  id: Field.number({ key: true }),
-  uuid: Field.string({ default: () => crypto.randomUUID() as string }),
-  title: Field.string({ default: () => "" }),
-  created: Field.date({ default: () => new Date() }),
-  archived: Field.boolean({ default: () => false }),
-  order: Field.number({ default: () => 0 }),
-})
-
-export type User = InferRecord<typeof users>
-export type UserDto = InferDto<typeof users>
-export type Pet = InferRecord<typeof petModel>
-export type PetDto = InferDto<typeof petModel>
-
-export const db = idb("demo", { users, boards }, 2)
+export const db = idb("users", { users }, 1)
