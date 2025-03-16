@@ -1,0 +1,15 @@
+{
+  "name": "async-idb-orm",
+  "version": "3.0.0",
+  "description": "Async wrapper for IndexedDB with an ORM-like API",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\"",
+    "build": "rm -rf dist && tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

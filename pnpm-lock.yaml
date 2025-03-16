@@ -6,13 +6,13 @@ settings:
 
 importers:
 
-  package: {}
+  packages/lib: {}
 
   sandbox/demo:
     dependencies:
       async-idb-orm:
         specifier: workspace:^
-        version: link:../../package
+        version: link:../../packages/lib
       kaioken:
         specifier: ^0.32.1
         version: 0.32.1

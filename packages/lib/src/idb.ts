@@ -1,5 +1,5 @@
 //scan for multiple in range - https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getKey
-import { $COLLECTION_INTERNAL } from "constants"
+import { $COLLECTION_INTERNAL } from "./constants.js"
 import type {
   Collection,
   CollectionEvent,
