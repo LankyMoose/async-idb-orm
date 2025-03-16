@@ -11,8 +11,8 @@ export function App() {
         <Link to="/create">Create User</Link>
       </nav>
       <Router>
-        <Route path="/" element={UsersList} />
-        <Route path="/create" element={UserCreationForm} />
+        <Route path="/" element={<UsersList />} />
+        <Route path="/create" element={<UserCreationForm />} />
       </Router>
     </main>
   )

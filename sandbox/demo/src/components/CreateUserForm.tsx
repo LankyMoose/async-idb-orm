@@ -12,7 +12,10 @@ export function UserCreationForm() {
   const [userDto, setUserDto] = useState(createUserDto)
   const handleChange = (evt: Event & { target: HTMLInputElement }) => {
     const { name, value } = evt.target
-    setUserDto({ ...userDto, [name]: name === "birthday" ? new Date(value) : value })
+    setUserDto({
+      ...userDto,
+      [name]: name === "birthday" ? new Date(value) : name === "age" ? Number(value) : value,
+    })
   }
 
   const handleSubmit = async (evt: Event) => {
@@ -49,8 +52,14 @@ export function UserCreationForm() {
   return (
     <form style="display:flex; flex-direction:column; gap:.5rem;" onsubmit={handleSubmit}>
       <h3>Create User</h3>
-      <input type="text" name="name" value={userDto.name} oninput={handleChange} />
-      <input type="number" name="age" value={userDto.age} oninput={handleChange} />
+      <div>
+        <label htmlFor="name">Name</label>
+        <input type="text" name="name" id="name" value={userDto.name} oninput={handleChange} />
+      </div>
+      <div>
+        <label htmlFor="age">Age</label>
+        <input type="number" name="age" id="age" value={userDto.age} oninput={handleChange} />
+      </div>
       <div>
         <ul>
           {userDto.pets.map((pet) => (

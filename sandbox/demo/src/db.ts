@@ -32,21 +32,3 @@ export type Pet = InferRecord<typeof petModel>
 export type PetDto = InferDto<typeof petModel>
 
 export const db = idb("demo", { users, boards }, 2)
-debugger
-await db.users.create({
-  name: "John Doe",
-  age: 30,
-  alive: true,
-  pets: [],
-})
-
-const x = await db.users.update({
-  id: 1,
-  name: "John Doe",
-  age: 30,
-  alive: true,
-  pets: [],
-})
-
-const y = await db.users.delete(1)
-const board = await db.boards.create({})

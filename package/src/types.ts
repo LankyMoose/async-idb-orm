@@ -39,11 +39,11 @@ export type ResolvedModel<T extends ModelDefinition> = Prettify<
   }
 >
 
-export type ModelRecord<T extends ModelDefinition> = {
+export type ModelRecord<T extends ModelDefinition> = Prettify<{
   [key in keyof T]: T[key] extends OptionalField
     ? RecordField<T[key]> | undefined
     : RecordField<T[key]>
-}
+}>
 // export type ModelRecord<T extends ModelDefinition> = Prettify<{
 //   [key in keyof T]: T[key] extends OptionalField
 //     ? RecordField<T[key]> | undefined

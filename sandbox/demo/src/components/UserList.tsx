@@ -2,7 +2,10 @@ import { useAsync, useEffect } from "kaioken"
 import { Pet, User, db, users } from "../db"
 
 export function UsersList() {
-  const { data, loading, error, invalidate } = useAsync<User[]>(() => db.users.all(), [])
+  const { data, loading, error, invalidate } = useAsync(() => db.users.all(), [])
+  const { data: maxAge, error: maxAgeErr } = useAsync(() => db.users.max("age"), [])
+  const { data: minAge, error: minAgeErr } = useAsync(() => db.users.min("age"), [])
+  console.log("maxAge", { maxAge, maxAgeErr }, "minAge", { minAge, minAgeErr })
 
   useEffect(() => {
     const handleUsersChange = () => invalidate()

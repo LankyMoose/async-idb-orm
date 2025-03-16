@@ -88,27 +88,27 @@ class AsyncIDB {
   }
 
   initializeStores(db: IDBDatabase) {
-    for (const wrapper of Object.values(this.stores)) {
-      if (db.objectStoreNames.contains(wrapper.name)) {
+    for (const store of Object.values(this.stores)) {
+      if (db.objectStoreNames.contains(store.name)) {
         continue
       }
 
-      const keys = Object.keys(wrapper.model.definition).filter(
-        (key) => wrapper.model.definition[key].options.key
+      const keys = Object.keys(store.model.definition).filter(
+        (key) => store.model.definition[key].options.key
       )
 
-      const store = db.createObjectStore(wrapper.name, {
+      const objectStore = db.createObjectStore(store.name, {
         keyPath: keys.length === 1 ? keys[0] : keys,
         autoIncrement:
-          keys.length === 1 && wrapper.model.definition[keys[0]].type === FieldType.Number,
+          keys.length === 1 && store.model.definition[keys[0]].type === FieldType.Number,
       })
 
-      const indexes = Object.entries(wrapper.model.definition as ModelDefinition).filter(
+      const indexes = Object.entries(store.model.definition as ModelDefinition).filter(
         ([_, val]) => val.options.index
       )
 
       for (const [key, val] of indexes) {
-        store.createIndex(`idx_${key}_${wrapper.name}_${this.name}`, key, {
+        objectStore.createIndex(`idx_${key}_${store.name}_${this.name}`, key, {
           unique: val.options.key,
         })
       }
@@ -231,9 +231,31 @@ export class AsyncIDBStore<T extends ModelDefinition> {
   async max<U extends keyof T & string>(field: U): Promise<IDBValidKey | null> {
     const fieldDef = this.model.definition[field]
     if (!fieldDef) throw new Error(`Unknown field ${field}`)
-    if (!fieldDef.options.index) throw new Error(`Field ${field} is not indexed`)
+    if (!fieldDef.options.index && !fieldDef.options.key)
+      throw new Error(`Field ${field} is not indexed`)
 
-    const request = (await this.createTx()).index(field).openCursor(null, "prev")
+    const request = (await this.createTx())
+      .index(`idx_${field}_${this.name}_${this.db.db!.name}`)
+      .openCursor(null, "prev")
+    return new Promise<IDBValidKey | null>((resolve, reject) => {
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) return resolve(null)
+        resolve(cursor.key)
+      }
+    })
+  }
+
+  async min<U extends keyof T & string>(field: U): Promise<IDBValidKey | null> {
+    const fieldDef = this.model.definition[field]
+    if (!fieldDef) throw new Error(`Unknown field ${field}`)
+    if (!fieldDef.options.index && !fieldDef.options.key)
+      throw new Error(`Field ${field} is not indexed`)
+
+    const request = (await this.createTx())
+      .index(`idx_${field}_${this.name}_${this.db.db!.name}`)
+      .openCursor(null, "next")
     return new Promise<IDBValidKey | null>((resolve, reject) => {
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
