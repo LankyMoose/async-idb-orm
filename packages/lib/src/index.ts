@@ -1,3 +1,3 @@
-export * from "./collection.js"
+export { Collection } from "./collection.js"
 export * from "./idb.js"
-export type * from "./types.ts"
+export type * from "./types"

@@ -1,43 +1,69 @@
-import type { $COLLECTION_INTERNAL } from "./constants"
-export type CollectionEvent = "write" | "delete" | "write|delete"
+import type { Collection, $COLLECTION_INTERNAL } from "./collection"
 
 export type Schema = {
-  [key: string]: Collection<any, any>
+  [key: string]: Collection<any, any, any, any>
 }
 
-export type Collection<RecordType extends Record<string, any>, DTO extends Record<string, any>> = {
-  [$COLLECTION_INTERNAL]: CollectionConfig<RecordType, DTO>
-}
+export type CollectionEvent = "write" | "delete" | "write|delete"
 export type CollectionEventCallback<T extends Collection<any, any>> = (
   data: InferCollectionRecord<T>
 ) => void
 
-export type InferCollectionRecord<T extends Collection<any, any>> =
-  T[typeof $COLLECTION_INTERNAL] extends CollectionConfig<infer RecordType, any>
-    ? RecordType
-    : never
+export type InferCollectionIndexName<T extends Collection<any, any, any, any>> =
+  T["indexes"][number]["name"]
 
-export type InferCollectionIndexes<T extends Collection<any, any>> =
-  T[typeof $COLLECTION_INTERNAL]["indexes"]
+export type InferCollectionRecord<T extends Collection<any, any, any, any>> =
+  T[typeof $COLLECTION_INTERNAL]["record"]
 
-export type InferCollectionDTO<T extends Collection<any, any>> =
-  T[typeof $COLLECTION_INTERNAL] extends CollectionConfig<any, infer DTO> ? DTO : any
+export type InferCollectionDTO<T extends Collection<any, any, any, any>> =
+  T[typeof $COLLECTION_INTERNAL]["dto"]
 
-type CollectionIndex<T extends Record<string, any>> = {
+export type InferCollectionKeyPathType<
+  T extends Collection<any, any, any, any>,
+  KeyPath = T["keyPath"]
+> = KeyPath extends keyof T[typeof $COLLECTION_INTERNAL]["record"]
+  ? T[typeof $COLLECTION_INTERNAL]["record"][KeyPath]
+  : // handle case where keyPath is an array
+  KeyPath extends NonEmptyArray
+  ? ObjectValues<T[typeof $COLLECTION_INTERNAL]["record"], KeyPath>
+  : never
+
+type InferIndexKeyPathByName<
+  Indexes extends CollectionIndex<any>[],
+  IndexName extends Indexes[number]["name"]
+> = Extract<Indexes[number], { name: IndexName }>["keyPath"]
+
+export type InferCollectionIndexIDBValidKey<
+  T extends Collection<any, any, any, any>,
+  Name extends InferCollectionIndexName<T>
+> = InferCollectionKeyPathType<T, InferIndexKeyPathByName<T["indexes"], Name>>
+
+export type CollectionIndex<RecordType extends Record<string, any>> = {
   name: string
-  keyPath: keyof T | Iterable<keyof T>
+  keyPath: RecordKeyPath<RecordType>
   options?: IDBIndexParameters
 }
 
-export type CollectionConfig<
+export type RecordKeyPath<
   RecordType extends Record<string, any>,
-  DTO extends Record<string, any> = any
-> = {
-  keyPath?: keyof RecordType | (keyof RecordType)[] | null | undefined
-  autoIncrement?: boolean
-  indexes: CollectionIndex<RecordType>[]
-  transform: {
-    create?: (data: DTO) => RecordType
-    update?: (record: RecordType, data: RecordType) => RecordType
-  }
-}
+  ValidKeys = keyof RecordType & string
+> = (Partial<UniqueArray<ValidKeys>> & NonEmptyArray & NonNullable<ValidKeys[]>) | ValidKeys
+
+type NonEmptyArray = [any, ...any[]]
+
+export type UniqueArray<T> = [T] extends [never]
+  ? []
+  : [T] | [T] extends [infer U]
+  ? U extends U
+    ? [U, ...UniqueArray<Exclude<T, U>>]
+    : never
+  : never
+
+type ObjectValues<T extends Record<string, any>, K extends Array<keyof T>> = K extends [
+  infer First,
+  ...infer Rest
+]
+  ? First extends keyof T
+    ? [T[First], ...ObjectValues<T, Rest extends Array<keyof T> ? Rest : []>]
+    : []
+  : []

@@ -1,21 +1,20 @@
 //scan for multiple in range - https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getKey
-import { $COLLECTION_INTERNAL } from "./constants.js"
 import type {
-  Collection,
   CollectionEvent,
+  CollectionIndex,
+  InferCollectionKeyPathType,
   InferCollectionDTO,
-  InferCollectionIndexes,
   InferCollectionRecord,
   Schema,
+  InferCollectionIndexName,
+  InferCollectionIndexIDBValidKey,
 } from "./types"
+
+import { Collection, $COLLECTION_INTERNAL } from "./collection.js"
 
 type AsyncIDBInstance<T extends Schema> = { [key in keyof T]: AsyncIDBStore<T[key]> }
 
-export function idb<T extends Schema>(
-  name: string,
-  schema: T,
-  version: number = 1
-): AsyncIDBInstance<T> {
+export function idb<T extends Schema>(name: string, schema: T, version = 1): AsyncIDBInstance<T> {
   const db = new AsyncIDB(name, schema, version)
   return Object.entries(schema).reduce((acc, [key]) => {
     return {
@@ -30,14 +29,19 @@ class AsyncIDB {
   db: IDBDatabase | null = null
   stores: { [key: string]: AsyncIDBStore<any> } = {}
   taskQueue: DBTaskFn[] = []
-  constructor(private name: string, private schema: Schema, private version: number) {
-    for (const [key, collection] of Object.entries(this.schema)) {
+  constructor(private name: string, schema: Schema, version: number) {
+    const errors = new Set<string>()
+    for (const [key, collection] of Object.entries(schema)) {
+      Collection.validate(collection, key, errors)
       this.stores[key] = new AsyncIDBStore(this, collection, key)
     }
-    const request = indexedDB.open(this.name, this.version)
+    if (errors.size) {
+      throw new Error(Array.from(errors).join("\n"))
+    }
+    const request = indexedDB.open(this.name, version)
     request.onerror = (e) => {
       setTimeout(() => {
-        throw new Error(
+        console.error(
           `[async-idb-orm]: The above error thrown while opening database "${this.name}"`
         )
       })
@@ -65,15 +69,15 @@ class AsyncIDB {
   initializeStores(db: IDBDatabase) {
     for (const store of Object.values(this.stores)) {
       if (db.objectStoreNames.contains(store.name)) {
-        continue
+        const collection = AsyncIDBStore.getCollection(store)
+        if (collection.creationConflictMode !== "delete") {
+          continue
+        }
+        db.deleteObjectStore(store.name)
       }
 
-      const { keyPath, autoIncrement, indexes } = AsyncIDBStore.getCollectionConfig(store)
-
-      const objectStore = db.createObjectStore(store.name, {
-        keyPath,
-        autoIncrement,
-      })
+      const { keyPath, indexes } = AsyncIDBStore.getCollection(store)
+      const objectStore = db.createObjectStore(store.name, { keyPath })
 
       for (const { name, keyPath, options } of indexes) {
         objectStore.createIndex(name, keyPath, options)
@@ -82,15 +86,18 @@ class AsyncIDB {
   }
 }
 
-export class AsyncIDBStore<T extends Collection<any, any>> {
+export class AsyncIDBStore<
+  T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
+> {
   name: string
-  #eventListeners: { [key: string]: ((data: InferCollectionRecord<T>) => void)[] } = {}
+  #eventListeners: { [key: string]: ((data: T[typeof $COLLECTION_INTERNAL]["record"]) => void)[] } =
+    {}
   constructor(private db: AsyncIDB, private collection: T, name: string) {
     this.name = name
   }
 
-  static getCollectionConfig(store: AsyncIDBStore<any>) {
-    return store.collection[$COLLECTION_INTERNAL]
+  static getCollection(store: AsyncIDBStore<any>) {
+    return store.collection as Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
   }
 
   addEventListener(event: CollectionEvent, listener: (data: InferCollectionRecord<T>) => void) {
@@ -104,14 +111,14 @@ export class AsyncIDBStore<T extends Collection<any, any>> {
   }
 
   create(data: InferCollectionDTO<T>) {
-    const createTransformer = this.getConfig().transform.create
-    const record = createTransformer ? createTransformer(data) : data
+    const transformer = this.collection.transformers?.create
+    const record = transformer ? transformer(data) : data
 
     return this.queueTask<InferCollectionRecord<T>>((ctx, resolve, reject) => {
       const request = ctx.objectStore.add(record)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.read(request.result).then((data) => {
+        this.read(request.result as InferCollectionKeyPathType<T>).then((data) => {
           this.emit("write", data!)
           this.emit("write|delete", data!)
           resolve(data!)
@@ -121,34 +128,32 @@ export class AsyncIDBStore<T extends Collection<any, any>> {
   }
 
   async update(data: InferCollectionRecord<T>) {
-    const keys = this.getObjectIDBValidKey(data)
-    if (keys === null) throw new Error(`[async-idb-orm]: No key found on record`)
-
-    const prev = await this.read(keys)
-    const updateTransformer = this.getConfig().transform.update
-    const record = updateTransformer ? updateTransformer(prev, data) : data
-
-    return this.queueTask<InferCollectionRecord<T>>((ctx, resolve, reject) => {
+    const transformer = this.collection.transformers?.update
+    const record = transformer ? transformer(data) : data
+    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.put(record)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.read(request.result).then((data) => {
-          this.emit("write", data!)
-          this.emit("write|delete", data!)
-          resolve(data!)
+        this.read(request.result as InferCollectionKeyPathType<T>).then((data) => {
+          if (data === null) return resolve(null)
+          this.emit("write", data)
+          this.emit("write|delete", data)
+          resolve(data)
         })
       }
     })
   }
 
-  async delete(predicateOrIdbKey: IDBValidKey | ((item: InferCollectionRecord<T>) => boolean)) {
-    if (predicateOrIdbKey instanceof Function) {
-      return this.deleteByPredicate(predicateOrIdbKey)
+  async delete(
+    predicateOrKey: InferCollectionKeyPathType<T> | ((item: InferCollectionRecord<T>) => boolean)
+  ) {
+    if (predicateOrKey instanceof Function) {
+      return this.deleteByPredicate(predicateOrKey)
     }
-    const data = await this.read(predicateOrIdbKey)
+    const data = await this.read(predicateOrKey)
     if (data === null) return null
     return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.delete(predicateOrIdbKey)
+      const request = ctx.objectStore.delete(predicateOrKey as IDBValidKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         this.emit("delete", data)
@@ -166,11 +171,13 @@ export class AsyncIDBStore<T extends Collection<any, any>> {
     })
   }
 
-  find(predicateOrIdbKey: IDBValidKey | ((item: InferCollectionRecord<T>) => boolean)) {
-    if (predicateOrIdbKey instanceof Function) {
-      return this.findByPredicate(predicateOrIdbKey)
+  find(
+    predicateOrKey: InferCollectionKeyPathType<T> | ((item: InferCollectionRecord<T>) => boolean)
+  ) {
+    if (predicateOrKey instanceof Function) {
+      return this.findByPredicate(predicateOrKey)
     }
-    return this.read(predicateOrIdbKey)
+    return this.read(predicateOrKey)
   }
 
   findMany(predicate: (item: InferCollectionRecord<T>) => boolean, limit = Infinity) {
@@ -210,36 +217,37 @@ export class AsyncIDBStore<T extends Collection<any, any>> {
     return Promise.all(data.map((item) => this.update(item)))
   }
 
-  max(field: InferCollectionIndexes<T>[number]["keyPath"]): Promise<IDBValidKey | null> {
-    return this.firstByKeyDirection(field, "prev")
+  max<U extends InferCollectionIndexName<T>>(
+    name: U
+  ): Promise<InferCollectionIndexIDBValidKey<T, U> | null> {
+    return this.firstByKeyDirection(name, "prev")
   }
 
-  min(field: InferCollectionIndexes<T>[number]["keyPath"]): Promise<IDBValidKey | null> {
-    return this.firstByKeyDirection(field, "next")
+  min<U extends InferCollectionIndexName<T>>(
+    name: U
+  ): Promise<InferCollectionIndexIDBValidKey<T, U> | null> {
+    return this.firstByKeyDirection(name, "next")
   }
 
-  private firstByKeyDirection(
-    field: InferCollectionIndexes<T>[number]["keyPath"],
+  private firstByKeyDirection<U extends InferCollectionIndexName<T>>(
+    name: U,
     direction: "next" | "prev"
-  ): Promise<IDBValidKey | null> {
-    const idxName = this.getConfig().indexes.find((idx) => idx.keyPath === field)?.name
-    if (!idxName) throw new Error(`[async-idb-orm]: No index found on field ${String(field)}`)
-
-    return this.queueTask<IDBValidKey | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.index(idxName).openCursor(null, direction)
+  ): Promise<InferCollectionIndexIDBValidKey<T, U> | null> {
+    return this.queueTask<InferCollectionIndexIDBValidKey<T, U> | null>((ctx, resolve, reject) => {
+      const request = ctx.objectStore.index(name).openCursor(null, direction)
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        resolve(cursor.key)
+        resolve(cursor.key as InferCollectionIndexIDBValidKey<T, U>)
       }
     })
   }
 
-  private read(id: IDBValidKey) {
+  private read(id: InferCollectionKeyPathType<T>) {
     return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.get(id)
+      const request = ctx.objectStore.get(id as IDBValidKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result ?? null)
     })
@@ -295,22 +303,5 @@ export class AsyncIDBStore<T extends Collection<any, any>> {
         reqHandler({ db, objectStore }, resolve, reject)
       })
     })
-  }
-
-  private getConfig() {
-    return this.collection[$COLLECTION_INTERNAL]
-  }
-
-  private getObjectIDBValidKey(data: InferCollectionRecord<T>): null | IDBValidKey {
-    type CollectionKey = keyof InferCollectionRecord<T>
-    const keyPath = this.getConfig().keyPath as CollectionKey | CollectionKey[] | null | undefined
-
-    return keyPath instanceof Array
-      ? keyPath.reduce<IDBValidKey[]>((acc, key) => {
-          return [...acc, data[key]]
-        }, [])
-      : keyPath
-      ? data[keyPath]
-      : null
   }
 }

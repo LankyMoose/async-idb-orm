@@ -4,51 +4,46 @@
 
 ### Usage
 
+_db.ts_
+
 ```ts
-import { idb, collection } from "async-idb-orm"
+import { Collection } from "async-idb-orm"
 
-export type Pet = {
+type User = {
   id: string
   name: string
   age: number
-  species?: string
+  createdAt: number
+  updatedAt?: number
 }
-export type User = {
-  id: string
+type UserDTO = {
   name: string
   age: number
-  pets: Pet[]
-  alive?: boolean
-}
-export type UserDTO = {
-  name?: string
-  age: number
-  pets: Pet[]
-  alive?: boolean
 }
 
-const users = collection<User, UserDTO>({
-  keyPath: "id", // string | string[] | null | undefined
-  autoIncrement: true,
-  indexes: [
-    {
-      keyPath: "age",
-      name: "idx_users_age",
-      options: { unique: false },
-    },
-  ],
-  transform: {
+const users = Collection.create<User, UserDTO>()
+  .withKeyPath("id")
+  .withIndexes([
+    { keyPath: "age", name: "idx_age" },
+    { keyPath: ["name", "age"], name: "idx_name_id" },
+  ])
+  .withTransformers({
     create: (dto) => ({
       ...dto,
       id: crypto.randomUUID(),
-      name: dto.name ?? "John Doe",
+      createdAt: Date.now(),
     }),
-    update: (record, dto) => ({ ...record, ...dto }),
-  },
-})
+    update: (updatedRecord) => ({
+      ...updatedRecord,
+      updatedAt: Date.now(),
+    }),
+  })
 
 export const db = idb("users", { users }, 1)
+```
 
+```ts
+import { db } from "$/db"
 const user = await db.users.create({ name: "John Doe", age: 69, pets: [] })
 const user2 = await db.users.create({ name: "Jane Doe", age: 42, pets: [] })
 console.log(user, user2)

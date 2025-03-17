@@ -1,22 +1,17 @@
 import { useAsync, useEffect } from "kaioken"
-import { Pet, User, db } from "../db"
+import { Pet, User, db } from "$/db"
 
 export function UsersList() {
-  const { data, loading, error, invalidate } = useAsync(() => db.users.all(), [])
-  const { data: maxAge, error: maxAgeErr } = useAsync(() => db.users.max("age"), [])
-  const { data: minAge, error: minAgeErr } = useAsync(() => db.users.min("age"), [])
-  console.log("maxAge", { maxAge, maxAgeErr }, "minAge", { minAge, minAgeErr })
-
+  const { data: users, loading, error, invalidate } = useAsync(() => db.users.all(), [])
   useEffect(() => {
-    const handleUsersChange = () => invalidate()
-    db.users.addEventListener("write|delete", handleUsersChange)
-    return () => db.users.removeEventListener("write|delete", handleUsersChange)
-  }, [])
+    db.users.addEventListener("write|delete", invalidate)
+    return () => db.users.removeEventListener("write|delete", invalidate)
+  }, [invalidate])
 
   const addRandom = async () => {
     await db.users.create({
       name: "John Doe",
-      age: 30,
+      age: Math.floor(Math.random() * 100),
       alive: true,
       pets: [],
     })
@@ -32,7 +27,7 @@ export function UsersList() {
   return (
     <div>
       <h3>Users</h3>
-      {data.map((user) => (
+      {users.map((user) => (
         <UserCard key={user.id} user={user} />
       ))}
       <button onclick={addRandom}>Add random user</button>

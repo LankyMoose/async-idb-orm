@@ -7,5 +7,10 @@ export default defineConfig({
       "top-level-await": true, //browsers can handle top-level-await features
     },
   },
+  resolve: {
+    alias: {
+      $: "/src",
+    },
+  },
   plugins: [kaiokenPlugin()],
 })

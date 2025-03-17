@@ -1,5 +1,5 @@
 import { useState } from "kaioken"
-import { UserDTO, db } from "../db"
+import { UserDTO, db } from "$/db"
 
 const createUserDto = (): UserDTO => ({
   name: "",
@@ -8,7 +8,7 @@ const createUserDto = (): UserDTO => ({
   pets: [],
 })
 
-export function UserCreationForm() {
+export function CreateUserForm() {
   const [userDto, setUserDto] = useState(createUserDto)
   const handleChange = (evt: Event & { target: HTMLInputElement }) => {
     const { name, value } = evt.target
