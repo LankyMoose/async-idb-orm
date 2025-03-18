@@ -1,36 +1,36 @@
-import { useAsync, useEffect } from "kaioken"
+import { useCallback } from "kaioken"
 import { Pet, User, db } from "$/db"
+import { useLiveCollection } from "$/hooks/useCollection"
 
 export function UsersList() {
-  const { data: users, loading, error, invalidate } = useAsync(() => db.users.all(), [])
-  useEffect(() => {
-    db.users.addEventListener("write|delete", invalidate)
-    return () => db.users.removeEventListener("write|delete", invalidate)
-  }, [invalidate])
+  const { data: users, loading, error } = useLiveCollection("users")
 
-  const addRandom = async () => {
+  const addRandom = useCallback(async () => {
     await db.users.create({
       name: "John Doe",
       age: Math.floor(Math.random() * 100),
       alive: true,
       pets: [],
     })
-  }
-
-  if (loading) {
-    return <p>Loading...</p>
-  }
-  if (error) {
-    return <p>{error.message}</p>
-  }
+  }, [])
 
   return (
     <div>
-      <h3>Users</h3>
-      {users.map((user) => (
-        <UserCard key={user.id} user={user} />
-      ))}
-      <button onclick={addRandom}>Add random user</button>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap: 2rem;">
+        <h3>Users</h3>
+        <button onclick={addRandom}>Add random user</button>
+      </div>
+      {loading ? (
+        <p>Loading...</p>
+      ) : error ? (
+        <p>{error.message}</p>
+      ) : (
+        <>
+          {users.map((user) => (
+            <UserCard key={user.id} user={user} />
+          ))}
+        </>
+      )}
     </div>
   )
 }

@@ -1,64 +1,58 @@
-import { Link, Router, Route } from "kaioken"
+import { Link, Router, Route, navigate } from "kaioken"
 import { UsersList, CreateUserForm } from "./components/users"
 import { TodosList, CreateTodoForm } from "./components/todos"
 
 function Home() {
-  return (
-    <div>
-      <h1>Async IDB Demo</h1>
-    </div>
-  )
-}
-
-function Nav() {
-  return (
-    <nav>
-      <Link to="/">Home</Link>
-      <Link to="/users">Users</Link>
-      <Link to="/todos">Todos</Link>
-    </nav>
-  )
-}
-
-function UsersPage() {
-  return (
-    <>
-      <nav>
-        <Link to="/">List Users</Link>
-        <Link to="/create">Create User</Link>
-      </nav>
-      <Router>
-        <Route path="/" element={<UsersList />} />
-        <Route path="/create" element={<CreateUserForm />} />
-      </Router>
-    </>
-  )
-}
-
-function TodosPage() {
-  return (
-    <>
-      <nav>
-        <Link to="/">List Todos</Link>
-        <Link to="/create">Create Todo</Link>
-      </nav>
-      <Router>
-        <Route path="/" element={<TodosList />} />
-        <Route path="/create" element={<CreateTodoForm />} />
-      </Router>
-    </>
-  )
+  return navigate("/users")
 }
 
 export function App() {
   return (
     <main>
-      <Nav />
+      <nav>
+        <Link to="/users">Users</Link>
+        <Link to="/todos">Todos</Link>
+      </nav>
       <Router>
         <Route path="/" element={<Home />} />
-        <Route path="/users" element={<UsersPage />} fallthrough />
-        <Route path="/todos" element={<TodosPage />} fallthrough />
+        <Route
+          path="/users"
+          element={<CollectionPage name="users" list={UsersList} create={CreateUserForm} />}
+          fallthrough
+        />
+        <Route
+          path="/todos"
+          element={<CollectionPage name="todos" list={TodosList} create={CreateTodoForm} />}
+          fallthrough
+        />
       </Router>
     </main>
+  )
+}
+
+function CollectionPage({
+  name,
+  list: List,
+  create: Create,
+}: {
+  name: string
+  list: () => JSX.Element
+  create: () => JSX.Element
+}) {
+  return (
+    <>
+      <nav>
+        <Link to="/" inherit>
+          List {name}
+        </Link>
+        <Link to="/create" inherit>
+          Create {name}
+        </Link>
+      </nav>
+      <Router>
+        <Route path="/" element={<List />} />
+        <Route path="/create" element={<Create />} />
+      </Router>
+    </>
   )
 }

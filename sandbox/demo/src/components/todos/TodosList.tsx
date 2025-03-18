@@ -1,27 +1,23 @@
-import { useAsync, useEffect } from "kaioken"
 import { Todo, db } from "$/db"
+import { useLiveCollection } from "$/hooks/useCollection"
 
 export function TodosList() {
-  const { data, loading, error, invalidate } = useAsync(() => db.todos.all(), [])
-
-  useEffect(() => {
-    db.todos.addEventListener("write|delete", invalidate)
-    return () => db.todos.removeEventListener("write|delete", invalidate)
-  }, [invalidate])
-
-  if (loading) {
-    return <p>Loading...</p>
-  }
-  if (error) {
-    return <p>{error.message}</p>
-  }
+  const { data: todos, loading, error } = useLiveCollection("todos")
 
   return (
     <div>
       <h3>Todos</h3>
-      {data.map((todo) => (
-        <TodoCard key={todo.id} todo={todo} />
-      ))}
+      {loading ? (
+        <p>Loading...</p>
+      ) : error ? (
+        <p>{error.message}</p>
+      ) : (
+        <>
+          {todos.map((todo) => (
+            <TodoCard key={todo.id} todo={todo} />
+          ))}
+        </>
+      )}
     </div>
   )
 }
