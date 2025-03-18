@@ -2,20 +2,29 @@
 import type {
   CollectionEvent,
   CollectionIndex,
-  InferCollectionKeyPathType,
-  InferCollectionDTO,
-  InferCollectionRecord,
+  CollectionKeyPathType,
+  CollectionDTO,
+  CollectionRecord,
   Schema,
-  InferCollectionIndexName,
-  InferCollectionIndexIDBValidKey,
+  CollectionIndexName,
+  CollectionIndexIDBValidKey,
 } from "./types"
 
 import { Collection, $COLLECTION_INTERNAL } from "./collection.js"
 
 type AsyncIDBInstance<T extends Schema> = { [key in keyof T]: AsyncIDBStore<T[key]> }
 
-export function idb<T extends Schema>(name: string, schema: T, version = 1): AsyncIDBInstance<T> {
-  const db = new AsyncIDB(name, schema, version)
+export function idb<T extends Schema>(
+  name: string,
+  schema: T,
+  version = 1,
+  /**
+   * @description Error handler for AsyncIDB instance creation.
+   * @default {console.error}
+   */
+  errHandler: (error: any) => void = console.error
+): AsyncIDBInstance<T> {
+  const db = new AsyncIDB(name, schema, version, errHandler)
   return Object.entries(schema).reduce((acc, [key]) => {
     return {
       ...acc,
@@ -29,34 +38,31 @@ class AsyncIDB {
   db: IDBDatabase | null = null
   stores: { [key: string]: AsyncIDBStore<any> } = {}
   taskQueue: DBTaskFn[] = []
-  constructor(private name: string, schema: Schema, version: number) {
-    const errors = new Set<string>()
+  constructor(
+    private name: string,
+    schema: Schema,
+    version: number,
+    errHandler: (error: any) => void
+  ) {
+    const errors: string[] = []
     for (const [key, collection] of Object.entries(schema)) {
       Collection.validate(collection, key, errors)
       this.stores[key] = new AsyncIDBStore(this, collection, key)
     }
-    if (errors.size) {
-      throw new Error(Array.from(errors).join("\n"))
+    if (errors.length) {
+      errHandler(
+        new Error("[async-idb-orm]: Collection validation:\n" + Array.from(errors).join("\n"))
+      )
     }
     const request = indexedDB.open(this.name, version)
-    request.onerror = (e) => {
-      setTimeout(() => {
-        console.error(
-          `[async-idb-orm]: The above error thrown while opening database "${this.name}"`
-        )
-      })
-      throw e
-    }
-    request.onupgradeneeded = () => {
-      this.initializeStores(request.result)
-    }
+    request.onerror = errHandler
+    request.onupgradeneeded = () => this.initializeStores(request.result)
     request.onsuccess = () => {
       this.db = request.result
       while (this.taskQueue.length) {
         this.taskQueue.shift()!(this.db)
       }
     }
-    window.addEventListener("beforeunload", () => this.db?.close())
   }
 
   queueTask(taskFn: DBTaskFn) {
@@ -100,25 +106,25 @@ export class AsyncIDBStore<
     return store.collection as Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
   }
 
-  addEventListener(event: CollectionEvent, listener: (data: InferCollectionRecord<T>) => void) {
+  addEventListener(event: CollectionEvent, listener: (data: CollectionRecord<T>) => void) {
     const listeners = (this.#eventListeners[event] ??= [])
     listeners.push(listener)
   }
-  removeEventListener(event: CollectionEvent, listener: (data: InferCollectionRecord<T>) => void) {
+  removeEventListener(event: CollectionEvent, listener: (data: CollectionRecord<T>) => void) {
     const listeners = this.#eventListeners[event]
     if (!listeners) return
     this.#eventListeners[event] = listeners.filter((l) => l !== listener)
   }
 
-  create(data: InferCollectionDTO<T>) {
+  create(data: CollectionDTO<T>) {
     const transformer = this.collection.transformers?.create
     const record = transformer ? transformer(data) : data
 
-    return this.queueTask<InferCollectionRecord<T>>((ctx, resolve, reject) => {
+    return this.queueTask<CollectionRecord<T>>((ctx, resolve, reject) => {
       const request = ctx.objectStore.add(record)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.read(request.result as InferCollectionKeyPathType<T>).then((data) => {
+        this.read(request.result as CollectionKeyPathType<T>).then((data) => {
           this.emit("write", data!)
           this.emit("write|delete", data!)
           resolve(data!)
@@ -127,14 +133,14 @@ export class AsyncIDBStore<
     })
   }
 
-  async update(data: InferCollectionRecord<T>) {
+  async update(data: CollectionRecord<T>) {
     const transformer = this.collection.transformers?.update
     const record = transformer ? transformer(data) : data
-    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
+    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.put(record)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.read(request.result as InferCollectionKeyPathType<T>).then((data) => {
+        this.read(request.result as CollectionKeyPathType<T>).then((data) => {
           if (data === null) return resolve(null)
           this.emit("write", data)
           this.emit("write|delete", data)
@@ -145,14 +151,14 @@ export class AsyncIDBStore<
   }
 
   async delete(
-    predicateOrKey: InferCollectionKeyPathType<T> | ((item: InferCollectionRecord<T>) => boolean)
+    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
   ) {
     if (predicateOrKey instanceof Function) {
       return this.deleteByPredicate(predicateOrKey)
     }
     const data = await this.read(predicateOrKey)
     if (data === null) return null
-    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
+    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.delete(predicateOrKey as IDBValidKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -171,19 +177,17 @@ export class AsyncIDBStore<
     })
   }
 
-  find(
-    predicateOrKey: InferCollectionKeyPathType<T> | ((item: InferCollectionRecord<T>) => boolean)
-  ) {
+  find(predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)) {
     if (predicateOrKey instanceof Function) {
       return this.findByPredicate(predicateOrKey)
     }
     return this.read(predicateOrKey)
   }
 
-  findMany(predicate: (item: InferCollectionRecord<T>) => boolean, limit = Infinity) {
-    return this.queueTask<InferCollectionRecord<T>[]>((ctx, resolve, reject) => {
+  findMany(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
+    return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
-      const results: InferCollectionRecord<T>[] = []
+      const results: CollectionRecord<T>[] = []
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
@@ -198,7 +202,7 @@ export class AsyncIDBStore<
   }
 
   all() {
-    return this.queueTask<InferCollectionRecord<T>[]>((ctx, resolve, reject) => {
+    return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.getAll()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
@@ -213,48 +217,44 @@ export class AsyncIDBStore<
     })
   }
 
-  async upsert(...data: InferCollectionRecord<T>[]) {
+  async upsert(...data: CollectionRecord<T>[]) {
     return Promise.all(data.map((item) => this.update(item)))
   }
 
-  max<U extends InferCollectionIndexName<T>>(
-    name: U
-  ): Promise<InferCollectionIndexIDBValidKey<T, U> | null> {
+  max<U extends CollectionIndexName<T>>(name: U): Promise<CollectionIndexIDBValidKey<T, U> | null> {
     return this.firstByKeyDirection(name, "prev")
   }
 
-  min<U extends InferCollectionIndexName<T>>(
-    name: U
-  ): Promise<InferCollectionIndexIDBValidKey<T, U> | null> {
+  min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionIndexIDBValidKey<T, U> | null> {
     return this.firstByKeyDirection(name, "next")
   }
 
-  private firstByKeyDirection<U extends InferCollectionIndexName<T>>(
+  private firstByKeyDirection<U extends CollectionIndexName<T>>(
     name: U,
     direction: "next" | "prev"
-  ): Promise<InferCollectionIndexIDBValidKey<T, U> | null> {
-    return this.queueTask<InferCollectionIndexIDBValidKey<T, U> | null>((ctx, resolve, reject) => {
+  ): Promise<CollectionIndexIDBValidKey<T, U> | null> {
+    return this.queueTask<CollectionIndexIDBValidKey<T, U> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.index(name).openCursor(null, direction)
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        resolve(cursor.key as InferCollectionIndexIDBValidKey<T, U>)
+        resolve(cursor.key as CollectionIndexIDBValidKey<T, U>)
       }
     })
   }
 
-  private read(id: InferCollectionKeyPathType<T>) {
-    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
+  private read(id: CollectionKeyPathType<T>) {
+    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.get(id as IDBValidKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result ?? null)
     })
   }
 
-  private deleteByPredicate(predicate: (item: InferCollectionRecord<T>) => boolean) {
-    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
+  private deleteByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
+    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -268,8 +268,8 @@ export class AsyncIDBStore<
       }
     })
   }
-  private findByPredicate(predicate: (item: InferCollectionRecord<T>) => boolean) {
-    return this.queueTask<InferCollectionRecord<T> | null>((ctx, resolve, reject) => {
+  private findByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
+    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -283,7 +283,7 @@ export class AsyncIDBStore<
     })
   }
 
-  private emit<U extends CollectionEvent>(evtName: U, data: InferCollectionRecord<T>) {
+  private emit<U extends CollectionEvent>(evtName: U, data: CollectionRecord<T>) {
     const listeners = this.#eventListeners[evtName] ?? []
     for (const listener of listeners) {
       listener(data)

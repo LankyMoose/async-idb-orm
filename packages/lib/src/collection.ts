@@ -4,6 +4,15 @@ const CollectionBuilderSentinel = Symbol()
 
 export const $COLLECTION_INTERNAL = Symbol.for("collection.internal")
 
+const ERR_KEYPATH_MISSING = 0
+const ERR_KEYPATH_EMPTY = 1
+const ERR_KEYPATH_DUPLICATE = 2
+
+type KeyPathInvalidationEventArgs =
+  | [typeof ERR_KEYPATH_MISSING, null]
+  | [typeof ERR_KEYPATH_EMPTY, null]
+  | [typeof ERR_KEYPATH_DUPLICATE, string]
+
 export class Collection<
   RecordType extends Record<string, any>,
   DTO extends Record<string, any> = RecordType,
@@ -35,21 +44,49 @@ export class Collection<
     return new Collection<RecordType, DTO>(CollectionBuilderSentinel)
   }
 
-  static validate(collection: Collection<any, any, any, any>, key: string, errors: Set<string>) {
-    if (
-      (Array.isArray(collection.keyPath) && collection.keyPath.length === 0) ||
-      !collection.keyPath
-    ) {
-      errors.add(
-        `[async-idb-orm]: Invalid keyPath for Collection "${key}" - must be string | string[]`
+  static validate(collection: Collection<any, any, any, any>, name: string, errors: string[]) {
+    this.validateKeyPath(collection.keyPath, (err, data) =>
+      err === ERR_KEYPATH_MISSING
+        ? errors.push(`Missing keyPath for Collection "${name}"`)
+        : err === ERR_KEYPATH_EMPTY
+        ? errors.push(`Invalid keyPath for Collection "${name}" - keyPath cannot be empty array`)
+        : errors.push(`Duplicated key "${data}" in keyPath for Collection "${name}"`)
+    )
+
+    const seenIndexNames = new Set<string>()
+    const dupeIndexNames = new Set<string>()
+    for (const index of collection.indexes as CollectionIndex<any>[]) {
+      this.validateKeyPath(index.keyPath, (err, data) =>
+        err === ERR_KEYPATH_MISSING
+          ? errors.push(`Missing keyPath for index "${index.name}" in Collection "${name}"`)
+          : err === ERR_KEYPATH_EMPTY
+          ? errors.push(`Invalid keyPath for index "${index.name}" in Collection "${name}"`)
+          : errors.push(
+              `Duplicated key "${data}" in keyPath for index "${index.name}" in Collection "${name}"`
+            )
+      )
+
+      if (seenIndexNames.has(index.name)) dupeIndexNames.add(index.name)
+      seenIndexNames.add(index.name)
+    }
+
+    if (dupeIndexNames.size) {
+      errors.push(
+        `Duplicate index names in Collection "${name}": ${Array.from(dupeIndexNames).join(", ")}`
       )
     }
-    const seenIndexNames = new Set<string>()
-    for (const index of collection.indexes) {
-      if (seenIndexNames.has(index.name)) {
-        errors.add(`[async-idb-orm]: Duplicated index name "${index.name}" for collection "${key}"`)
-      }
-      seenIndexNames.add(index.name)
+  }
+
+  private static validateKeyPath(
+    keyPath: any,
+    handler: (...args: KeyPathInvalidationEventArgs) => void
+  ) {
+    if (!keyPath) return handler(ERR_KEYPATH_MISSING, null)
+    if (Array.isArray(keyPath) && keyPath.length === 0) return handler(ERR_KEYPATH_EMPTY, null)
+    const seenKeys = new Set<string>()
+    for (const key of keyPath) {
+      if (seenKeys.has(key)) handler(ERR_KEYPATH_DUPLICATE, key)
+      seenKeys.add(key)
     }
   }
 
