@@ -5,7 +5,7 @@ export function TodosList() {
   const { data, loading, error, invalidate } = useAsync(() => db.todos.all(), [])
 
   useEffect(() => {
-    db.todos.addEventListener("write", invalidate)
+    db.todos.addEventListener("write|delete", invalidate)
     return () => db.todos.removeEventListener("write|delete", invalidate)
   }, [invalidate])
 

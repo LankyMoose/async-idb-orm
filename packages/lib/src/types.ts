@@ -1,5 +1,7 @@
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
 
+export type DBTaskFn = (db: IDBDatabase) => any
+
 type NonEmptyArray = [any, ...any[]]
 
 export type Schema = {
