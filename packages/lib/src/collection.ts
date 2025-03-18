@@ -44,13 +44,13 @@ export class Collection<
     return new Collection<RecordType, DTO>(CollectionBuilderSentinel)
   }
 
-  static validate(collection: Collection<any, any, any, any>, name: string, errors: string[]) {
+  static validate(collection: Collection<any, any, any, any>, logErr: (err: any) => void) {
     this.validateKeyPath(collection.keyPath, (err, data) =>
       err === ERR_KEYPATH_MISSING
-        ? errors.push(`Missing keyPath for Collection "${name}"`)
+        ? logErr(`Missing keyPath`)
         : err === ERR_KEYPATH_EMPTY
-        ? errors.push(`Invalid keyPath for Collection "${name}" - keyPath cannot be empty array`)
-        : errors.push(`Duplicated key "${data}" in keyPath for Collection "${name}"`)
+        ? logErr(`Invalid - keyPath cannot be empty array`)
+        : logErr(`Duplicated keyPath key "${data}"`)
     )
 
     const seenIndexNames = new Set<string>()
@@ -58,12 +58,10 @@ export class Collection<
     for (const index of collection.indexes as CollectionIndex<any>[]) {
       this.validateKeyPath(index.keyPath, (err, data) =>
         err === ERR_KEYPATH_MISSING
-          ? errors.push(`Missing keyPath for index "${index.name}" in Collection "${name}"`)
+          ? logErr(`Missing keyPath for index "${index.name}"`)
           : err === ERR_KEYPATH_EMPTY
-          ? errors.push(`Invalid keyPath for index "${index.name}" in Collection "${name}"`)
-          : errors.push(
-              `Duplicated key "${data}" in keyPath for index "${index.name}" in Collection "${name}"`
-            )
+          ? logErr(`Invalid keyPath for index "${index.name}"`)
+          : logErr(`Duplicated keyPath key "${data}" for index "${index.name}"`)
       )
 
       if (seenIndexNames.has(index.name)) dupeIndexNames.add(index.name)
@@ -71,9 +69,7 @@ export class Collection<
     }
 
     if (dupeIndexNames.size) {
-      errors.push(
-        `Duplicate index names in Collection "${name}": ${Array.from(dupeIndexNames).join(", ")}`
-      )
+      logErr(`Duplicate index names: ${Array.from(dupeIndexNames).join(", ")}`)
     }
   }
 

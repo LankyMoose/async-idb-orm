@@ -22,7 +22,7 @@ export function idb<T extends Schema>(
    * @description Error handler for AsyncIDB instance creation.
    * @default {console.error}
    */
-  errHandler: (error: any) => void = console.error
+  errHandler = console.error
 ): AsyncIDBInstance<T> {
   const db = new AsyncIDB(name, schema, version, errHandler)
   return Object.entries(schema).reduce((acc, [key]) => {
@@ -42,18 +42,20 @@ class AsyncIDB {
     private name: string,
     schema: Schema,
     version: number,
-    errHandler: (error: any) => void
+    errHandler: typeof console.error
   ) {
-    const errors: string[] = []
-    for (const [key, collection] of Object.entries(schema)) {
-      Collection.validate(collection, key, errors)
-      this.stores[key] = new AsyncIDBStore(this, collection, key)
-    }
-    if (errors.length) {
-      errHandler(
-        new Error("[async-idb-orm]: Collection validation:\n" + Array.from(errors).join("\n"))
+    let schemaValid = true
+    for (const [name, collection] of Object.entries(schema)) {
+      Collection.validate(
+        collection,
+        (err) => (
+          (schemaValid = false),
+          errHandler(`[async-idb-orm]: error encountered with collection "${name}"`, err)
+        )
       )
+      this.stores[name] = new AsyncIDBStore(this, collection, name)
     }
+    if (!schemaValid) return
     const request = indexedDB.open(this.name, version)
     request.onerror = errHandler
     request.onupgradeneeded = () => this.initializeStores(request.result)
