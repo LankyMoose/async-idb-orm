@@ -8,6 +8,8 @@ import type {
   CollectionKeyPathType,
   CollectionIndexName,
   CollectionIndexIDBValidKey,
+  ActiveRecord,
+  ActiveRecordMethods,
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection, $COLLECTION_INTERNAL } from "./collection.js"
@@ -36,12 +38,33 @@ export class AsyncIDBStore<
     this.#eventListeners[event] = listeners.filter((l) => l !== listener)
   }
 
+  wrap(record: CollectionRecord<T>): ActiveRecord<CollectionRecord<T>> {
+    return Object.assign<CollectionRecord<T>, ActiveRecordMethods<CollectionRecord<T>>>(record, {
+      save: async () => {
+        const res = await this.update(record)
+        if (res === null) throw new Error("[async-idb-orm]: record not found")
+        return this.wrap(res)
+      },
+      delete: async () => {
+        const key = this.getRecordKey(record)
+        await this.delete(key)
+      },
+    })
+  }
+  unwrap(
+    activeRecord: CollectionRecord<T> | ActiveRecord<CollectionRecord<T>>
+  ): CollectionRecord<T> {
+    const { save, delete: _del, ...rest } = activeRecord
+    return rest
+  }
+
   create(data: CollectionDTO<T>) {
-    const transformer = this.collection.transformers?.create
-    const record = transformer ? transformer(data) : data
+    data = this.unwrap(data)
+    const { create: transformer } = this.collection.transformers
+    if (transformer) data = transformer(data)
 
     return this.queueTask<CollectionRecord<T>>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.add(record)
+      const request = ctx.objectStore.add(data)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         this.read(request.result as CollectionKeyPathType<T>).then((data) => {
@@ -52,12 +75,18 @@ export class AsyncIDBStore<
       }
     })
   }
+  async createActive(data: CollectionDTO<T>) {
+    const res = await this.create(data)
+    return this.wrap(res)
+  }
 
   update(data: CollectionRecord<T>) {
-    const transformer = this.collection.transformers?.update
-    const record = transformer ? transformer(data) : data
+    data = this.unwrap(data)
+    const { update: transformer } = this.collection.transformers
+    if (transformer) data = transformer(data)
+
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.put(record)
+      const request = ctx.objectStore.put(data)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         this.read(request.result as CollectionKeyPathType<T>).then((data) => {
@@ -103,6 +132,13 @@ export class AsyncIDBStore<
     }
     return this.read(predicateOrKey)
   }
+  async findActive(
+    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
+  ) {
+    const res = await this.find(predicateOrKey)
+    if (res === null) return null
+    return this.wrap(res)
+  }
 
   findMany(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
@@ -120,6 +156,9 @@ export class AsyncIDBStore<
       }
     })
   }
+  async findManyActive(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
+    return (await this.findMany(predicate, limit)).map((item) => this.wrap(item))
+  }
 
   all() {
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
@@ -127,6 +166,44 @@ export class AsyncIDBStore<
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
     })
+  }
+  async allActive() {
+    return (await this.all()).map((item) => this.wrap(item))
+  }
+
+  async *[Symbol.asyncIterator]() {
+    const db: IDBDatabase = await new Promise(this.db.queueTask)
+    const objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
+
+    let resolveQueueBlocker: (value: null) => void
+    // create an infinite promise that we can resolve on command to proceed to the next result
+    let queueBlocker = new Promise<null>((resolve) => {
+      resolveQueueBlocker = resolve
+    })
+    const resultQueue: Promise<null | CollectionRecord<T>>[] = [queueBlocker]
+
+    const request = objectStore.openCursor()
+    let err: Event | undefined
+    request.onerror = (e) => (err = e)
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) return resolveQueueBlocker(null)
+      resultQueue.push(cursor.value)
+      resolveQueueBlocker(null) // unblock to allow resolving of this record
+
+      // reblock until next record
+      queueBlocker = new Promise((resolve) => {
+        resolveQueueBlocker = resolve
+      })
+      resultQueue.push(queueBlocker)
+      cursor.continue()
+    }
+
+    for await (const item of resultQueue) {
+      if (err) throw err
+      if (item === null) continue
+      yield item
+    }
   }
 
   count() {
@@ -208,6 +285,14 @@ export class AsyncIDBStore<
     for (const listener of listeners) {
       listener(data)
     }
+  }
+
+  private getRecordKey(record: CollectionRecord<T>): CollectionKeyPathType<T> {
+    const keyPath = this.collection.keyPath as IDBValidKey
+    if (Array.isArray(keyPath)) {
+      return keyPath.map((key) => record[key as string]) as CollectionKeyPathType<T>
+    }
+    return record[keyPath as string]
   }
 
   private queueTask<T>(

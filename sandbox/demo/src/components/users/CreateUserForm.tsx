@@ -22,6 +22,11 @@ export function CreateUserForm() {
     evt.preventDefault()
     try {
       await db.users.create(userDto)
+
+      for await (const user of db.users) {
+        console.log(user)
+      }
+
       setUserDto(createUserDto)
     } catch (error) {
       console.error(error)

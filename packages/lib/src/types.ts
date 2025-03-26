@@ -8,6 +8,12 @@ export type Schema = {
   [key: string]: Collection<any, any, any, any>
 }
 
+export type ActiveRecord<T> = T & ActiveRecordMethods<T>
+export type ActiveRecordMethods<T> = {
+  save(): Promise<ActiveRecord<T>>
+  delete(): Promise<void>
+}
+
 export type CollectionEvent = "write" | "delete" | "write|delete"
 export type CollectionEventCallback<T extends Collection<any, any>> = (
   data: CollectionRecord<T>
