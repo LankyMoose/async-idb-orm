@@ -45,8 +45,8 @@ export const db = idb("users", { users }, 1)
 ```ts
 import { db } from "$/db"
 const user = await db.users.create({ name: "John Doe", age: 69, pets: [] })
-const user2 = await db.users.create({ name: "Jane Doe", age: 42, pets: [] })
-console.log(user, user2)
+console.log(user)
+//          ^? User
 
 const updatedUser = await db.users.update({ ...user, age: 65 })
 console.log(updatedUser)
@@ -62,7 +62,7 @@ console.log(deletedUser)
 const allUsers = await db.users.all()
 console.log(allUsers)
 
-const filteredUsers = await db.users.find((user) => user.age > 25)
+const filteredUsers = await db.users.findMany((user) => user.age > 25)
 console.log(filteredUsers)
 
 const maxAge = await db.users.max("idx_age")
