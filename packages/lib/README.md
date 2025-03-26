@@ -65,9 +65,47 @@ console.log(allUsers)
 const filteredUsers = await db.users.find((user) => user.age > 25)
 console.log(filteredUsers)
 
-const maxAge = await db.users.max("age")
+const maxAge = await db.users.max("idx_age")
 console.log(maxAge)
 
-const minAge = await db.users.min("age")
+const minAge = await db.users.min("idx_age")
 console.log(minAge)
+```
+
+### Async Iteration
+
+Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
+
+```ts
+for await (const user of db.users) {
+  console.log(user)
+}
+```
+
+### Active Records
+
+`create`, `find`, `findMany`, and `all` each have an `Active` equivalent that returns an `ActiveRecord<T>` which includes `save` and `delete` methods.
+
+```ts
+async function setUserAge(userId: string, age: number) {
+  const user = await db.users.findActive(userId)
+  if (!user) throw new Error("User not found")
+  user.age = 42
+  await user.save()
+}
+```
+
+We can also 'upgrade' a record to an active record via the `wrap` method:
+
+```ts
+async function setUserAge(userId: string, age: number) {
+  const user = await db.users.find(userId)
+  if (!user) throw new Error("User not found")
+  const activeUser = db.users.wrap(user)
+  activeUser.age = 42
+  await activeUser.save()
+
+  // and we can 'downgrade' the active record back to a regular record via the `unwrap` method
+  return db.users.unwrap(activeUser)
+}
 ```
