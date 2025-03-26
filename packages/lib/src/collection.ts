@@ -13,6 +13,28 @@ type KeyPathInvalidationEventArgs =
   | [typeof ERR_KEYPATH_EMPTY, null]
   | [typeof ERR_KEYPATH_DUPLICATE, string]
 
+export type CollectionTransformers<
+  RecordType extends Record<string, any>,
+  DTO extends Record<string, any>
+> = {
+  /**
+   * @optional
+   * @description Transformer for creating the record
+   * @param {DTO} data
+   * @returns {RecordType}
+   */
+  create?: (data: DTO) => RecordType
+  /**
+   * @optional
+   * @description Transformer for updating the record
+   * @param {RecordType} data
+   * @returns {RecordType}
+   */
+  update?: (data: RecordType) => RecordType
+}
+
+export type CollectionConflictMode = "delete" | "ignore"
+
 export class Collection<
   RecordType extends Record<string, any>,
   DTO extends Record<string, any> = RecordType,
@@ -29,7 +51,9 @@ export class Collection<
     create?: (data: DTO) => RecordType
     update?: (data: RecordType) => RecordType
   } = {}
-  creationConflictMode: "delete" | "ignore" = "ignore"
+  creationConflictMode: CollectionConflictMode = "ignore"
+  onCreationConflict?: () => void
+
   constructor(key: symbol) {
     if (key !== CollectionBuilderSentinel)
       throw new Error("Cannot call CollectionBuilder directly - use Collection.create<T>()")
@@ -87,6 +111,7 @@ export class Collection<
   }
 
   /**
+   * Sets the keyPath for this collection
    * @see https://developer.mozilla.org/en-US/docs/Web/API/IDBDatabase/createObjectStore#keypath
    * @see https://developer.mozilla.org/en-US/docs/Web/API/IDBDatabase/createObjectStore#autoincrement
    */
@@ -97,6 +122,7 @@ export class Collection<
     return this as any as Collection<RecordType, DTO, KeyPath, Indexes>
   }
   /**
+   * Sets the indexes for this collection
    * @see https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
    */
   withIndexes<const Indexes extends CollectionIndex<RecordType>[]>(
@@ -105,31 +131,25 @@ export class Collection<
     this.indexes = indexes as any
     return this as any as Collection<RecordType, DTO, KeyPath, Indexes>
   }
-  withTransformers(transformers: {
-    /**
-     * @optional
-     * @description Transformer for creating the record
-     * @param {DTO} data
-     * @returns {RecordType}
-     */
-    create?: (data: DTO) => RecordType
-    /**
-     * @optional
-     * @description Transformer for updating the record
-     * @param {RecordType} data
-     * @returns {RecordType}
-     */
-    update?: (data: RecordType) => RecordType
-  }): this {
+  /**
+   * Sets the transformers for this collection
+   * @param {CollectionTransformers<RecordType, DTO>} transformers
+   * @returns {this}
+   */
+  withTransformers(transformers: CollectionTransformers<RecordType, DTO>): this {
     this.transformers = transformers
     return this
   }
   /**
+   * Sets the conflict mode for this collection. Setting this to "delete" will delete the collection if it already exists during an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event.
+   * @param {CollectionConflictMode} mode The conflict mode
+   * @param {() => void} [onConflict] The callback that will be called when a conflict is detected
    * @default "ignore"
-   * @description Indicates the action to be taken if a store with the same name already exists.
+   * @returns {this}
    */
-  withCreationConflictMode(onConflict: "ignore" | "delete"): this {
-    this.creationConflictMode = onConflict
+  withCreationConflictMode(mode: CollectionConflictMode, onConflict?: () => void): this {
+    this.creationConflictMode = mode
+    this.onCreationConflict = onConflict
     return this
   }
 }

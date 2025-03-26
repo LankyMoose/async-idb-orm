@@ -14,6 +14,10 @@ import type {
 import type { AsyncIDB } from "./idb"
 import { Collection, $COLLECTION_INTERNAL } from "./collection.js"
 
+/**
+ * A utility instance that represents a collection in an IndexedDB database and provides methods for interacting with the collection.
+ * @template {Collection} T
+ */
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
 > {
@@ -28,16 +32,29 @@ export class AsyncIDBStore<
     return store.collection as Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
   }
 
+  /**
+   * @param {CollectionEvent} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
+   * @param {(data: CollectionRecord<T>) => void} listener The callback function that will be called when the event is triggered.
+   */
   addEventListener(event: CollectionEvent, listener: (data: CollectionRecord<T>) => void) {
     const listeners = (this.#eventListeners[event] ??= [])
     listeners.push(listener)
   }
+  /**
+   * @param {CollectionEvent} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
+   * @param listener The callback function registered with `addEventListener`.
+   */
   removeEventListener(event: CollectionEvent, listener: (data: CollectionRecord<T>) => void) {
     const listeners = this.#eventListeners[event]
     if (!listeners) return
     this.#eventListeners[event] = listeners.filter((l) => l !== listener)
   }
 
+  /**
+   * Wrap a record in an active record, enabling the use of the `save` and `delete` methods
+   * @param {CollectionRecord<T>} record
+   * @returns {ActiveRecord<CollectionRecord<T>>}
+   */
   wrap(record: CollectionRecord<T>): ActiveRecord<CollectionRecord<T>> {
     return Object.assign<CollectionRecord<T>, ActiveRecordMethods<CollectionRecord<T>>>(record, {
       save: async () => {
@@ -51,6 +68,11 @@ export class AsyncIDBStore<
       },
     })
   }
+  /**
+   * Unwrap an active record, removing the `save` and `delete` methods
+   * @param {CollectionRecord<T> | ActiveRecord<CollectionRecord<T>>} activeRecord - The record to unwrap
+   * @returns {CollectionRecord<T>}
+   */
   unwrap(
     activeRecord: CollectionRecord<T> | ActiveRecord<CollectionRecord<T>>
   ): CollectionRecord<T> {
@@ -58,6 +80,11 @@ export class AsyncIDBStore<
     return rest
   }
 
+  /**
+   * Creates a new record in the store
+   * @param {CollectionDTO<T>} data - The data to create a new record with. This will be transformed using the `create` transformer if provided.
+   * @returns {Promise<CollectionRecord<T>>}
+   */
   create(data: CollectionDTO<T>) {
     data = this.unwrap(data)
     const { create: transformer } = this.collection.transformers
@@ -75,18 +102,29 @@ export class AsyncIDBStore<
       }
     })
   }
+
+  /**
+   * Creates a new record in the store, and upgrades it to an active record
+   * @param {CollectionDTO<T>} data The data to create a new record with. This will be transformed using the `create` transformer if provided.
+   * @returns {Promise<ActiveRecord<CollectionRecord<T>>>}
+   */
   async createActive(data: CollectionDTO<T>) {
     const res = await this.create(data)
     return this.wrap(res)
   }
 
-  update(data: CollectionRecord<T>) {
-    data = this.unwrap(data)
+  /**
+   *
+   * @param {CollectionRecord<T>} record - the record to update. It must contain entries matching the keyPath specified for this store. It will be transformed using the `update` transformer if provided.
+   * @returns {Promise<CollectionRecord<T> | null>}
+   */
+  update(record: CollectionRecord<T>) {
+    record = this.unwrap(record)
     const { update: transformer } = this.collection.transformers
-    if (transformer) data = transformer(data)
+    if (transformer) record = transformer(record)
 
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.put(data)
+      const request = ctx.objectStore.put(record)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         this.read(request.result as CollectionKeyPathType<T>).then((data) => {
@@ -99,6 +137,11 @@ export class AsyncIDBStore<
     })
   }
 
+  /**
+   * Deletes a record based on keyPath or predicate function
+   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey The keyPath or predicate function
+   * @returns {Promise<CollectionRecord<T> | null>}
+   */
   async delete(
     predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
   ) {
@@ -118,6 +161,10 @@ export class AsyncIDBStore<
     })
   }
 
+  /**
+   * Deletes all records in the store
+   * @returns {Promise<void>}
+   */
   clear() {
     return this.queueTask<void>((ctx, resolve, reject) => {
       const request = ctx.objectStore.clear()
@@ -126,12 +173,22 @@ export class AsyncIDBStore<
     })
   }
 
+  /**
+   * Finds a record based on keyPath or predicate
+   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey
+   * @returns {Promise<CollectionRecord<T> | null>}
+   */
   find(predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)) {
     if (predicateOrKey instanceof Function) {
       return this.findByPredicate(predicateOrKey)
     }
     return this.read(predicateOrKey)
   }
+  /**
+   * Finds a record based on keyPath or predicate and upgrades it to an active record.
+   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey
+   * @returns {Promise<ActiveRecord<CollectionRecord<T>> | null>}
+   */
   async findActive(
     predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
   ) {
@@ -140,6 +197,12 @@ export class AsyncIDBStore<
     return this.wrap(res)
   }
 
+  /**
+   * Finds many records based on keyPath or predicate
+   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicate
+   * @param limit The maximum number of records to return (defaults to `Infinity`)
+   * @returns {Promise<CollectionRecord<T>[]>}
+   */
   findMany(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
@@ -156,10 +219,21 @@ export class AsyncIDBStore<
       }
     })
   }
+
+  /**
+   * Finds many records based on keyPath or predicate, upgrading them to active records
+   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicate
+   * @param limit The maximum number of records to return (defaults to `Infinity`)
+   * @returns {Promise<CollectionRecord<T>[]>}
+   */
   async findManyActive(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
     return (await this.findMany(predicate, limit)).map((item) => this.wrap(item))
   }
 
+  /**
+   * Gets all records in the store
+   * @returns {Promise<CollectionRecord<T>[]>}
+   */
   all() {
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.getAll()
@@ -167,10 +241,17 @@ export class AsyncIDBStore<
       request.onsuccess = () => resolve(request.result)
     })
   }
+  /**
+   * Gets all records in the store, upgrading them to active records
+   * @returns {Promise<ActiveRecord<CollectionRecord<T>>[]>}
+   */
   async allActive() {
     return (await this.all()).map((item) => this.wrap(item))
   }
 
+  /**
+   * Iterates over all records in the store
+   */
   async *[Symbol.asyncIterator]() {
     const db: IDBDatabase = await new Promise(this.db.queueTask)
     const objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
@@ -206,6 +287,10 @@ export class AsyncIDBStore<
     }
   }
 
+  /**
+   * Counts the number of records in the store
+   * @returns {Promise<number>}
+   */
   count() {
     return this.queueTask<number>((ctx, resolve, reject) => {
       const request = ctx.objectStore.count()
@@ -214,14 +299,29 @@ export class AsyncIDBStore<
     })
   }
 
+  /**
+   * Upserts many records in the store
+   * @param {CollectionRecord<T>[]} data The records to upsert
+   * @returns {Promise<void>}
+   */
   upsert(...data: CollectionRecord<T>[]) {
     return Promise.all(data.map((item) => this.update(item)))
   }
 
+  /**
+   * Gets the last record in an index
+   * @param {CollectionIndexName<T>} name The name of the index to get the first record from
+   * @returns {Promise<CollectionIndexIDBValidKey<T, U> | null>} The last record in the index, or null if the index is empty
+   */
   max<U extends CollectionIndexName<T>>(name: U): Promise<CollectionIndexIDBValidKey<T, U> | null> {
     return this.firstByKeyDirection(name, "prev")
   }
 
+  /**
+   * Gets the first record in an index
+   * @param {CollectionIndexName<T>} name The name of the index to get the first record from
+   * @returns {Promise<CollectionIndexIDBValidKey<T, U> | null>} The first record in the index, or null if the index is empty
+   */
   min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionIndexIDBValidKey<T, U> | null> {
     return this.firstByKeyDirection(name, "next")
   }

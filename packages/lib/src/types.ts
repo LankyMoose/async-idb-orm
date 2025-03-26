@@ -4,7 +4,7 @@ export type DBTaskFn = (db: IDBDatabase) => any
 
 type NonEmptyArray = [any, ...any[]]
 
-export type Schema = {
+export type CollectionSchema = {
   [key: string]: Collection<any, any, any, any>
 }
 

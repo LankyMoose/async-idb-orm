@@ -1,15 +1,19 @@
-import type { Schema, DBTaskFn } from "./types"
+import type { CollectionSchema, DBTaskFn } from "./types"
 
 import { Collection } from "./collection.js"
 import { AsyncIDBStore } from "./idbStore.js"
 
+/**
+ * @private
+ * Internal usage only. Do not use directly.
+ */
 export class AsyncIDB {
   db: IDBDatabase | null = null
   stores: { [key: string]: AsyncIDBStore<any> } = {}
   taskQueue: DBTaskFn[] = []
   constructor(
     private name: string,
-    schema: Schema,
+    schema: CollectionSchema,
     version: number,
     errHandler: typeof console.error
   ) {
@@ -47,6 +51,7 @@ export class AsyncIDB {
     for (const store of Object.values(this.stores)) {
       if (db.objectStoreNames.contains(store.name)) {
         const collection = AsyncIDBStore.getCollection(store)
+        collection.onCreationConflict?.()
         if (collection.creationConflictMode !== "delete") {
           continue
         }
