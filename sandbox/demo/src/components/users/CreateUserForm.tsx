@@ -5,7 +5,6 @@ const createUserDto = (): UserDTO => ({
   name: "",
   age: 0,
   alive: true,
-  pets: [],
 })
 
 export function CreateUserForm() {
@@ -21,9 +20,9 @@ export function CreateUserForm() {
   const handleSubmit = async (evt: Event) => {
     evt.preventDefault()
     try {
-      await db.users.create(userDto)
+      await db.collections.users.create(userDto)
 
-      for await (const user of db.users) {
+      for await (const user of db.collections.users) {
         console.log(user)
       }
 
@@ -33,27 +32,6 @@ export function CreateUserForm() {
     }
   }
 
-  const handlePetNameChange = (evt: Event & { target: HTMLInputElement }, petId: string) => {
-    const { value } = evt.target
-    setUserDto({
-      ...userDto,
-      pets: userDto.pets.map((pet) => (pet.id === petId ? { ...pet, name: value } : pet)),
-    })
-  }
-  const addPet = () => {
-    setUserDto({
-      ...userDto,
-      pets: [
-        ...userDto.pets,
-        {
-          id: crypto.randomUUID(),
-          name: "",
-          age: 0,
-          species: "dawg",
-        },
-      ],
-    })
-  }
   return (
     <form style="display:flex; flex-direction:column; gap:.5rem;" onsubmit={handleSubmit}>
       <h3>Create User</h3>
@@ -64,23 +42,6 @@ export function CreateUserForm() {
       <div>
         <label htmlFor="age">Age</label>
         <input type="number" name="age" id="age" value={userDto.age} oninput={handleChange} />
-      </div>
-      <div>
-        <ul>
-          {userDto.pets.map((pet) => (
-            <li key={pet.id}>
-              <input
-                type="text"
-                name="name"
-                value={pet.name}
-                oninput={(e) => handlePetNameChange(e, pet.id)}
-              />
-            </li>
-          ))}
-        </ul>
-        <button type="button" onclick={addPet}>
-          Add Pet
-        </button>
       </div>
       <input type="submit" />
     </form>

@@ -15,7 +15,7 @@ export type ActiveRecordMethods<T> = {
 }
 
 export type CollectionEvent = "write" | "delete" | "write|delete"
-export type CollectionEventCallback<T extends Collection<any, any>> = (
+export type CollectionEventCallback<T extends Collection<any, any, any, any>> = (
   data: CollectionRecord<T>
 ) => void
 

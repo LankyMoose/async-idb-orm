@@ -1,16 +1,16 @@
 import { useCallback } from "kaioken"
-import { Pet, User, db } from "$/db"
+import { User, db } from "$/db"
 import { useLiveCollection } from "$/hooks/useCollection"
+import { selectedUser } from "$/state/selectedUser"
 
 export function UsersList() {
   const { data: users, loading, error } = useLiveCollection("users")
 
   const addRandom = useCallback(async () => {
-    await db.users.create({
+    await db.collections.users.create({
       name: "John Doe",
       age: Math.floor(Math.random() * 100),
       alive: true,
-      pets: [],
     })
   }, [])
 
@@ -43,27 +43,9 @@ function UserCard({ user }: { user: User }) {
       <span>Age: {user.age}</span>
       <span>Alive: {user.alive ? "alive" : "dead"}</span>
       <div>
-        <h4>Pets</h4>
-        <ul style={{ margin: "0", padding: "0" }}>
-          {user.pets.map((pet) => (
-            <PetCard key={pet.id} pet={pet} />
-          ))}
-        </ul>
-      </div>
-      <div>
-        <button onclick={() => db.users.delete(user.id)}>Delete</button>
+        <button onclick={() => db.collections.users.delete(user.id)}>Delete</button>
+        <button onclick={() => (selectedUser.value = user)}>Select</button>
       </div>
     </div>
-  )
-}
-
-function PetCard({ pet }: { pet: Pet }) {
-  return (
-    <li className="card">
-      <span>ID: {pet.id}</span>
-      <span>Name: {pet.name}</span>
-      <span>Age: {pet.age}</span>
-      <span>Species: {pet.species}</span>
-    </li>
   )
 }

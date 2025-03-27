@@ -1,11 +1,13 @@
 import { useAsync, useEffect } from "kaioken"
 import { db } from "$/db"
-export const useLiveCollection = <T extends keyof typeof db>(collection: T) => {
-  const { invalidate, ...rest } = useAsync(() => db[collection].all(), [])
+import type * as schema from "$/db/schema"
+export const useLiveCollection = <T extends keyof typeof schema>(name: T) => {
+  const collection = db.collections[name]
+  const state = useAsync(() => collection.all(), [])
 
   useEffect(() => {
-    db[collection].addEventListener("write|delete", invalidate)
-    return () => db[collection].removeEventListener("write|delete", invalidate)
-  }, [invalidate])
-  return { ...rest, invalidate }
+    collection.addEventListener("write|delete", state.invalidate)
+    return () => collection.removeEventListener("write|delete", state.invalidate)
+  }, [])
+  return state
 }

@@ -44,31 +44,31 @@ export const db = idb("users", { users }, 1)
 
 ```ts
 import { db } from "$/db"
-const user = await db.users.create({ name: "John Doe", age: 69, pets: [] })
+const user = await db.collections.users.create({ name: "John Doe", age: 69 })
 console.log(user)
 //          ^? User
 
-const updatedUser = await db.users.update({ ...user, age: 65 })
+const updatedUser = await db.collections.users.update({ ...user, age: 65 })
 console.log(updatedUser)
 
-const foundUser = await db.users.find(user.id)
-const foundUser2 = await db.users.find((user) => user.name === "Jane Doe")
+const foundUser = await db.collections.users.find(user.id)
+const foundUser2 = await db.collections.users.find((user) => user.name === "Jane Doe")
 console.log(foundUser)
 
-const deletedUser = await db.users.delete(user.id)
-const otherDeletedUser = await db.users.delete((user) => user.name === "Jane Doe")
+const deletedUser = await db.collections.users.delete(user.id)
+const otherDeletedUser = await db.collections.users.delete((user) => user.name === "Jane Doe")
 console.log(deletedUser)
 
-const allUsers = await db.users.all()
+const allUsers = await db.collections.users.all()
 console.log(allUsers)
 
-const filteredUsers = await db.users.findMany((user) => user.age > 25)
+const filteredUsers = await db.collections.users.findMany((user) => user.age > 25)
 console.log(filteredUsers)
 
-const maxAge = await db.users.max("idx_age")
+const maxAge = await db.collections.users.max("idx_age")
 console.log(maxAge)
 
-const minAge = await db.users.min("idx_age")
+const minAge = await db.collections.users.min("idx_age")
 console.log(minAge)
 ```
 
@@ -77,7 +77,7 @@ console.log(minAge)
 Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
 
 ```ts
-for await (const user of db.users) {
+for await (const user of db.collections.users) {
   console.log(user)
 }
 ```
@@ -88,7 +88,7 @@ for await (const user of db.users) {
 
 ```ts
 async function setUserAge(userId: string, age: number) {
-  const user = await db.users.findActive(userId)
+  const user = await db.collections.users.findActive(userId)
   if (!user) throw new Error("User not found")
   user.age = 42
   await user.save()
@@ -99,13 +99,53 @@ We can also 'upgrade' a record to an active record via the `wrap` method:
 
 ```ts
 async function setUserAge(userId: string, age: number) {
-  const user = await db.users.find(userId)
+  const user = await db.collections.users.find(userId)
   if (!user) throw new Error("User not found")
-  const activeUser = db.users.wrap(user)
+  const activeUser = db.collections.users.wrap(user)
   activeUser.age = 42
   await activeUser.save()
 
   // and we can 'downgrade' the active record back to a regular record via the `unwrap` method
   return db.users.unwrap(activeUser)
+}
+```
+
+### Transactions
+
+```ts
+async function transferFunds(senderId: string, recipientId: string, transferAmount: number) {
+  try {
+    const res: TransferResult = await db.transaction(async (ctx, tx) => {
+      // Fetch sender and recipient accounts
+      const sender = await ctx.accounts.findActive({ id: senderId })
+      const recipient = await ctx.accounts.findActive({ id: recipientId })
+
+      if (!sender || !recipient) {
+        tx.abort()
+        return TransferResult.InvalidAccount
+      }
+
+      // Check if sender has sufficient balance
+      if (sender.balance < transferAmount) {
+        // we can abort the transaction here by throwing, the thrown value will be re-thrown outside the transaction.
+        throw TransferResult.InsufficientFunds
+      }
+
+      // Update balances
+      sender.balance -= transferAmount
+      recipient.balance += transferAmount
+
+      await sender.save()
+      await recipient.save()
+
+      // Commit transaction (not mandatory, a transaction will automatically commit when all outstanding requests have been satisfied and no new requests have been made)
+      tx.commit()
+
+      // Return success
+      return TransferResult.Success
+    })
+  } catch (error) {
+    console.error(error)
+  }
 }
 ```

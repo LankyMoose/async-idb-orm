@@ -121,6 +121,7 @@ export class Collection<
     this.keyPath = keyPath as any
     return this as any as Collection<RecordType, DTO, KeyPath, Indexes>
   }
+
   /**
    * Sets the indexes for this collection
    * @see https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
@@ -131,6 +132,7 @@ export class Collection<
     this.indexes = indexes as any
     return this as any as Collection<RecordType, DTO, KeyPath, Indexes>
   }
+
   /**
    * Sets the transformers for this collection
    * @param {CollectionTransformers<RecordType, DTO>} transformers
@@ -140,6 +142,7 @@ export class Collection<
     this.transformers = transformers
     return this
   }
+
   /**
    * Sets the conflict mode for this collection. Setting this to "delete" will delete the collection if it already exists during an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event.
    * @param {CollectionConflictMode} mode The conflict mode

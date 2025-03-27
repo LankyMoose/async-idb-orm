@@ -40,9 +40,10 @@ export class AsyncIDB {
     }
   }
 
-  queueTask(taskFn: DBTaskFn) {
+  queueTask(taskFn: DBTaskFn): void {
     if (!this.db) {
-      return this.taskQueue.push(taskFn)
+      this.taskQueue.push(taskFn)
+      return
     }
     taskFn(this.db)
   }

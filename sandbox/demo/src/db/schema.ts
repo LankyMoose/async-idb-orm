@@ -13,6 +13,7 @@ export const users = Collection.create<User, UserDTO>()
       id: crypto.randomUUID(),
       name: dto.name ?? "John Doe",
       createdAt: Date.now(),
+      alive: "alive" in dto && typeof dto.alive === "boolean" ? dto.alive : true,
     }),
     //update: (data) => ({ ...data, updatedAt: Date.now() }),
   })

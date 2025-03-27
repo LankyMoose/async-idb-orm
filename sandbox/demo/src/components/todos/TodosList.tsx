@@ -33,11 +33,11 @@ function TodoCard({ todo }: { todo: Todo }) {
           type="checkbox"
           id={`done_${todo.id}`}
           checked={todo.done}
-          onchange={(evt) => db.todos.update({ ...todo, done: evt.target.checked })}
+          onchange={(evt) => db.collections.todos.update({ ...todo, done: evt.target.checked })}
         />
       </div>
       <div>
-        <button onclick={() => db.todos.delete([todo.id])}>Delete</button>
+        <button onclick={() => db.collections.todos.delete([todo.id])}>Delete</button>
       </div>
     </div>
   )

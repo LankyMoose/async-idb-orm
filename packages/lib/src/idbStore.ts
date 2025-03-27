@@ -10,6 +10,7 @@ import type {
   CollectionIndexIDBValidKey,
   ActiveRecord,
   ActiveRecordMethods,
+  CollectionEventCallback,
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection, $COLLECTION_INTERNAL } from "./collection.js"
@@ -21,15 +22,28 @@ import { Collection, $COLLECTION_INTERNAL } from "./collection.js"
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
 > {
-  name: string
-  #eventListeners: { [key: string]: ((data: T[typeof $COLLECTION_INTERNAL]["record"]) => void)[] } =
-    {}
-  constructor(private db: AsyncIDB, private collection: T, name: string) {
-    this.name = name
+  #eventListeners: Record<CollectionEvent, CollectionEventCallback<T>[]> = {
+    write: [],
+    delete: [],
+    "write|delete": [],
   }
+  #tx: IDBTransaction | null = null
+  constructor(private db: AsyncIDB, private collection: T, public name: string) {}
 
   static getCollection(store: AsyncIDBStore<any>) {
     return store.collection as Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
+  }
+
+  static cloneForTransaction(
+    tx: IDBTransaction,
+    store: AsyncIDBStore<any>,
+    eventQueue: Function[]
+  ) {
+    const cloned = new AsyncIDBStore(store.db, store.collection, store.name)
+    cloned.#tx = tx
+    cloned.#eventListeners = store.#eventListeners
+    cloned.emit = (event, data) => eventQueue.push(() => store.emit(event, data))
+    return cloned
   }
 
   /**
@@ -37,17 +51,15 @@ export class AsyncIDBStore<
    * @param {(data: CollectionRecord<T>) => void} listener The callback function that will be called when the event is triggered.
    */
   addEventListener(event: CollectionEvent, listener: (data: CollectionRecord<T>) => void) {
-    const listeners = (this.#eventListeners[event] ??= [])
-    listeners.push(listener)
+    this.#eventListeners[event].push(listener)
   }
+
   /**
    * @param {CollectionEvent} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
    * @param listener The callback function registered with `addEventListener`.
    */
   removeEventListener(event: CollectionEvent, listener: (data: CollectionRecord<T>) => void) {
-    const listeners = this.#eventListeners[event]
-    if (!listeners) return
-    this.#eventListeners[event] = listeners.filter((l) => l !== listener)
+    this.#eventListeners[event] = this.#eventListeners[event].filter((l) => l !== listener)
   }
 
   /**
@@ -68,6 +80,7 @@ export class AsyncIDBStore<
       },
     })
   }
+
   /**
    * Unwrap an active record, removing the `save` and `delete` methods
    * @param {CollectionRecord<T> | ActiveRecord<CollectionRecord<T>>} activeRecord - The record to unwrap
@@ -184,6 +197,7 @@ export class AsyncIDBStore<
     }
     return this.read(predicateOrKey)
   }
+
   /**
    * Finds a record based on keyPath or predicate and upgrades it to an active record.
    * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey
@@ -241,6 +255,7 @@ export class AsyncIDBStore<
       request.onsuccess = () => resolve(request.result)
     })
   }
+
   /**
    * Gets all records in the store, upgrading them to active records
    * @returns {Promise<ActiveRecord<CollectionRecord<T>>[]>}
@@ -253,19 +268,23 @@ export class AsyncIDBStore<
    * Iterates over all records in the store
    */
   async *[Symbol.asyncIterator]() {
-    const db: IDBDatabase = await new Promise(this.db.queueTask)
-    const objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
+    const db = await new Promise<IDBDatabase>((res) => this.db.queueTask(res))
+    const objectStore: IDBObjectStore = (
+      this.#tx ?? db.transaction(this.name, "readonly")
+    ).objectStore(this.name)
 
     let resolveQueueBlocker: (value: null) => void
-    // create an infinite promise that we can resolve on command to proceed to the next result
+    // create an infinite promise that we can resolve on command to yield the next result
     let queueBlocker = new Promise<null>((resolve) => {
       resolveQueueBlocker = resolve
     })
     const resultQueue: Promise<null | CollectionRecord<T>>[] = [queueBlocker]
 
     const request = objectStore.openCursor()
-    let err: Event | undefined
-    request.onerror = (e) => (err = e)
+    request.onerror = (e) => {
+      resolveQueueBlocker(null)
+      throw e
+    }
     request.onsuccess = () => {
       const cursor = request.result
       if (!cursor) return resolveQueueBlocker(null)
@@ -281,7 +300,6 @@ export class AsyncIDBStore<
     }
 
     for await (const item of resultQueue) {
-      if (err) throw err
       if (item === null) continue
       yield item
     }
@@ -365,6 +383,7 @@ export class AsyncIDBStore<
       }
     })
   }
+
   private findByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
@@ -404,7 +423,9 @@ export class AsyncIDBStore<
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       this.db.queueTask((db) => {
-        const objectStore = db.transaction(this.name, "readwrite").objectStore(this.name)
+        const objectStore = (this.#tx ?? db.transaction(this.name, "readwrite")).objectStore(
+          this.name
+        )
         reqHandler({ db, objectStore }, resolve, reject)
       })
     })
