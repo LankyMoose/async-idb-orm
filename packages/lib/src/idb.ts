@@ -9,7 +9,7 @@ import { AsyncIDBStore } from "./idbStore.js"
  */
 export class AsyncIDB {
   db: IDBDatabase | null = null
-  stores: { [key: string]: AsyncIDBStore<any> } = {}
+  stores: { [key: string]: AsyncIDBStore<any> }
   taskQueue: DBTaskFn[] = []
   constructor(
     private name: string,
@@ -17,18 +17,34 @@ export class AsyncIDB {
     version: number,
     errHandler: typeof console.error
   ) {
+    this.stores = Object.keys(schema).reduce(
+      (acc, name) => ({
+        ...acc,
+        [name]: new AsyncIDBStore(this, schema[name], name),
+      }),
+      {}
+    )
+
     let schemaValid = true
     for (const [name, collection] of Object.entries(schema)) {
       Collection.validate(
+        this,
         collection,
         (err) => (
           (schemaValid = false),
           errHandler(`[async-idb-orm]: error encountered with collection "${name}"`, err)
         )
       )
-      this.stores[name] = new AsyncIDBStore(this, collection, name)
     }
     if (!schemaValid) return
+
+    for (const store of Object.values(this.stores)) {
+      AsyncIDBStore.init(store)
+    }
+    for (const store of Object.values(this.stores)) {
+      AsyncIDBStore.finalizeDependencies(this, store)
+    }
+
     const request = indexedDB.open(this.name, version)
     request.onerror = errHandler
     request.onupgradeneeded = () => this.initializeStores(request.result)

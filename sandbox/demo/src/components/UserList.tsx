@@ -1,14 +1,35 @@
-import { useCallback } from "kaioken"
+import { Link, useCallback } from "kaioken"
 import { User, db } from "$/db"
 import { useLiveCollection } from "$/hooks/useCollection"
 import { selectedUser } from "$/state/selectedUser"
+
+const userNames = [
+  "John Doe",
+  "Jane Doe",
+  "Bob Smith",
+  "Alice Johnson",
+  "Charlie Brown",
+  "Emily Davis",
+  "Michael Johnson",
+  "Olivia Wilson",
+  "William Brown",
+  "Sophia Anderson",
+  "James Lee",
+  "Emma Clark",
+  "Daniel Foster",
+  "Ava Green",
+]
+
+function randomUserName() {
+  return userNames[Math.floor(Math.random() * userNames.length)]
+}
 
 export function UsersList() {
   const { data: users, loading, error } = useLiveCollection("users")
 
   const addRandom = useCallback(async () => {
     await db.collections.users.create({
-      name: "John Doe",
+      name: randomUserName(),
       age: Math.floor(Math.random() * 100),
       alive: true,
     })
@@ -43,8 +64,11 @@ function UserCard({ user }: { user: User }) {
       <span>Age: {user.age}</span>
       <span>Alive: {user.alive ? "alive" : "dead"}</span>
       <div>
-        <button onclick={() => db.collections.users.delete(user.id)}>Delete</button>
+        <button onclick={() => db.collections.users.delete((u) => u.id === user.id)}>Delete</button>
         <button onclick={() => (selectedUser.value = user)}>Select</button>
+        <Link to={`/${user.id}/posts`} inherit>
+          View Posts
+        </Link>
       </div>
     </div>
   )

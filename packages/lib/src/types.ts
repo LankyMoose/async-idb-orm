@@ -14,6 +14,11 @@ export type ActiveRecordMethods<T> = {
   delete(): Promise<void>
 }
 
+export type TransactionContext = {
+  db: IDBDatabase
+  objectStore: IDBObjectStore
+  tx: IDBTransaction
+}
 export type CollectionEvent = "write" | "delete" | "write|delete"
 export type CollectionEventCallback<T extends Collection<any, any, any, any>> = (
   data: CollectionRecord<T>

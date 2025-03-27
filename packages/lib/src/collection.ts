@@ -1,4 +1,6 @@
-import type { RecordKeyPath, CollectionIndex } from "./types"
+import { AsyncIDB } from "idb"
+import { AsyncIDBStore } from "./idbStore"
+import type { RecordKeyPath as RecordKey, CollectionIndex } from "./types"
 
 const CollectionBuilderSentinel = Symbol()
 
@@ -35,10 +37,21 @@ export type CollectionTransformers<
 
 export type CollectionConflictMode = "delete" | "ignore"
 
+export type ForeignKeyOptions = {
+  onDelete: "cascade" | "restrict" | "no action" | "set null"
+}
+
+type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
+  localKey: keyof RecordType & string
+  collection: Collection<any, any, any, any>
+  options: ForeignKeyOptions
+  refStore?: AsyncIDBStore<any>
+}
+
 export class Collection<
   RecordType extends Record<string, any>,
   DTO extends Record<string, any> = RecordType,
-  KeyPath extends RecordKeyPath<RecordType> = never,
+  KeyPath extends RecordKey<RecordType> = never,
   Indexes extends CollectionIndex<RecordType>[] = never
 > {
   [$COLLECTION_INTERNAL]: {
@@ -47,6 +60,7 @@ export class Collection<
   }
   keyPath: KeyPath = undefined as any as KeyPath
   indexes: Indexes = [] as any as Indexes
+  foreignKeys: CollectionForeignKeyConfig<RecordType>[] = []
   transformers: {
     create?: (data: DTO) => RecordType
     update?: (data: RecordType) => RecordType
@@ -58,7 +72,7 @@ export class Collection<
     if (key !== CollectionBuilderSentinel)
       throw new Error("Cannot call CollectionBuilder directly - use Collection.create<T>()")
 
-    this[$COLLECTION_INTERNAL] = null as any
+    this[$COLLECTION_INTERNAL] = null!
   }
 
   static create<
@@ -68,7 +82,11 @@ export class Collection<
     return new Collection<RecordType, DTO>(CollectionBuilderSentinel)
   }
 
-  static validate(collection: Collection<any, any, any, any>, logErr: (err: any) => void) {
+  static validate(
+    db: AsyncIDB,
+    collection: Collection<any, any, any, any>,
+    logErr: (err: any) => void
+  ) {
     this.validateKeyPath(collection.keyPath, (err, data) =>
       err === ERR_KEYPATH_MISSING
         ? logErr(`Missing keyPath`)
@@ -95,6 +113,15 @@ export class Collection<
     if (dupeIndexNames.size) {
       logErr(`Duplicate index names: ${Array.from(dupeIndexNames).join(", ")}`)
     }
+
+    for (const fkConfig of collection.foreignKeys) {
+      const match = Object.entries(db.stores).find(
+        ([, s]) => AsyncIDBStore.getCollection(s) === fkConfig.collection
+      )
+      if (!match) {
+        logErr("Foreign key references a non-existent collection")
+      }
+    }
   }
 
   private static validateKeyPath(
@@ -111,15 +138,13 @@ export class Collection<
   }
 
   /**
-   * Sets the keyPath for this collection
-   * @see https://developer.mozilla.org/en-US/docs/Web/API/IDBDatabase/createObjectStore#keypath
-   * @see https://developer.mozilla.org/en-US/docs/Web/API/IDBDatabase/createObjectStore#autoincrement
+   * Sets the key for this collection
    */
-  withKeyPath<const KeyPath extends RecordKeyPath<RecordType>>(
-    keyPath: KeyPath
-  ): Collection<RecordType, DTO, KeyPath, Indexes> {
+  withKeyPath<const Key extends keyof RecordType & string>(
+    keyPath: Key
+  ): Collection<RecordType, DTO, Key, Indexes> {
     this.keyPath = keyPath as any
-    return this as any as Collection<RecordType, DTO, KeyPath, Indexes>
+    return this as any as Collection<RecordType, DTO, Key, Indexes>
   }
 
   /**
@@ -131,6 +156,15 @@ export class Collection<
   ): Collection<RecordType, DTO, KeyPath, Indexes> {
     this.indexes = indexes as any
     return this as any as Collection<RecordType, DTO, KeyPath, Indexes>
+  }
+
+  withForeignKey(
+    localKey: keyof RecordType & string,
+    collection: Collection<any, any, any, any>,
+    options: ForeignKeyOptions
+  ) {
+    this.foreignKeys.push({ localKey, collection, options })
+    return this
   }
 
   /**

@@ -1,5 +1,14 @@
 import { Collection } from "async-idb-orm"
-import { Todo, TodoDTO, User, UserDTO } from "./types.ts"
+import {
+  Post,
+  PostComment,
+  PostCommentDTO,
+  PostDTO,
+  User,
+  UserDTO,
+  Todo,
+  TodoDTO,
+} from "./types.ts"
 
 export const users = Collection.create<User, UserDTO>()
   .withKeyPath("id")
@@ -15,17 +24,40 @@ export const users = Collection.create<User, UserDTO>()
       createdAt: Date.now(),
       alive: "alive" in dto && typeof dto.alive === "boolean" ? dto.alive : true,
     }),
-    //update: (data) => ({ ...data, updatedAt: Date.now() }),
+    update: (data) => ({ ...data, updatedAt: Date.now() }),
   })
 
-export const todos = Collection.create<Todo, TodoDTO>()
-  .withKeyPath(["id"])
-  .withIndexes([{ keyPath: ["text"], name: "idx_text" }])
+export const posts = Collection.create<Post, PostDTO>()
+  .withKeyPath("id")
+  .withForeignKey("userId", users, { onDelete: "cascade" })
   .withTransformers({
     create: (dto) => ({
       ...dto,
       id: crypto.randomUUID(),
-      done: false,
+      createdAt: Date.now(),
     }),
-    //update: (data) => ({ ...data, updatedAt: Date.now() }),
+  })
+
+export const postComments = Collection.create<PostComment, PostCommentDTO>()
+  .withKeyPath("id")
+  .withForeignKey("postId", posts, { onDelete: "cascade" })
+  .withForeignKey("userId", users, { onDelete: "cascade" })
+  .withTransformers({
+    create: (dto) => ({
+      ...dto,
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+    }),
+  })
+
+export const todos = Collection.create<Todo, TodoDTO>()
+  .withKeyPath("id")
+  .withForeignKey("userId", users, { onDelete: "restrict" })
+  .withTransformers({
+    create: (dto) => ({
+      ...dto,
+      id: crypto.randomUUID(),
+      completed: false,
+      createdAt: Date.now(),
+    }),
   })

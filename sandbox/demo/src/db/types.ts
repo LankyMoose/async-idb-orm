@@ -11,13 +11,40 @@ export type UserDTO = {
   alive?: boolean
 }
 
-export type Todo = {
+export type Post = {
   id: string
-  text: string
-  done: boolean
+  content: string
+  userId: string
+  createdAt: number
+}
+export type PostDTO = {
+  content: string
   userId: string
 }
+
+export type PostComment = {
+  id: string
+  content: string
+  postId: string
+  userId: string
+  createdAt: number
+}
+
+export type PostCommentDTO = {
+  content: string
+  postId: string
+  userId: string
+}
+
+export type Todo = {
+  id: string
+  content: string
+  completed: boolean
+  userId: string
+  createdAt: number
+}
+
 export type TodoDTO = {
-  text: string
+  content: string
   userId: string
 }

@@ -1,27 +1,70 @@
 import { Link, Router, Route, navigate } from "kaioken"
-import { UsersList, CreateUserForm } from "./components/users"
-import { TodosList, CreateTodoForm } from "./components/todos"
 import { selectedUser } from "./state/selectedUser"
+import { UsersList } from "./components/UserList"
+import { CreateUserForm } from "./components/CreateUserForm"
+import { UserPosts } from "./components/UserPosts"
 import { db } from "./db"
+import { assert, assertThrows } from "./assert"
+window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
+
+const seed = async () => {
+  selectedUser.value = null
+  await db.collections.postComments.clear()
+  await db.collections.posts.clear()
+  await db.collections.users.clear()
+
+  await db.transaction(async (c) => {
+    const john = await c.users.create({ name: "John Doe", age: 30, alive: true })
+    const sarah = await c.users.create({ name: "Sarah Connor", age: 25, alive: true })
+
+    const post = await c.posts.create({ userId: john.id, content: "Hello world" })
+    await c.postComments.create({
+      postId: post.id,
+      content: "Great post!",
+      userId: sarah.id,
+    })
+  })
+
+  const john = await db.collections.users.findActive((user) => user.name === "John Doe")
+  assert(john, "Expected to find John Doe")
+  await john.delete()
+  assert((await db.collections.users.count()) === 1, "Expected 1 user")
+  // posts & post comments have `cascade delete`, so there should be no posts or post comments
+  assert((await db.collections.posts.count()) === 0, "Expected 0 posts")
+  assert((await db.collections.postComments.count()) === 0, "Expected 0 post comments")
+
+  assertThrows(async () => {
+    await db.collections.posts.create({ userId: john.id, content: "Hello world" })
+  }, "Expected to throw when creating post that references invalid userId")
+
+  assertThrows(async () => {
+    await db.transaction(async (c) => {
+      await c.posts.create({ userId: john.id, content: "Hello world" })
+    })
+  }, "Expected to throw when creating post that references invalid userId whilst in transaction")
+
+  const sarah = await db.collections.users.findActive((user) => user.name === "Sarah Connor")
+  assert(sarah, "Expected to find Sarah Connor")
+  await sarah.delete()
+  assert((await db.collections.users.count()) === 0, "Expected 0 users")
+
+  const bob = await db.collections.users.create({ name: "Bob Smith", age: 30, alive: true })
+  assert(bob, "Expected to create Bob Smith")
+
+  const todo = await db.collections.todos.create({ userId: bob.id, content: "Buy milk" })
+  assert(todo, "Expected to create todo")
+  assertThrows(async () => {
+    await db.collections.users.delete(bob.id)
+  }, "Expected to throw when deleting user has todo(s)")
+
+  await db.collections.todos.delete(todo.id)
+  await db.collections.users.delete(bob.id)
+  assert((await db.collections.todos.count()) === 0, "Expected 0 todos")
+  assert((await db.collections.users.count()) === 0, "Expected 0 users")
+}
 
 function Home() {
   return navigate("/users")
-}
-
-async function demoTransaction() {
-  console.log("demoTransaction")
-
-  const res = await db.transaction(async (ctx, tx) => {
-    const user = await ctx.users.create({ name: "John Doe", age: 30 })
-    console.log("demoTransaction - created user", user)
-
-    await ctx.todos.create({ text: "Buy groceries", userId: user.id })
-    console.log("demoTransaction - created todo", user)
-
-    if (Math.random() < 0.9) return tx.abort(), "aborted"
-    return "bar"
-  })
-  console.log("demoTransaction - res:", res)
 }
 
 export function App() {
@@ -30,55 +73,41 @@ export function App() {
       <header style="display: flex; gap: 1rem; justify-content: space-between; background-color: #333; padding: 1rem; width: 980px; border-radius: 12px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); margin-bottom: 2rem;">
         <nav>
           <Link to="/users">Users</Link>
-          <Link to="/todos">Todos</Link>
         </nav>
-        <button onclick={() => demoTransaction()}>Test TX</button>
+        <div>
+          <button onclick={seed}>Seed</button>
+        </div>
         <div style="display: flex; align-items: center; gap: 1rem;">
           Selected user:{" "}
           <code style="font-size: 1rem; background: #111; padding: 0.25rem 0.5rem;">
-            {selectedUser.value?.name || "none"}
+            {selectedUser.value ? selectedUser.value.name || "unnamed" : "none"}
           </code>
+          <button onclick={() => (selectedUser.value = null)}>Deselect</button>
         </div>
       </header>
       <Router>
         <Route path="/" element={<Home />} />
-        <Route
-          path="/users"
-          element={<CollectionPage name="users" list={UsersList} create={CreateUserForm} />}
-          fallthrough
-        />
-        <Route
-          path="/todos"
-          element={<CollectionPage name="todos" list={TodosList} create={CreateTodoForm} />}
-          fallthrough
-        />
+        <Route path="/users" element={<UsersPage />} fallthrough />
       </Router>
     </main>
   )
 }
 
-function CollectionPage({
-  name,
-  list: List,
-  create: Create,
-}: {
-  name: string
-  list: () => JSX.Element
-  create: () => JSX.Element
-}) {
+function UsersPage() {
   return (
     <>
       <nav>
         <Link to="/" inherit>
-          List {name}
+          List users
         </Link>
         <Link to="/create" inherit>
-          Create {name}
+          Create user
         </Link>
       </nav>
       <Router>
-        <Route path="/" element={<List />} />
-        <Route path="/create" element={<Create />} />
+        <Route path="/" element={<UsersList />} />
+        <Route path="/create" element={<CreateUserForm />} />
+        <Route path="/:userId/posts" element={<UserPosts />} />
       </Router>
     </>
   )
