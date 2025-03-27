@@ -37,15 +37,11 @@ export type CollectionTransformers<
 
 export type CollectionConflictMode = "delete" | "ignore"
 
-export type ForeignKeyOptions = {
-  onDelete: "cascade" | "restrict" | "no action" | "set null"
-}
-
+type ForeignKeyOnDelete = "cascade" | "restrict" | "no action" | "set null"
 type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
-  localKey: keyof RecordType & string
+  field: keyof RecordType & string
   collection: Collection<any, any, any, any>
-  options: ForeignKeyOptions
-  refStore?: AsyncIDBStore<any>
+  onDelete: ForeignKeyOnDelete
 }
 
 export class Collection<
@@ -154,16 +150,18 @@ export class Collection<
   withIndexes<const Indexes extends CollectionIndex<RecordType>[]>(
     indexes: Indexes
   ): Collection<RecordType, DTO, KeyPath, Indexes> {
-    this.indexes = indexes as any
+    this.indexes.push(...indexes)
     return this as any as Collection<RecordType, DTO, KeyPath, Indexes>
   }
 
-  withForeignKey(
-    localKey: keyof RecordType & string,
-    collection: Collection<any, any, any, any>,
-    options: ForeignKeyOptions
-  ) {
-    this.foreignKeys.push({ localKey, collection, options })
+  withForeignKeys(
+    foreignKeys: {
+      field: keyof RecordType & string
+      collection: Collection<any, any, any, any>
+      onDelete: ForeignKeyOnDelete
+    }[]
+  ): this {
+    this.foreignKeys.push(...foreignKeys)
     return this
   }
 

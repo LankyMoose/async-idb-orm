@@ -521,12 +521,12 @@ export class AsyncIDBStore<
                   ([, s]) => s.collection === fkConfig.collection
                 )!
                 const objectStore = tx.objectStore(name)
-                const key = record[fkConfig.localKey]
+                const key = record[fkConfig.field]
                 const request = objectStore.get(key)
                 request.onerror = (err) => {
                   ctx.tx.abort()
                   const e = new Error(
-                    `[async-idb-orm]: An error occurred while applying FK ${this.name}:${fkConfig.localKey} (${key})`
+                    `[async-idb-orm]: An error occurred while applying FK ${this.name}:${fkConfig.field} (${key})`
                   )
                   e.cause = err
                   errs.push(e)
@@ -535,7 +535,7 @@ export class AsyncIDBStore<
                 request.onsuccess = () => {
                   if (!request.result) {
                     const e = new Error(
-                      `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${fkConfig.localKey} (${key})`
+                      `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${fkConfig.field} (${key})`
                     )
                     errs.push(e)
                   }
@@ -547,15 +547,14 @@ export class AsyncIDBStore<
       })
     })
 
-    for (const fkConfig of this.collection.foreignKeys) {
-      const { localKey, collection: fkCollection, options } = fkConfig
+    for (const { field, collection, onDelete } of this.collection.foreignKeys) {
       const [name, store] = Object.entries(this.db.stores).find(
-        ([, s]) => s.collection === fkCollection
+        ([, s]) => s.collection === collection
       )!
       store.#dependentStoreNames.add(this.name)
       this.#dependentStoreNames.add(name)
 
-      switch (options.onDelete) {
+      switch (onDelete) {
         case "cascade":
           store.#onBeforeDelete.push((key, ctx, errs) => {
             return new Promise<void>((resolve) => {
@@ -574,7 +573,7 @@ export class AsyncIDBStore<
               const cascadeDelete = async () => {
                 const cursor = request.result
                 if (!cursor) return resolve()
-                if (cursor.value[localKey] === key) {
+                if (cursor.value[field] === key) {
                   const dependentErrs: Error[] = []
                   await this.getPreDeletionForeignKeyErrors(
                     this.getRecordKey(cursor.value),
@@ -611,7 +610,7 @@ export class AsyncIDBStore<
               const ensureNoReference = async () => {
                 const cursor = request.result
                 if (!cursor) return resolve()
-                if (cursor.value[localKey] === key) {
+                if (cursor.value[field] === key) {
                   ctx.tx.abort()
                   errs.push(
                     new Error(
@@ -650,8 +649,8 @@ export class AsyncIDBStore<
               request.onsuccess = function setNull() {
                 const cursor = request.result
                 if (!cursor) return resolve()
-                if (cursor.value[localKey] === key) {
-                  cursor.update({ ...cursor.value, [localKey]: null })
+                if (cursor.value[field] === key) {
+                  cursor.update({ ...cursor.value, [field]: null })
                 }
                 cursor.continue()
               }

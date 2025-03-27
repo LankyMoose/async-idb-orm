@@ -29,19 +29,17 @@ export const users = Collection.create<User, UserDTO>()
 
 export const posts = Collection.create<Post, PostDTO>()
   .withKeyPath("id")
-  .withForeignKey("userId", users, { onDelete: "cascade" })
+  .withForeignKeys([{ field: "userId", collection: users, onDelete: "cascade" }])
   .withTransformers({
-    create: (dto) => ({
-      ...dto,
-      id: crypto.randomUUID(),
-      createdAt: Date.now(),
-    }),
+    create: (dto) => ({ ...dto, id: crypto.randomUUID(), createdAt: Date.now() }),
   })
 
 export const postComments = Collection.create<PostComment, PostCommentDTO>()
   .withKeyPath("id")
-  .withForeignKey("postId", posts, { onDelete: "cascade" })
-  .withForeignKey("userId", users, { onDelete: "cascade" })
+  .withForeignKeys([
+    { field: "postId", collection: posts, onDelete: "cascade" },
+    { field: "userId", collection: users, onDelete: "cascade" },
+  ])
   .withTransformers({
     create: (dto) => ({
       ...dto,
@@ -52,7 +50,7 @@ export const postComments = Collection.create<PostComment, PostCommentDTO>()
 
 export const todos = Collection.create<Todo, TodoDTO>()
   .withKeyPath("id")
-  .withForeignKey("userId", users, { onDelete: "restrict" })
+  .withForeignKeys([{ field: "userId", collection: users, onDelete: "restrict" }])
   .withTransformers({
     create: (dto) => ({
       ...dto,
