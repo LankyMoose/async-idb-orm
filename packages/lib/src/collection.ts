@@ -1,6 +1,6 @@
 import { AsyncIDB } from "idb"
 import { AsyncIDBStore } from "./idbStore"
-import type { RecordKeyPath as RecordKey, CollectionIndex } from "./types"
+import type { RecordKeyPath, CollectionIndex } from "./types"
 
 const CollectionBuilderSentinel = Symbol()
 
@@ -47,7 +47,7 @@ type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
 export class Collection<
   RecordType extends Record<string, any>,
   DTO extends Record<string, any> = RecordType,
-  KeyPath extends RecordKey<RecordType> = never,
+  KeyPath extends keyof RecordType & string = keyof RecordType & string,
   Indexes extends CollectionIndex<RecordType>[] = never
 > {
   [$COLLECTION_INTERNAL]: {
@@ -136,9 +136,7 @@ export class Collection<
   /**
    * Sets the key for this collection
    */
-  withKeyPath<const Key extends keyof RecordType & string>(
-    keyPath: Key
-  ): Collection<RecordType, DTO, Key, Indexes> {
+  withKeyPath<const Key extends KeyPath>(keyPath: Key): Collection<RecordType, DTO, Key, Indexes> {
     this.keyPath = keyPath as any
     return this as any as Collection<RecordType, DTO, Key, Indexes>
   }
