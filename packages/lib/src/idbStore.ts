@@ -298,6 +298,7 @@ export class AsyncIDBStore<
    * Iterates over all records in the store
    */
   async *[Symbol.asyncIterator]() {
+    const { read: deserialize } = this.collection.serializationConfig
     const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
     const objectStore: IDBObjectStore = (
       this.#tx ?? db.transaction(this.name, "readonly")
@@ -331,7 +332,7 @@ export class AsyncIDBStore<
 
     for await (const item of resultQueue) {
       if (item === null) continue
-      yield item
+      yield deserialize(item)
     }
   }
 
