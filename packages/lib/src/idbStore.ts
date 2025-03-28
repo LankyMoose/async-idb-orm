@@ -541,42 +541,39 @@ export class AsyncIDBStore<
       return
     }
 
-    this.#onBeforeCreate.push((record, ctx, errs) => {
+    this.#onBeforeCreate.push(async (record, { tx }, errs) => {
       // ensure all fkeys point to valid records
-      return new Promise<void>((resolve) => {
-        const tx = ctx.tx
-        Promise.all(
-          this.collection.foreignKeys.map(
-            ({ ref, collection }) =>
-              new Promise<void>((res) => {
-                const [name] = Object.entries(this.db.stores).find(
-                  ([, s]) => s.collection === collection
-                )!
-                const objectStore = tx.objectStore(name)
-                const key = record[ref]
-                const request = objectStore.get(key)
-                request.onerror = (e) => {
-                  ctx.tx.abort()
+      await Promise.all(
+        this.collection.foreignKeys.map(
+          ({ ref, collection }) =>
+            new Promise<void>((resolve) => {
+              const [name] = Object.entries(this.db.stores).find(
+                ([, s]) => s.collection === collection
+              )!
+              const objectStore = tx.objectStore(name)
+              const key = record[ref]
+              const request = objectStore.get(key)
+              request.onerror = (e) => {
+                tx.abort()
+                const err = new Error(
+                  `[async-idb-orm]: An error occurred while applying FK ${this.name}:${ref} (${key})`
+                )
+                err.cause = e
+                errs.push(err)
+                resolve()
+              }
+              request.onsuccess = () => {
+                if (!request.result) {
                   const err = new Error(
-                    `[async-idb-orm]: An error occurred while applying FK ${this.name}:${ref} (${key})`
+                    `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${ref} (${key})`
                   )
-                  err.cause = e
                   errs.push(err)
-                  res()
                 }
-                request.onsuccess = () => {
-                  if (!request.result) {
-                    const err = new Error(
-                      `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${ref} (${key})`
-                    )
-                    errs.push(err)
-                  }
-                  res()
-                }
-              })
-          )
-        ).then(() => resolve())
-      })
+                resolve()
+              }
+            })
+        )
+      )
     })
 
     for (const { ref: field, collection, onDelete } of this.collection.foreignKeys) {
