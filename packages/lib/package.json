@@ -1,7 +1,7 @@
 {
   "name": "async-idb-orm",
   "version": "4.2.1",
-  "description": "Async wrapper for IndexedDB with an ORM-like API and support for migrations, model relationships and ARP (active record pattern)",
+  "description": "Promise-based IndexedDB wrapper with an ORM-like API and support for Active Records, relations and migrations",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {

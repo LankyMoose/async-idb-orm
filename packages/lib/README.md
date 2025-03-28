@@ -1,6 +1,6 @@
 # **async-idb-orm**
 
-#### _Async wrapper for IndexedDB with an ORM-like API and support for migrations, model relationships and ARP (active record pattern)_
+#### _Promise-based IndexedDB wrapper with an ORM-like API and support for Active Records, relations and migrations_
 
 ---
 
@@ -10,13 +10,15 @@
 > - [Async Iteration](#async-iteration)
 > - [Active Records](#active-records)
 > - [Transactions](#transactions)
-> - [Relationships & Foreign Keys](#relationships-foreign-keys)
+> - [Relations & Foreign Keys](#relations)
 > - [Serialization](#serialization)
 > - [Migrations](#migrations)
 
 ---
 
-<h3 id="#getting-started">Getting Started</h3>
+<h3 id="#getting-started">
+  Getting Started
+</h3>
 
 ```ts
 // db.ts
@@ -78,7 +80,9 @@ const youngestUser = await db.collections.users.min("idx_age")
 
 ---
 
-<h3 id="#async-iteration">Async Iteration</h3>
+<h3 id="#async-iteration">
+  Async Iteration
+</h3>
 
 Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
 
@@ -90,7 +94,9 @@ for await (const user of db.collections.users) {
 
 ---
 
-<h3 id="#active-records">Active Records</h3>
+<h3 id="#active-records">
+  Active Records
+</h3>
 
 `create`, `find`, `findMany`, and `all` each have an `Active` equivalent that returns an `ActiveRecord<T>` which includes `save` and `delete` methods.
 
@@ -120,7 +126,9 @@ async function setUserAge(userId: string, age: number) {
 
 ---
 
-<h3 id="#transactions">Transactions</h3>
+<h3 id="#transactions">
+  Transactions
+</h3>
 
 ```ts
 async function transferFunds(
@@ -167,7 +175,9 @@ async function transferFunds(
 
 ---
 
-<h3 id="#relationships-foreign-keys">Relationships & Foreign Keys</h3>
+<h3 id="#relations">
+  Relations & Foreign Keys
+</h3>
 
 IndexedDB does not implement foreign key constraints. **async-idb-orm** allows you to define pseudo-foreign-keys on collections that are simulated during query execution.
 
@@ -223,7 +233,9 @@ await db.collections.users.delete(bob.id)
 
 ---
 
-<h3 id="#serialization">Serialization</h3>
+<h3 id="#serialization">
+  Serialization
+</h3>
 
 **async-idb-orm** provides a simple way to serialize and deserialize collection records. This is useful for storing values that would not otherwise be supported by IndexedDB.
 
@@ -264,7 +276,9 @@ export const users = Collection.create<User, UserDTO>()
 
 ---
 
-<h3 id="#migrations">Migrations</h3>
+<h3 id="#migrations">
+  Migrations
+</h3>
 
 **async-idb-orm** supports database migrations. This is useful for upgrading your database schema over time.
 
