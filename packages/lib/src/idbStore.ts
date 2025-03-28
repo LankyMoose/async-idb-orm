@@ -23,7 +23,7 @@ export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
 > {
   #onBeforeCreate: ((
-    data: CollectionDTO<T>,
+    data: CollectionRecord<T>,
     ctx: TransactionContext,
     errs: Error[]
   ) => Promise<void>)[]
@@ -107,9 +107,8 @@ export class AsyncIDBStore<
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
       if (this.#onBeforeCreate.length) {
-        const key = this.getRecordKey(data)
         const fkErrs: Error[] = []
-        await this.getPreCreationForeignKeyErrors(key, ctx, fkErrs)
+        await this.getPreCreationForeignKeyErrors(data, ctx, fkErrs)
         if (fkErrs.length) return reject(fkErrs)
       }
       const request = ctx.objectStore.add(data)
@@ -146,9 +145,8 @@ export class AsyncIDBStore<
 
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
       if (this.#onBeforeCreate.length) {
-        const key = this.getRecordKey(record)
         const fkErrs: Error[] = []
-        await this.getPreCreationForeignKeyErrors(key, ctx, fkErrs)
+        await this.getPreCreationForeignKeyErrors(record, ctx, fkErrs)
         if (fkErrs.length) return reject(fkErrs)
       }
 
@@ -506,11 +504,11 @@ export class AsyncIDBStore<
   }
 
   private async getPreCreationForeignKeyErrors(
-    key: CollectionKeyPathType<T>,
+    record: CollectionRecord<T>,
     ctx: TransactionContext,
     errs: Error[]
   ): Promise<void> {
-    await Promise.all(this.#onBeforeCreate.map((cb) => cb(key, ctx, errs)))
+    await Promise.all(this.#onBeforeCreate.map((cb) => cb(record, ctx, errs)))
   }
 
   private initForeignKeys() {
