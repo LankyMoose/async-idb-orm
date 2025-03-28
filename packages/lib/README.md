@@ -1,6 +1,6 @@
 # **async-idb-orm**
 
-#### _Async wrapper for IndexedDB with an ORM-like API, support for model relationships and ARP (active record pattern)_
+#### _Async wrapper for IndexedDB with an ORM-like API and support for migrations, model relationships and ARP (active record pattern)_
 
 ---
 
