@@ -1,6 +1,6 @@
 {
   "name": "async-idb-orm",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "description": "Async wrapper for IndexedDB with an ORM-like API, support for model relationships and ARP (active record pattern)",
   "main": "dist/index.js",
   "type": "module",

@@ -10,7 +10,8 @@
 > - [Async Iteration](#async-iteration)
 > - [Active Records](#active-records)
 > - [Transactions](#transactions)
-> - [Relationships](#relationships-foreign-keys)
+> - [Relationships & Foreign Keys](#relationships-foreign-keys)
+> - [Serialization](#serialization)
 
 ---
 
@@ -217,4 +218,45 @@ await db.collections.postComments.create({
 
 // deletes bob, his post and alice's comment
 await db.collections.users.delete(bob.id)
+```
+
+---
+
+<h3 id="#serialization">Serialization</h3>
+
+**async-idb-orm** provides a simple way to serialize and deserialize collection records. This is useful for storing values that would not otherwise be supported by IndexedDB.
+
+```ts
+class TimeStamp {
+  date: Date
+  constructor(initialValue?: string) {
+    this.date = initialValue ? new Date(initialValue) : new Date()
+  }
+
+  toJSON() {
+    return this.date.toISOString()
+  }
+}
+
+type User = { id: string; name: string; createdAt: TimeStamp }
+type UserDTO = { name: string }
+
+export const users = Collection.create<User, UserDTO>()
+  .withTransformers({
+    create: (dto) => ({
+      ...dto,
+      id: crypto.randomUUID(),
+      createdAt: new TimeStamp(),
+    }),
+  })
+  .withSerialization({
+    write: (user) => ({
+      ...user,
+      createdAt: user.createdAt.toJSON(),
+    }),
+    read: (serializedUser) => ({
+      ...serializedUser,
+      createdAt: new TimeStamp(serializedUser.createdAt),
+    }),
+  })
 ```
