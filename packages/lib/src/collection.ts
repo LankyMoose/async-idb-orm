@@ -44,6 +44,9 @@ type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
   onDelete: ForeignKeyOnDelete
 }
 
+/**
+ * @description Collection builder - see `Collection.create()`
+ */
 export class Collection<
   RecordType extends Record<string, any>,
   DTO extends Record<string, any> = RecordType,
@@ -125,6 +128,26 @@ export class Collection<
     return this
   }
 
+  /**
+   * Creates a new collection
+   * @example
+   * ```ts
+   * type Todo = { id: number; text: string; createdAt: number }
+   * type TodoDTO = { text: string }
+   *
+   * const todos = Collection.create<Todo, TodoDTO>()
+   *   .withKeyPath("id")
+   *   .withIndexes([{ keyPath: "createdAt", name: "idx_createdAt" }])
+   *   .withTransformers({
+   *      create: ({ text }) => ({
+   *        id: crypto.randomUUID(),
+   *        text,
+   *        createdAt: Date.now()
+   *      })
+   *   })
+   *
+   * ```
+   */
   static create<
     RecordType extends Record<string, any>,
     DTO extends Record<string, any> = any
