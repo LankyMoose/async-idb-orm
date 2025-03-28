@@ -35,6 +35,11 @@ export type CollectionTransformers<
   update?: (data: RecordType) => RecordType
 }
 
+type SerializationConfig<RecordType extends Record<string, any>, T> = {
+  write: (data: RecordType) => T
+  read: (data: T) => RecordType
+}
+
 export type CollectionConflictMode = "delete" | "ignore"
 
 type ForeignKeyOnDelete = "cascade" | "restrict" | "no action" | "set null"
@@ -70,6 +75,10 @@ export class Collection<
     create?: (data: DTO) => RecordType
     update?: (data: RecordType) => RecordType
   } = {}
+  serializationConfig: SerializationConfig<RecordType, any> = {
+    write: (data: RecordType) => data,
+    read: (data: any) => data,
+  }
   creationConflictMode?: CollectionConflictMode
   onCreationConflict?: () => void
 
@@ -122,6 +131,11 @@ export class Collection<
    */
   withTransformers(transformers: CollectionTransformers<RecordType, DTO>): this {
     this.transformers = transformers
+    return this
+  }
+
+  withSerialization<T>(config: SerializationConfig<RecordType, T>): this {
+    this.serializationConfig = config
     return this
   }
 

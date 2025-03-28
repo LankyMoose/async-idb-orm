@@ -31,7 +31,6 @@ export function UsersList() {
     await db.collections.users.create({
       name: randomUserName(),
       age: Math.floor(Math.random() * 100),
-      alive: true,
     })
   }, [])
 
@@ -62,7 +61,6 @@ function UserCard({ user }: { user: User }) {
       <span>ID: {user.id}</span>
       <span>Name: {user.name}</span>
       <span>Age: {user.age}</span>
-      <span>Alive: {user.alive ? "alive" : "dead"}</span>
       <div>
         <button onclick={() => db.collections.users.delete((u) => u.id === user.id)}>Delete</button>
         <button onclick={() => (selectedUser.value = user)}>Select</button>

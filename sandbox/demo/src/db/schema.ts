@@ -8,6 +8,7 @@ import {
   UserDTO,
   Todo,
   TodoDTO,
+  TimeStamp,
 } from "./types.ts"
 
 export const users = Collection.create<User, UserDTO>()
@@ -20,10 +21,22 @@ export const users = Collection.create<User, UserDTO>()
       ...dto,
       id: crypto.randomUUID(),
       name: dto.name ?? "John Doe",
-      createdAt: Date.now(),
+      createdAt: new TimeStamp(),
       alive: "alive" in dto && typeof dto.alive === "boolean" ? dto.alive : true,
     }),
-    update: (data) => ({ ...data, updatedAt: Date.now() }),
+    update: (data) => ({ ...data, updatedAt: new TimeStamp() }),
+  })
+  .withSerialization({
+    write: (user) => ({
+      ...user,
+      createdAt: TimeStamp.toJSON(user.createdAt),
+      updatedAt: user.updatedAt ? TimeStamp.toJSON(user.updatedAt) : undefined,
+    }),
+    read: (user) => ({
+      ...user,
+      createdAt: new TimeStamp(user.createdAt),
+      updatedAt: user.updatedAt ? new TimeStamp(user.updatedAt) : undefined,
+    }),
   })
 
 export const posts = Collection.create<Post, PostDTO>()

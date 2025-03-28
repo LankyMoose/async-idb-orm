@@ -3,7 +3,7 @@ import { selectedUser } from "./state/selectedUser"
 import { UsersList } from "./components/UserList"
 import { CreateUserForm } from "./components/CreateUserForm"
 import { UserPosts } from "./components/UserPosts"
-import { db } from "./db"
+import { db, TimeStamp } from "./db"
 import { assert, assertThrows } from "./assert"
 window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
 
@@ -13,9 +13,11 @@ const seed = async () => {
   await db.collections.posts.clear()
   await db.collections.users.clear()
 
+  let johnsCreationTime: TimeStamp | null = null
   await db.transaction(async (c) => {
-    const john = await c.users.create({ name: "John Doe", age: 30, alive: true })
-    const sarah = await c.users.create({ name: "Sarah Connor", age: 25, alive: true })
+    const john = await c.users.create({ name: "John Doe", age: 30 })
+    johnsCreationTime = john.createdAt
+    const sarah = await c.users.create({ name: "Sarah Connor", age: 25 })
 
     const post = await c.posts.create({ userId: john.id, content: "Hello world" })
     await c.postComments.create({
@@ -27,6 +29,11 @@ const seed = async () => {
 
   const john = await db.collections.users.findActive((user) => user.name === "John Doe")
   assert(john, "Expected to find John Doe")
+  assert(john.createdAt instanceof TimeStamp, "Expected createdAt to be a TimeStamp")
+  assert(
+    TimeStamp.toJSON(john.createdAt) === TimeStamp.toJSON(johnsCreationTime!),
+    "Expected createdAt to match"
+  )
   await john.delete()
   assert((await db.collections.users.count()) === 1, "Expected 1 user")
   // posts & post comments have `cascade delete`, so there should be no posts or post comments
@@ -48,7 +55,7 @@ const seed = async () => {
   await sarah.delete()
   assert((await db.collections.users.count()) === 0, "Expected 0 users")
 
-  const bob = await db.collections.users.create({ name: "Bob Smith", age: 30, alive: true })
+  const bob = await db.collections.users.create({ name: "Bob Smith", age: 30 })
   assert(bob, "Expected to create Bob Smith")
 
   const todo = await db.collections.todos.create({ userId: bob.id, content: "Buy milk" })

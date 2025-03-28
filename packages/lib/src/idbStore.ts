@@ -101,8 +101,10 @@ export class AsyncIDBStore<
    * @returns {Promise<CollectionRecord<T>>}
    */
   create(data: CollectionDTO<T>) {
-    data = this.unwrap(data)
     const { create: transformer } = this.collection.transformers
+    const { write: serialize } = this.collection.serializationConfig
+
+    data = this.unwrap(data)
     if (transformer) data = transformer(data)
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
@@ -111,14 +113,15 @@ export class AsyncIDBStore<
         await this.getPreCreationForeignKeyErrors(data, ctx, fkErrs)
         if (fkErrs.length) return reject(fkErrs)
       }
-      const request = ctx.objectStore.add(data)
+
+      const request = ctx.objectStore.add(serialize(data))
+
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.read(request.result as CollectionKeyPathType<T>).then((data) => {
-          this.emit("write", data!)
-          this.emit("write|delete", data!)
-          resolve(data!)
-        })
+        if (!request.result) return reject(request.error)
+        this.emit("write", data)
+        this.emit("write|delete", data)
+        resolve(data)
       }
     })
   }
@@ -139,8 +142,10 @@ export class AsyncIDBStore<
    * @returns {Promise<CollectionRecord<T> | null>}
    */
   update(record: CollectionRecord<T>) {
-    record = this.unwrap(record)
     const { update: transformer } = this.collection.transformers
+    const { write: serialize } = this.collection.serializationConfig
+
+    record = this.unwrap(record)
     if (transformer) record = transformer(record)
 
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
@@ -150,15 +155,14 @@ export class AsyncIDBStore<
         if (fkErrs.length) return reject(fkErrs)
       }
 
-      const request = ctx.objectStore.put(record)
+      const request = ctx.objectStore.put(serialize(record))
+
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.read(request.result as CollectionKeyPathType<T>).then((data) => {
-          if (data === null) return resolve(null)
-          this.emit("write", data)
-          this.emit("write|delete", data)
-          resolve(data)
-        })
+        if (!request.result) return reject(request.error)
+        this.emit("write", record)
+        this.emit("write|delete", record)
+        resolve(record)
       }
     })
   }
@@ -174,8 +178,10 @@ export class AsyncIDBStore<
     if (predicateOrKey instanceof Function) {
       return this.deleteByPredicate(predicateOrKey)
     }
+
     const data = await this.read(predicateOrKey)
     if (data === null) return null
+
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
       if (this.#onBeforeDelete.length) {
         const key = this.getRecordKey(data)
@@ -237,6 +243,7 @@ export class AsyncIDBStore<
    * @returns {Promise<CollectionRecord<T>[]>}
    */
   findMany(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
+    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       const results: CollectionRecord<T>[] = []
@@ -244,9 +251,11 @@ export class AsyncIDBStore<
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(results)
-        if (!predicate(cursor.value)) return cursor.continue()
 
-        results.push(cursor.value)
+        const value = deserialize(cursor.value)
+        if (!predicate(value)) return cursor.continue()
+
+        results.push(value)
         if (results.length >= limit) return resolve(results)
       }
     })
@@ -267,10 +276,11 @@ export class AsyncIDBStore<
    * @returns {Promise<CollectionRecord<T>[]>}
    */
   all() {
+    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.getAll()
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result)
+      request.onsuccess = () => resolve(request.result.map(deserialize))
     })
   }
 
@@ -403,6 +413,7 @@ export class AsyncIDBStore<
     name: U,
     direction: "next" | "prev"
   ): Promise<CollectionRecord<T> | null> {
+    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.index(name).openCursor(null, direction)
 
@@ -410,27 +421,35 @@ export class AsyncIDBStore<
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        resolve(cursor.value)
+        resolve(deserialize(cursor.value))
       }
     })
   }
 
   private read(id: CollectionKeyPathType<T>) {
+    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.get(id as IDBValidKey)
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result ?? null)
+      request.onsuccess = () => {
+        if (!request.result) return resolve(null)
+        resolve(deserialize(request.result))
+      }
     })
   }
 
   private deleteByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
+    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
+
       request.onerror = (err) => reject(err)
       request.onsuccess = async () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        if (!predicate(cursor.value)) return cursor.continue()
+
+        const value = deserialize(cursor.value)
+        if (!predicate(value)) return cursor.continue()
 
         if (this.#onBeforeDelete.length) {
           const fkErrs: Error[] = []
@@ -443,23 +462,26 @@ export class AsyncIDBStore<
         }
 
         cursor.delete()
-        this.emit("delete", cursor.value)
-        this.emit("write|delete", cursor.value)
-        return resolve(cursor.value)
+        this.emit("delete", value)
+        this.emit("write|delete", value)
+        return resolve(value)
       }
     })
   }
 
   private findByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
+    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        if (!predicate(cursor.value)) return cursor.continue()
 
-        resolve(cursor.value)
+        const value = deserialize(cursor.value)
+        if (!predicate(value)) return cursor.continue()
+
+        resolve(value)
       }
     })
   }
@@ -522,29 +544,29 @@ export class AsyncIDBStore<
         const tx = ctx.tx
         Promise.all(
           this.collection.foreignKeys.map(
-            (fkConfig) =>
+            ({ ref, collection }) =>
               new Promise<void>((res) => {
                 const [name] = Object.entries(this.db.stores).find(
-                  ([, s]) => s.collection === fkConfig.collection
+                  ([, s]) => s.collection === collection
                 )!
                 const objectStore = tx.objectStore(name)
-                const key = record[fkConfig.ref]
+                const key = record[ref]
                 const request = objectStore.get(key)
-                request.onerror = (err) => {
+                request.onerror = (e) => {
                   ctx.tx.abort()
-                  const e = new Error(
-                    `[async-idb-orm]: An error occurred while applying FK ${this.name}:${fkConfig.ref} (${key})`
+                  const err = new Error(
+                    `[async-idb-orm]: An error occurred while applying FK ${this.name}:${ref} (${key})`
                   )
-                  e.cause = err
-                  errs.push(e)
+                  err.cause = e
+                  errs.push(err)
                   res()
                 }
                 request.onsuccess = () => {
                   if (!request.result) {
-                    const e = new Error(
-                      `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${fkConfig.ref} (${key})`
+                    const err = new Error(
+                      `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${ref} (${key})`
                     )
-                    errs.push(e)
+                    errs.push(err)
                   }
                   res()
                 }
@@ -560,6 +582,13 @@ export class AsyncIDBStore<
       )!
       store.#dependentStoreNames.add(this.name)
       this.#dependentStoreNames.add(name)
+
+      const deserialize = (store.collection as Collection<T>).serializationConfig.read as (
+        data: any
+      ) => CollectionRecord<T>
+      const serialize = (store.collection as Collection<T>).serializationConfig.write as (
+        data: CollectionRecord<T>
+      ) => any
 
       switch (onDelete) {
         case "cascade":
@@ -580,10 +609,13 @@ export class AsyncIDBStore<
               const cascadeDelete = async () => {
                 const cursor = request.result
                 if (!cursor) return resolve()
-                if (cursor.value[field] === key) {
+
+                const value = deserialize(cursor.value)
+
+                if (value[field] === key) {
                   const dependentErrs: Error[] = []
                   await this.getPreDeletionForeignKeyErrors(
-                    this.getRecordKey(cursor.value),
+                    this.getRecordKey(value),
                     ctx,
                     dependentErrs
                   )
@@ -617,7 +649,10 @@ export class AsyncIDBStore<
               const ensureNoReference = async () => {
                 const cursor = request.result
                 if (!cursor) return resolve()
-                if (cursor.value[field] === key) {
+
+                const value = deserialize(cursor.value)
+
+                if (value[field] === key) {
                   ctx.tx.abort()
                   errs.push(
                     new Error(
@@ -628,7 +663,7 @@ export class AsyncIDBStore<
                 }
                 const dependentErrs: Error[] = []
                 await this.getPreDeletionForeignKeyErrors(
-                  this.getRecordKey(cursor.value),
+                  this.getRecordKey(value),
                   ctx,
                   dependentErrs
                 )
@@ -653,14 +688,22 @@ export class AsyncIDBStore<
                 errs.push(new Error(err as any))
                 resolve()
               }
-              request.onsuccess = function setNull() {
+              const setNull = () => {
                 const cursor = request.result
                 if (!cursor) return resolve()
-                if (cursor.value[field] === key) {
-                  cursor.update({ ...cursor.value, [field]: null })
+
+                const value = deserialize(cursor.value)
+                if (value[field] !== key) return cursor.continue()
+
+                const updateReq = cursor.update(serialize({ ...value, [field]: null }))
+                updateReq.onerror = (err) => {
+                  ctx.tx.abort()
+                  errs.push(new Error(err as any))
+                  resolve()
                 }
-                cursor.continue()
+                updateReq.onsuccess = () => cursor.continue()
               }
+              request.onsuccess = setNull
             })
           })
           break
