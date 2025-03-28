@@ -257,6 +257,8 @@ export class AsyncIDBStore<
 
         results.push(value)
         if (results.length >= limit) return resolve(results)
+
+        cursor.continue()
       }
     })
   }
