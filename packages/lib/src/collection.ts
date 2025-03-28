@@ -121,11 +121,13 @@ export class Collection<
   }
 
   private static validateKeyPath(
-    keyPath: any,
+    keyPath: string | string[] | undefined,
     handler: (...args: KeyPathInvalidationEventArgs) => void
   ) {
     if (!keyPath) return handler(ERR_KEYPATH_MISSING, null)
-    if (Array.isArray(keyPath) && keyPath.length === 0) return handler(ERR_KEYPATH_EMPTY, null)
+    if (typeof keyPath === "string") return
+    if (keyPath.length === 0) return handler(ERR_KEYPATH_EMPTY, null)
+
     const seenKeys = new Set<string>()
     for (const key of keyPath) {
       if (seenKeys.has(key)) handler(ERR_KEYPATH_DUPLICATE, key)

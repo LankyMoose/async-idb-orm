@@ -1,4 +1,4 @@
-import type { CollectionSchema, DBTaskFn } from "./types"
+import type { CollectionSchema, DBInstanceCallback } from "./types"
 
 import { Collection } from "./collection.js"
 import { AsyncIDBStore } from "./idbStore.js"
@@ -10,7 +10,7 @@ import { AsyncIDBStore } from "./idbStore.js"
 export class AsyncIDB {
   db: IDBDatabase | null = null
   stores: { [key: string]: AsyncIDBStore<any> }
-  taskQueue: DBTaskFn[] = []
+  instanceCallbacks: DBInstanceCallback[] = []
   constructor(
     private name: string,
     schema: CollectionSchema,
@@ -50,18 +50,18 @@ export class AsyncIDB {
     request.onupgradeneeded = () => this.initializeStores(request.result)
     request.onsuccess = () => {
       this.db = request.result
-      while (this.taskQueue.length) {
-        this.taskQueue.shift()!(this.db)
+      while (this.instanceCallbacks.length) {
+        this.instanceCallbacks.shift()!(this.db)
       }
     }
   }
 
-  queueTask(taskFn: DBTaskFn): void {
+  getInstance(instanceCallback: DBInstanceCallback): void {
     if (!this.db) {
-      this.taskQueue.push(taskFn)
+      this.instanceCallbacks.push(instanceCallback)
       return
     }
-    taskFn(this.db)
+    instanceCallback(this.db)
   }
 
   initializeStores(db: IDBDatabase) {

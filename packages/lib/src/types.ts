@@ -1,6 +1,6 @@
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
 
-export type DBTaskFn = (db: IDBDatabase) => any
+export type DBInstanceCallback = (db: IDBDatabase) => any
 
 type NonEmptyArray = [any, ...any[]]
 

@@ -45,24 +45,6 @@ export class AsyncIDBStore<
     this.#txScope = new Set([this.name])
   }
 
-  static getCollection(store: AsyncIDBStore<any>) {
-    return store.collection as Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
-  }
-
-  static cloneForTransaction(
-    tx: IDBTransaction,
-    store: AsyncIDBStore<any>,
-    eventQueue: Function[]
-  ) {
-    const cloned = new AsyncIDBStore(store.db, store.collection, store.name)
-    cloned.#tx = tx
-    cloned.#eventListeners = store.#eventListeners
-    cloned.emit = (event, data) => eventQueue.push(() => store.emit(event, data))
-    cloned.#onBeforeCreate = store.#onBeforeCreate
-    cloned.#onBeforeDelete = store.#onBeforeDelete
-    return cloned
-  }
-
   /**
    * @param {CollectionEvent} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
    * @param {(data: CollectionRecord<T>) => void} listener The callback function that will be called when the event is triggered.
@@ -296,7 +278,7 @@ export class AsyncIDBStore<
    * Iterates over all records in the store
    */
   async *[Symbol.asyncIterator]() {
-    const db = await new Promise<IDBDatabase>((res) => this.db.queueTask(res))
+    const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
     const objectStore: IDBObjectStore = (
       this.#tx ?? db.transaction(this.name, "readonly")
     ).objectStore(this.name)
@@ -370,6 +352,43 @@ export class AsyncIDBStore<
    */
   min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionIndexIDBValidKey<T, U> | null> {
     return this.firstByKeyDirection(name, "next")
+  }
+
+  static getCollection(store: AsyncIDBStore<any>) {
+    return store.collection as Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
+  }
+
+  static cloneForTransaction(
+    tx: IDBTransaction,
+    store: AsyncIDBStore<any>,
+    eventQueue: Function[]
+  ) {
+    const cloned = new AsyncIDBStore(store.db, store.collection, store.name)
+    cloned.#tx = tx
+    cloned.#eventListeners = store.#eventListeners
+    cloned.emit = (event, data) => eventQueue.push(() => store.emit(event, data))
+    cloned.#onBeforeCreate = store.#onBeforeCreate
+    cloned.#onBeforeDelete = store.#onBeforeDelete
+    return cloned
+  }
+
+  static init(store: AsyncIDBStore<any>) {
+    store.initForeignKeys()
+  }
+
+  static finalizeDependencies(db: AsyncIDB, store: AsyncIDBStore<any>) {
+    const seenNames = new Set<string>([store.name])
+    const stack: string[] = [...store.#dependentStoreNames]
+
+    while (stack.length) {
+      const name = stack.shift()!
+      if (seenNames.has(name)) {
+        continue
+      }
+      store.#txScope.add(name)
+      seenNames.add(name)
+      stack.push(...db.stores[name].#dependentStoreNames)
+    }
   }
 
   private firstByKeyDirection<U extends CollectionIndexName<T>>(
@@ -461,7 +480,7 @@ export class AsyncIDBStore<
     ) => void
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      this.db.queueTask((db) => {
+      this.db.getInstance((db) => {
         const tx = this.#tx ?? db.transaction(this.#txScope, "readwrite")
         const objectStore = tx.objectStore(this.name)
         reqHandler({ db, objectStore, tx }, resolve, reject)
@@ -483,25 +502,6 @@ export class AsyncIDBStore<
     errs: Error[]
   ): Promise<void> {
     await Promise.all(this.#onBeforeCreate.map((cb) => cb(key, ctx, errs)))
-  }
-
-  static init(store: AsyncIDBStore<any>) {
-    store.initForeignKeys()
-  }
-
-  static finalizeDependencies(db: AsyncIDB, store: AsyncIDBStore<any>) {
-    const seenNames = new Set<string>([store.name])
-    const stack: string[] = [...store.#dependentStoreNames]
-
-    while (stack.length) {
-      const name = stack.shift()!
-      if (seenNames.has(name)) {
-        continue
-      }
-      store.#txScope.add(name)
-      seenNames.add(name)
-      stack.push(...db.stores[name].#dependentStoreNames)
-    }
   }
 
   private initForeignKeys() {

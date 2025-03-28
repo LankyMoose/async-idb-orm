@@ -24,7 +24,7 @@ export type AsyncIDBInstance<T extends CollectionSchema> = {
     [key in keyof T]: AsyncIDBStore<T[key]>
   }
   transaction: IDBTransactionFunction<T>
-  onInit: (callback: (db: IDBDatabase) => void) => void
+  getInstance: () => Promise<IDBDatabase>
 }
 
 /**
@@ -42,16 +42,10 @@ export function idb<T extends CollectionSchema>(
   errHandler = console.error
 ): AsyncIDBInstance<T> {
   const db = new AsyncIDB(name, schema, version, errHandler)
-
-  const onInitCallbacks: ((idbDatabase: IDBDatabase) => void)[] = []
-  db.queueTask((idbDatabase) => {
-    while (onInitCallbacks.length) onInitCallbacks.shift()!(idbDatabase)
-  })
-
   const collections = db.stores as AsyncIDBInstance<T>["collections"]
 
   const transaction: AsyncIDBInstance<T>["transaction"] = async (callback, options) => {
-    const idbInstance = await new Promise<IDBDatabase>((res) => db.queueTask(res))
+    const idbInstance = await new Promise<IDBDatabase>((res) => db.getInstance(res))
     const tx = idbInstance.transaction(Object.keys(schema), "readwrite", options)
 
     const eventQueue: Function[] = []
@@ -75,17 +69,9 @@ export function idb<T extends CollectionSchema>(
     }
   }
 
-  const onInit: AsyncIDBInstance<T>["onInit"] = (callback) => {
-    if (db.db) {
-      callback(db.db)
-      return
-    }
-    onInitCallbacks.push(callback)
+  const getInstance: AsyncIDBInstance<T>["getInstance"] = () => {
+    return new Promise((res) => db.getInstance(res))
   }
 
-  return {
-    collections,
-    transaction,
-    onInit,
-  }
+  return { collections, transaction, getInstance }
 }
