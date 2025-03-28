@@ -64,14 +64,9 @@ export type CollectionKeyPathType<
   ? ObjectValues<T[typeof $COLLECTION_INTERNAL]["record"], KeyPath>
   : never
 
-export type CollectionIndexIDBValidKey<
-  T extends Collection<any, any, any, any>,
-  Name extends CollectionIndexName<T>
-> = CollectionKeyPathType<T, Extract<T["indexes"][number], { name: Name }>["keyPath"]>
-
 export type CollectionIndex<RecordType extends Record<string, any>> = {
   name: string
-  keyPath: RecordKeyPath<RecordType>
+  key: RecordKeyPath<RecordType>
   options?: IDBIndexParameters
 }
 

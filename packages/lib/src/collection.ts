@@ -39,10 +39,16 @@ export type CollectionConflictMode = "delete" | "ignore"
 
 type ForeignKeyOnDelete = "cascade" | "restrict" | "no action" | "set null"
 type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
-  field: keyof RecordType & string
+  ref: keyof RecordType & string
   collection: Collection<any, any, any, any>
   onDelete: ForeignKeyOnDelete
 }
+
+type ForeignKeyConfigCallback<RecordType extends Record<string, any>> = (fields: {
+  [key in keyof RecordType & string]: key
+}) => CollectionForeignKeyConfig<RecordType>[]
+
+const keyPassThroughProxy = new Proxy({}, { get: (_: any, key: string) => key })
 
 /**
  * @description Collection builder - see `Collection.create()`
@@ -50,7 +56,7 @@ type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
 export class Collection<
   RecordType extends Record<string, any>,
   DTO extends Record<string, any> = RecordType,
-  KeyPath extends keyof RecordType & string = keyof RecordType & string,
+  KeyPath extends keyof RecordType & string = "id" extends keyof RecordType & string ? "id" : never,
   Indexes extends CollectionIndex<RecordType>[] = never
 > {
   [$COLLECTION_INTERNAL]: {
@@ -70,7 +76,7 @@ export class Collection<
   constructor(key: symbol) {
     if (key !== CollectionBuilderSentinel)
       throw new Error("Cannot call CollectionBuilder directly - use Collection.create<T>()")
-    this.keyPath = undefined as any as KeyPath
+    this.keyPath = "id" as KeyPath
     this.indexes = [] as any as Indexes
     this.foreignKeys = []
     this[$COLLECTION_INTERNAL] = null!
@@ -97,11 +103,15 @@ export class Collection<
 
   /**
    * Sets the foreign keys for this collection
-   * @param {CollectionForeignKeyConfig<RecordType>[]} foreignKeys
+   * @param {ForeignKeyConfigCallback<RecordType> | CollectionForeignKeyConfig<RecordType>[]} callbackOrKeys
    * @returns {this}
    */
-  withForeignKeys(foreignKeys: CollectionForeignKeyConfig<RecordType>[]): this {
-    this.foreignKeys = foreignKeys
+  withForeignKeys(
+    callbackOrKeys: ForeignKeyConfigCallback<RecordType> | CollectionForeignKeyConfig<RecordType>[]
+  ): this {
+    this.foreignKeys = Array.isArray(callbackOrKeys)
+      ? callbackOrKeys
+      : callbackOrKeys(keyPassThroughProxy)
     return this
   }
 
@@ -156,7 +166,7 @@ export class Collection<
   }
 
   static validate(
-    db: AsyncIDB,
+    db: AsyncIDB<any>,
     collection: Collection<any, any, any, any>,
     logErr: (err: any) => void
   ) {
@@ -171,7 +181,7 @@ export class Collection<
     const seenIndexNames = new Set<string>()
     const dupeIndexNames = new Set<string>()
     for (const index of collection.indexes as CollectionIndex<any>[]) {
-      this.validateKeyPath(index.keyPath, (err, data) =>
+      this.validateKeyPath(index.key, (err, data) =>
         err === ERR_KEYPATH_MISSING
           ? logErr(`Missing keyPath for index "${index.name}"`)
           : err === ERR_KEYPATH_EMPTY

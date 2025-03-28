@@ -7,7 +7,6 @@ import type {
   CollectionDTO,
   CollectionKeyPathType,
   CollectionIndexName,
-  CollectionIndexIDBValidKey,
   ActiveRecord,
   ActiveRecordMethods,
   CollectionEventCallback,
@@ -37,7 +36,7 @@ export class AsyncIDBStore<
   #tx?: IDBTransaction
   #dependentStoreNames: Set<string>
   #txScope: Set<string>
-  constructor(private db: AsyncIDB, private collection: T, public name: string) {
+  constructor(private db: AsyncIDB<any>, private collection: T, public name: string) {
     this.#onBeforeDelete = []
     this.#onBeforeCreate = []
     this.#eventListeners = {
@@ -107,10 +106,11 @@ export class AsyncIDBStore<
     if (transformer) data = transformer(data)
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
-      const fkErrs: Error[] = []
-      await this.getPreCreationForeignKeyErrors(data, ctx, fkErrs)
-      if (fkErrs.length) {
-        return reject(fkErrs)
+      if (this.#onBeforeCreate.length) {
+        const key = this.getRecordKey(data)
+        const fkErrs: Error[] = []
+        await this.getPreCreationForeignKeyErrors(key, ctx, fkErrs)
+        if (fkErrs.length) return reject(fkErrs)
       }
       const request = ctx.objectStore.add(data)
       request.onerror = (err) => reject(err)
@@ -144,7 +144,14 @@ export class AsyncIDBStore<
     const { update: transformer } = this.collection.transformers
     if (transformer) record = transformer(record)
 
-    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
+    return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
+      if (this.#onBeforeCreate.length) {
+        const key = this.getRecordKey(record)
+        const fkErrs: Error[] = []
+        await this.getPreCreationForeignKeyErrors(key, ctx, fkErrs)
+        if (fkErrs.length) return reject(fkErrs)
+      }
+
       const request = ctx.objectStore.put(record)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -172,11 +179,11 @@ export class AsyncIDBStore<
     const data = await this.read(predicateOrKey)
     if (data === null) return null
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
-      const fkErrs: Error[] = []
-      const key = this.getRecordKey(data)
-      await this.getPreDeletionForeignKeyErrors(key, ctx, fkErrs)
-      if (fkErrs.length) {
-        return reject(fkErrs)
+      if (this.#onBeforeDelete.length) {
+        const key = this.getRecordKey(data)
+        const fkErrs: Error[] = []
+        await this.getPreDeletionForeignKeyErrors(key, ctx, fkErrs)
+        if (fkErrs.length) return reject(fkErrs)
       }
       const request = ctx.objectStore.delete(predicateOrKey as IDBValidKey)
       request.onerror = (err) => reject(err)
@@ -239,11 +246,10 @@ export class AsyncIDBStore<
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(results)
-        if (predicate(cursor.value)) {
-          results.push(cursor.value)
-          if (results.length >= limit) return resolve(results)
-        }
-        cursor.continue()
+        if (!predicate(cursor.value)) return cursor.continue()
+
+        results.push(cursor.value)
+        if (results.length >= limit) return resolve(results)
       }
     })
   }
@@ -342,19 +348,19 @@ export class AsyncIDBStore<
 
   /**
    * Gets the last record in an index
-   * @param {CollectionIndexName<T>} name The name of the index to get the first record from
-   * @returns {Promise<CollectionIndexIDBValidKey<T, U> | null>} The last record in the index, or null if the index is empty
+   * @param {CollectionIndexName<T>} name The name of the index to query the record by
+   * @returns {Promise<CollectionRecord<T, U> | null>} The last record in the index, or null if the index is empty
    */
-  max<U extends CollectionIndexName<T>>(name: U): Promise<CollectionIndexIDBValidKey<T, U> | null> {
+  max<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
     return this.firstByKeyDirection(name, "prev")
   }
 
   /**
    * Gets the first record in an index
-   * @param {CollectionIndexName<T>} name The name of the index to get the first record from
-   * @returns {Promise<CollectionIndexIDBValidKey<T, U> | null>} The first record in the index, or null if the index is empty
+   * @param {CollectionIndexName<T>} name The name of the index to query the record by
+   * @returns {Promise<CollectionRecord<T> | null>} The first record in the index, or null if the index is empty
    */
-  min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionIndexIDBValidKey<T, U> | null> {
+  min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
     return this.firstByKeyDirection(name, "next")
   }
 
@@ -380,7 +386,7 @@ export class AsyncIDBStore<
     store.initForeignKeys()
   }
 
-  static finalizeDependencies(db: AsyncIDB, store: AsyncIDBStore<any>) {
+  static finalizeDependencies(db: AsyncIDB<any>, store: AsyncIDBStore<any>) {
     const seenNames = new Set<string>([store.name])
     const stack: string[] = [...store.#dependentStoreNames]
 
@@ -398,15 +404,15 @@ export class AsyncIDBStore<
   private firstByKeyDirection<U extends CollectionIndexName<T>>(
     name: U,
     direction: "next" | "prev"
-  ): Promise<CollectionIndexIDBValidKey<T, U> | null> {
-    return this.queueTask<CollectionIndexIDBValidKey<T, U> | null>((ctx, resolve, reject) => {
+  ): Promise<CollectionRecord<T> | null> {
+    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.index(name).openCursor(null, direction)
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        resolve(cursor.key as CollectionIndexIDBValidKey<T, U>)
+        resolve(cursor.value)
       }
     })
   }
@@ -426,22 +432,22 @@ export class AsyncIDBStore<
       request.onsuccess = async () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        if (predicate(cursor.value)) {
+        if (!predicate(cursor.value)) return cursor.continue()
+
+        if (this.#onBeforeDelete.length) {
           const fkErrs: Error[] = []
           await this.getPreDeletionForeignKeyErrors(
             cursor.key as CollectionKeyPathType<T>,
             ctx,
             fkErrs
           )
-          if (fkErrs.length) {
-            return reject(fkErrs)
-          }
-          cursor.delete()
-          this.emit("delete", cursor.value)
-          this.emit("write|delete", cursor.value)
-          return resolve(cursor.value)
+          if (fkErrs.length) return reject(fkErrs)
         }
-        cursor.continue()
+
+        cursor.delete()
+        this.emit("delete", cursor.value)
+        this.emit("write|delete", cursor.value)
+        return resolve(cursor.value)
       }
     })
   }
@@ -453,10 +459,9 @@ export class AsyncIDBStore<
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        if (predicate(cursor.value)) {
-          resolve(cursor.value)
-        }
-        cursor.continue()
+        if (!predicate(cursor.value)) return cursor.continue()
+
+        resolve(cursor.value)
       }
     })
   }
@@ -525,12 +530,12 @@ export class AsyncIDBStore<
                   ([, s]) => s.collection === fkConfig.collection
                 )!
                 const objectStore = tx.objectStore(name)
-                const key = record[fkConfig.field]
+                const key = record[fkConfig.ref]
                 const request = objectStore.get(key)
                 request.onerror = (err) => {
                   ctx.tx.abort()
                   const e = new Error(
-                    `[async-idb-orm]: An error occurred while applying FK ${this.name}:${fkConfig.field} (${key})`
+                    `[async-idb-orm]: An error occurred while applying FK ${this.name}:${fkConfig.ref} (${key})`
                   )
                   e.cause = err
                   errs.push(e)
@@ -539,7 +544,7 @@ export class AsyncIDBStore<
                 request.onsuccess = () => {
                   if (!request.result) {
                     const e = new Error(
-                      `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${fkConfig.field} (${key})`
+                      `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${fkConfig.ref} (${key})`
                     )
                     errs.push(e)
                   }
@@ -551,7 +556,7 @@ export class AsyncIDBStore<
       })
     })
 
-    for (const { field, collection, onDelete } of this.collection.foreignKeys) {
+    for (const { ref: field, collection, onDelete } of this.collection.foreignKeys) {
       const [name, store] = Object.entries(this.db.stores).find(
         ([, s]) => s.collection === collection
       )!

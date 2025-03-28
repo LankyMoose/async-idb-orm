@@ -7,13 +7,15 @@ import { AsyncIDBStore } from "./idbStore.js"
  * @private
  * Internal usage only. Do not use directly.
  */
-export class AsyncIDB {
+export class AsyncIDB<T extends CollectionSchema> {
   #db: IDBDatabase | null
   #instanceCallbacks: DBInstanceCallback[]
-  stores: { [key: string]: AsyncIDBStore<any> }
+  stores: {
+    [key in keyof T]: AsyncIDBStore<T[key]>
+  }
   constructor(
     private name: string,
-    private schema: CollectionSchema,
+    private schema: T,
     private version: number,
     private errHandler: typeof console.error
   ) {
@@ -24,7 +26,7 @@ export class AsyncIDB {
         ...acc,
         [name]: new AsyncIDBStore(this, this.schema[name], name),
       }),
-      {}
+      {} as { [key in keyof T]: AsyncIDBStore<T[key]> }
     )
     this.init()
   }
@@ -86,8 +88,8 @@ export class AsyncIDB {
       const { keyPath, indexes } = AsyncIDBStore.getCollection(store)
       const objectStore = db.createObjectStore(store.name, { keyPath })
 
-      for (const { name, keyPath, options } of indexes) {
-        objectStore.createIndex(name, keyPath, options)
+      for (const { name, key, options } of indexes) {
+        objectStore.createIndex(name, key, options)
       }
     }
   }

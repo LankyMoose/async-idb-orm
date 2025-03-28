@@ -1,12 +1,23 @@
 # **async-idb-orm**
 
-#### Async wrapper for IndexedDB with an ORM-like API
+#### _Async wrapper for IndexedDB with an ORM-like API, support for model relationships and ARP (active record pattern)_
 
-### Usage
+---
 
-_db.ts_
+### Contents:
+
+> - [Getting Started](#getting-started)
+> - [Async Iteration](#async-iteration)
+> - [Active Records](#active-records)
+> - [Transactions](#transactions)
+> - [Relationships](#relationships-foreign-keys)
+
+---
+
+<h3 id="#getting-started">Getting Started</h3>
 
 ```ts
+// db.ts
 import { Collection } from "async-idb-orm"
 
 type User = {
@@ -22,10 +33,10 @@ type UserDTO = {
 }
 
 const users = Collection.create<User, UserDTO>()
-  .withKeyPath("id")
+  .withKeyPath("id") // keyPath is optional - if not set, defaults to "id". Must be specified if there is no "id" field in the record.
   .withIndexes([
-    { keyPath: "age", name: "idx_age" },
-    { keyPath: ["name", "age"], name: "idx_name_id" },
+    { key: "age", name: "idx_age" },
+    { key: ["name", "age"], name: "idx_name_id" },
   ])
   .withTransformers({
     create: (dto) => ({
@@ -43,36 +54,29 @@ export const db = idb("users", { users }, 1)
 ```
 
 ```ts
+// app.ts
 import { db } from "$/db"
-const user = await db.collections.users.create({ name: "John Doe", age: 69 })
-console.log(user)
-//          ^? User
 
-const updatedUser = await db.collections.users.update({ ...user, age: 65 })
-console.log(updatedUser)
+const user = await db.collections.users.create({ name: "Bob Smith", age: 69 })
+//    ^? User
 
-const foundUser = await db.collections.users.find(user.id)
-const foundUser2 = await db.collections.users.find((user) => user.name === "Jane Doe")
-console.log(foundUser)
+await db.collections.users.update({ ...user, age: 42 })
 
-const deletedUser = await db.collections.users.delete(user.id)
-const otherDeletedUser = await db.collections.users.delete((user) => user.name === "Jane Doe")
-console.log(deletedUser)
+await db.collections.users.find(user.id)
+await db.collections.users.find((user) => user.name === "Bob Smith")
+await db.collections.users.delete(user.id)
+await db.collections.users.all()
+await db.collections.users.findMany((user) => user.age > 25)
 
-const allUsers = await db.collections.users.all()
-console.log(allUsers)
-
-const filteredUsers = await db.collections.users.findMany((user) => user.age > 25)
-console.log(filteredUsers)
-
-const maxAge = await db.collections.users.max("idx_age")
-console.log(maxAge)
-
-const minAge = await db.collections.users.min("idx_age")
-console.log(minAge)
+const oldestUser = await db.collections.users.max("idx_age")
+//    ^? User, or null if there are no records
+const youngestUser = await db.collections.users.min("idx_age")
+//    ^? User, or null if there are no records
 ```
 
-### Async Iteration
+---
+
+<h3 id="#async-iteration">Async Iteration</h3>
 
 Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
 
@@ -82,7 +86,9 @@ for await (const user of db.collections.users) {
 }
 ```
 
-### Active Records
+---
+
+<h3 id="#active-records">Active Records</h3>
 
 `create`, `find`, `findMany`, and `all` each have an `Active` equivalent that returns an `ActiveRecord<T>` which includes `save` and `delete` methods.
 
@@ -110,25 +116,31 @@ async function setUserAge(userId: string, age: number) {
 }
 ```
 
-### Transactions
+---
+
+<h3 id="#transactions">Transactions</h3>
 
 ```ts
-async function transferFunds(senderId: string, recipientId: string, transferAmount: number) {
+async function transferFunds(
+  senderId: string,
+  recipientId: string,
+  transferAmount: number
+): TransferResult {
   try {
-    const res: TransferResult = await db.transaction(async (ctx, tx) => {
+    return await db.transaction(async (ctx, tx) => {
       // Fetch sender and recipient accounts
       const sender = await ctx.accounts.findActive({ id: senderId })
       const recipient = await ctx.accounts.findActive({ id: recipientId })
 
       if (!sender || !recipient) {
-        tx.abort()
-        return TransferResult.InvalidAccount
+        // On throw, the transaction will be automatically aborted. The thrown value will be re-thrown outside the transaction.
+        throw TransferResult.InvalidAccount
       }
 
       // Check if sender has sufficient balance
       if (sender.balance < transferAmount) {
-        // we can abort the transaction here by throwing, the thrown value will be re-thrown outside the transaction.
-        throw TransferResult.InsufficientFunds
+        tx.abort()
+        return TransferResult.InsufficientFunds
       }
 
       // Update balances
@@ -146,6 +158,63 @@ async function transferFunds(senderId: string, recipientId: string, transferAmou
     })
   } catch (error) {
     console.error(error)
+    return isTransferResult(error) ? error : TransferResult.Error
   }
 }
+```
+
+---
+
+<h3 id="#relationships-foreign-keys">Relationships & Foreign Keys</h3>
+
+IndexedDB does not implement foreign key constraints. **async-idb-orm** allows you to define pseudo-foreign-keys on collections that are simulated during query execution.
+
+Adding a foreign key to a collection enables two useful features:
+
+- When inserting/updating a record that refers to another, the parent record's existence is checked. If it does not exist, the transaction is aborted and an error is thrown.
+
+- When deleting a parent record, all children are acted on according to the `onDelete` option:
+  - `cascade`: deletes all children
+  - `restrict`: aborts the transaction & throws an error
+  - `no action`: does nothing
+  - `set null`: sets the foreign key to `null`
+
+<br />
+
+> _To keep this example brief, we'll omit setting up DTOs and transformers for our collections - pretend it's been done in the same way as previous examples._
+
+```ts
+import { db, Collection } from "async-idb-orm"
+
+type User = { userId: string; name: string }
+const users = Collection.create<User>()
+
+type Post = { id: string; text: string; userId: string }
+const posts = Collection.create<Post>().withForeignKeys((posts) => [
+  { ref: posts.userId, collection: users, onDelete: "cascade" },
+])
+
+type PostComment = { id: string; content: string; postId: string; userId: string }
+const postComments = Collection.create<PostComment>().withForeignKeys((comments) => [
+  { ref: comments.postId, collection: posts, onDelete: "cascade" },
+  { ref: comments.userId, collection: users, onDelete: "cascade" },
+])
+
+const db = idb("my-app-db", { users, posts, postComments }, 1)
+
+// throws, because user with id "123" does not exist
+await db.collections.posts.create({ text: "Hello world", userId: "123" })
+
+const bob = await db.collections.users.create({ name: "Bob Smith" })
+const alice = await db.collections.users.create({ name: "Alice Johnson" })
+
+const post = await db.collections.posts.create({ text: "Hello world", userId: bob.id })
+await db.collections.postComments.create({
+  content: "Great post!",
+  postId: post.id,
+  userId: alice.id,
+})
+
+// deletes bob, his post and alice's comment
+await db.collections.users.delete(bob.id)
 ```
