@@ -1,4 +1,27 @@
+import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
+
+export type TransactionOptions = IDBTransactionOptions & {
+  /**
+   * https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/durability
+   */
+  durability?: IDBTransactionDurability
+}
+
+export type IDBTransactionFunction<T extends CollectionSchema> = <
+  CB extends (ctx: AsyncIDBInstance<T>["collections"], tx: IDBTransaction) => unknown
+>(
+  callback: CB,
+  options?: TransactionOptions
+) => Promise<ReturnType<CB>>
+
+export type AsyncIDBInstance<T extends CollectionSchema> = {
+  collections: {
+    [key in keyof T]: AsyncIDBStore<T[key]>
+  }
+  transaction: IDBTransactionFunction<T>
+  getInstance: () => Promise<IDBDatabase>
+}
 
 export type DBInstanceCallback = (db: IDBDatabase) => any
 

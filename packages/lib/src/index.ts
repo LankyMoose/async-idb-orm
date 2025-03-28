@@ -1,31 +1,10 @@
+export { idb }
 export { Collection } from "./collection.js"
 export type * from "./types"
 
 import { AsyncIDB } from "./idb.js"
 import { AsyncIDBStore } from "./idbStore"
-import type { CollectionSchema } from "./types"
-
-export type TransactionOptions = IDBTransactionOptions & {
-  /**
-   * https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/durability
-   */
-  durability?: IDBTransactionDurability
-}
-
-export type IDBTransactionFunction<T extends CollectionSchema> = <
-  CB extends (ctx: AsyncIDBInstance<T>["collections"], tx: IDBTransaction) => unknown
->(
-  callback: CB,
-  options?: TransactionOptions
-) => Promise<ReturnType<CB>>
-
-export type AsyncIDBInstance<T extends CollectionSchema> = {
-  collections: {
-    [key in keyof T]: AsyncIDBStore<T[key]>
-  }
-  transaction: IDBTransactionFunction<T>
-  getInstance: () => Promise<IDBDatabase>
-}
+import type { AsyncIDBInstance, CollectionSchema } from "./types"
 
 /**
  * Creates a new AsyncIDB instance
@@ -35,7 +14,7 @@ export type AsyncIDBInstance<T extends CollectionSchema> = {
  * @param {typeof console.error} errHandler - Error handler - should accept multiple arguments as per `console.error`
  * @returns {AsyncIDBInstance<T>}
  */
-export function idb<T extends CollectionSchema>(
+function idb<T extends CollectionSchema>(
   name: string,
   schema: T,
   version = 1,

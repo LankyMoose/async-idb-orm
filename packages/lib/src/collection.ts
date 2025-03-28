@@ -1,6 +1,6 @@
 import { AsyncIDB } from "idb"
 import { AsyncIDBStore } from "./idbStore"
-import type { RecordKeyPath, CollectionIndex } from "./types"
+import type { CollectionIndex } from "./types"
 
 const CollectionBuilderSentinel = Symbol()
 
@@ -54,21 +54,75 @@ export class Collection<
     record: RecordType
     dto: DTO
   }
-  keyPath: KeyPath = undefined as any as KeyPath
-  indexes: Indexes = [] as any as Indexes
-  foreignKeys: CollectionForeignKeyConfig<RecordType>[] = []
+  keyPath: KeyPath
+  indexes: Indexes
+  foreignKeys: CollectionForeignKeyConfig<RecordType>[]
   transformers: {
     create?: (data: DTO) => RecordType
     update?: (data: RecordType) => RecordType
   } = {}
-  creationConflictMode: CollectionConflictMode = "ignore"
+  creationConflictMode?: CollectionConflictMode
   onCreationConflict?: () => void
 
   constructor(key: symbol) {
     if (key !== CollectionBuilderSentinel)
       throw new Error("Cannot call CollectionBuilder directly - use Collection.create<T>()")
-
+    this.keyPath = undefined as any as KeyPath
+    this.indexes = [] as any as Indexes
+    this.foreignKeys = []
     this[$COLLECTION_INTERNAL] = null!
+  }
+
+  /**
+   * Sets the key for this collection
+   */
+  withKeyPath<const Key extends KeyPath>(keyPath: Key): Collection<RecordType, DTO, Key, Indexes> {
+    this.keyPath = keyPath
+    return this as any as Collection<RecordType, DTO, Key, Indexes>
+  }
+
+  /**
+   * Sets the indexes for this collection
+   * @see https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
+   */
+  withIndexes<const IdxArray extends CollectionIndex<RecordType>[]>(
+    indexes: IdxArray
+  ): Collection<RecordType, DTO, KeyPath, IdxArray> {
+    this.indexes = indexes as unknown as Indexes
+    return this as any as Collection<RecordType, DTO, KeyPath, IdxArray>
+  }
+
+  /**
+   * Sets the foreign keys for this collection
+   * @param {CollectionForeignKeyConfig<RecordType>[]} foreignKeys
+   * @returns {this}
+   */
+  withForeignKeys(foreignKeys: CollectionForeignKeyConfig<RecordType>[]): this {
+    this.foreignKeys = foreignKeys
+    return this
+  }
+
+  /**
+   * Sets the transformers for this collection
+   * @param {CollectionTransformers<RecordType, DTO>} transformers
+   * @returns {this}
+   */
+  withTransformers(transformers: CollectionTransformers<RecordType, DTO>): this {
+    this.transformers = transformers
+    return this
+  }
+
+  /**
+   * Sets the conflict mode for this collection. Setting this to "delete" will delete the collection if it already exists during an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event.
+   * @param {CollectionConflictMode} mode The conflict mode
+   * @param {() => void} [onConflict] The callback that will be called when a conflict is detected
+   * @default "ignore"
+   * @returns {this}
+   */
+  withCreationConflictMode(mode: CollectionConflictMode, onConflict?: () => void): this {
+    this.creationConflictMode = mode
+    this.onCreationConflict = onConflict
+    return this
   }
 
   static create<
@@ -133,58 +187,5 @@ export class Collection<
       if (seenKeys.has(key)) handler(ERR_KEYPATH_DUPLICATE, key)
       seenKeys.add(key)
     }
-  }
-
-  /**
-   * Sets the key for this collection
-   */
-  withKeyPath<const Key extends KeyPath>(keyPath: Key): Collection<RecordType, DTO, Key, Indexes> {
-    this.keyPath = keyPath as any
-    return this as any as Collection<RecordType, DTO, Key, Indexes>
-  }
-
-  /**
-   * Sets the indexes for this collection
-   * @see https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
-   */
-  withIndexes<const Indexes extends CollectionIndex<RecordType>[]>(
-    indexes: Indexes
-  ): Collection<RecordType, DTO, KeyPath, Indexes> {
-    this.indexes.push(...indexes)
-    return this as any as Collection<RecordType, DTO, KeyPath, Indexes>
-  }
-
-  withForeignKeys(
-    foreignKeys: {
-      field: keyof RecordType & string
-      collection: Collection<any, any, any, any>
-      onDelete: ForeignKeyOnDelete
-    }[]
-  ): this {
-    this.foreignKeys.push(...foreignKeys)
-    return this
-  }
-
-  /**
-   * Sets the transformers for this collection
-   * @param {CollectionTransformers<RecordType, DTO>} transformers
-   * @returns {this}
-   */
-  withTransformers(transformers: CollectionTransformers<RecordType, DTO>): this {
-    this.transformers = transformers
-    return this
-  }
-
-  /**
-   * Sets the conflict mode for this collection. Setting this to "delete" will delete the collection if it already exists during an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event.
-   * @param {CollectionConflictMode} mode The conflict mode
-   * @param {() => void} [onConflict] The callback that will be called when a conflict is detected
-   * @default "ignore"
-   * @returns {this}
-   */
-  withCreationConflictMode(mode: CollectionConflictMode, onConflict?: () => void): this {
-    this.creationConflictMode = mode
-    this.onCreationConflict = onConflict
-    return this
   }
 }

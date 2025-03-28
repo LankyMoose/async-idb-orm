@@ -23,25 +23,29 @@ import { Collection } from "./collection.js"
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
 > {
-  #onBeforeDelete: ((
-    key: CollectionKeyPathType<T>,
-    ctx: TransactionContext,
-    errs: Error[]
-  ) => Promise<void>)[] = []
   #onBeforeCreate: ((
     data: CollectionDTO<T>,
     ctx: TransactionContext,
     errs: Error[]
-  ) => Promise<void>)[] = []
-  #eventListeners: Record<CollectionEvent, CollectionEventCallback<T>[]> = {
-    write: [],
-    delete: [],
-    "write|delete": [],
-  }
-  #tx: IDBTransaction | null = null
-  #dependentStoreNames: Set<string> = new Set()
+  ) => Promise<void>)[]
+  #onBeforeDelete: ((
+    key: CollectionKeyPathType<T>,
+    ctx: TransactionContext,
+    errs: Error[]
+  ) => Promise<void>)[]
+  #eventListeners: Record<CollectionEvent, CollectionEventCallback<T>[]>
+  #tx?: IDBTransaction
+  #dependentStoreNames: Set<string>
   #txScope: Set<string>
   constructor(private db: AsyncIDB, private collection: T, public name: string) {
+    this.#onBeforeDelete = []
+    this.#onBeforeCreate = []
+    this.#eventListeners = {
+      write: [],
+      delete: [],
+      "write|delete": [],
+    }
+    this.#dependentStoreNames = new Set()
     this.#txScope = new Set([this.name])
   }
 
