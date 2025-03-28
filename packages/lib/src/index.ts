@@ -4,7 +4,7 @@ export type * from "./types"
 
 import { AsyncIDB } from "./idb.js"
 import { AsyncIDBStore } from "./idbStore"
-import type { AsyncIDBInstance, CollectionSchema } from "./types"
+import type { AsyncIDBInstance, CollectionSchema, OnDBUpgradeCallback } from "./types"
 
 /**
  * Creates a new AsyncIDB instance
@@ -20,6 +20,9 @@ function idb<T extends CollectionSchema>(
   version = 1,
   errHandler = console.error
 ): AsyncIDBInstance<T> {
+  if (isNaN(version) || Math.floor(version) !== version)
+    throw new Error("[async-idb-orm]: Version must be an integer with no decimal places")
+
   const db = new AsyncIDB(name, schema, version, errHandler)
   const collections = db.stores as AsyncIDBInstance<T>["collections"]
 
@@ -52,5 +55,12 @@ function idb<T extends CollectionSchema>(
     return new Promise((res) => db.getInstance(res))
   }
 
-  return { collections, transaction, getInstance }
+  return {
+    collections,
+    transaction,
+    getInstance,
+    set onUpgrade(onUpgrade: OnDBUpgradeCallback<T>) {
+      db.onUpgrade = onUpgrade
+    },
+  }
 }

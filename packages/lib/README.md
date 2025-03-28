@@ -12,6 +12,7 @@
 > - [Transactions](#transactions)
 > - [Relationships & Foreign Keys](#relationships-foreign-keys)
 > - [Serialization](#serialization)
+> - [Migrations](#migrations)
 
 ---
 
@@ -259,4 +260,33 @@ export const users = Collection.create<User, UserDTO>()
       createdAt: new TimeStamp(serializedUser.createdAt),
     }),
   })
+```
+
+---
+
+<h3 id="#migrations">Migrations</h3>
+
+**async-idb-orm** supports database migrations. This is useful for upgrading your database schema over time.
+
+Collections that were not previously created will be created automatically during the migration process.
+
+```ts
+// in this scenario, we decided to add a new key to our Post collection.
+
+const VERSION = 2
+export const db = idb("users", schema, VERSION)
+
+db.onUpgrade = async (ctx, event: IDBVersionChangeEvent) => {
+  if (event.oldVersion === 0) return // skip initial db setup
+
+  if (event.oldVersion === 1) {
+    // migrate from v1 -> v2
+    const oldPosts = (await ctx.getAll("posts")) as Omit<Post, "someNewKey">[]
+    ctx.deleteStore("posts")
+    ctx.createStore("posts")
+    const newPosts = oldPosts.map((post) => ({ ...post, someNewKey: 42 }))
+    await ctx.insert("posts", newPosts)
+    console.log("successfully migrated from v1 -> v2")
+  }
+}
 ```

@@ -1,6 +1,6 @@
 import { AsyncIDB } from "idb"
 import { AsyncIDBStore } from "./idbStore"
-import type { CollectionIndex } from "./types"
+import type { CollectionIndex, SerializationConfig } from "./types"
 
 const CollectionBuilderSentinel = Symbol()
 
@@ -34,13 +34,6 @@ export type CollectionTransformers<
    */
   update?: (data: RecordType) => RecordType
 }
-
-type SerializationConfig<RecordType extends Record<string, any>, T> = {
-  write: (data: RecordType) => T
-  read: (data: T) => RecordType
-}
-
-export type CollectionConflictMode = "delete" | "ignore"
 
 type ForeignKeyOnDelete = "cascade" | "restrict" | "no action" | "set null"
 type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
@@ -79,8 +72,6 @@ export class Collection<
     write: (data: RecordType) => data,
     read: (data: any) => data,
   }
-  creationConflictMode?: CollectionConflictMode
-  onCreationConflict?: () => void
 
   constructor(key: symbol) {
     if (key !== CollectionBuilderSentinel)
@@ -136,19 +127,6 @@ export class Collection<
 
   withSerialization<T>(config: SerializationConfig<RecordType, T>): this {
     this.serializationConfig = config
-    return this
-  }
-
-  /**
-   * Sets the conflict mode for this collection. Setting this to "delete" will delete the collection if it already exists during an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event.
-   * @param {CollectionConflictMode} mode The conflict mode
-   * @param {() => void} [onConflict] The callback that will be called when a conflict is detected
-   * @default "ignore"
-   * @returns {this}
-   */
-  withCreationConflictMode(mode: CollectionConflictMode, onConflict?: () => void): this {
-    this.creationConflictMode = mode
-    this.onCreationConflict = onConflict
     return this
   }
 

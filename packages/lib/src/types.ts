@@ -1,6 +1,11 @@
 import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
 
+export type SerializationConfig<RecordType extends Record<string, any>, T> = {
+  write: (data: RecordType) => T
+  read: (data: T) => RecordType
+}
+
 export type TransactionOptions = IDBTransactionOptions & {
   /**
    * https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/durability
@@ -15,12 +20,31 @@ export type IDBTransactionFunction<T extends CollectionSchema> = <
   options?: TransactionOptions
 ) => Promise<ReturnType<CB>>
 
+export type OnDBUpgradeCallbackContext<T extends CollectionSchema> = {
+  db: IDBDatabase
+  getAll: <CollectionName extends keyof T & string>(
+    collectionName: CollectionName
+  ) => Promise<CollectionRecord<T[CollectionName]>[]>
+  insert: <CollectionName extends keyof T & string>(
+    collectionName: CollectionName,
+    records: CollectionRecord<T[CollectionName]>[]
+  ) => Promise<void>
+  deleteStore: (name: keyof T & string) => void
+  createStore: (name: keyof T & string) => IDBObjectStore
+}
+
+export type OnDBUpgradeCallback<T extends CollectionSchema> = (
+  ctx: OnDBUpgradeCallbackContext<T>,
+  event: IDBVersionChangeEvent
+) => Promise<void>
+
 export type AsyncIDBInstance<T extends CollectionSchema> = {
   collections: {
     [key in keyof T]: AsyncIDBStore<T[key]>
   }
   transaction: IDBTransactionFunction<T>
   getInstance: () => Promise<IDBDatabase>
+  onUpgrade?: OnDBUpgradeCallback<T>
 }
 
 export type DBInstanceCallback = (db: IDBDatabase) => any
