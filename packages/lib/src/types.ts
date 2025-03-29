@@ -1,6 +1,27 @@
 import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
 
+export type AsyncIDBConfig<T extends CollectionSchema> = {
+  /**
+   * Collection schema - `Record<string, Collection>`
+   * @see {@link Collection}
+   */
+  schema: T
+  /**
+   * Database version - increment this to trigger an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event
+   */
+  version: number
+  /**
+   * Receives errors produced during initialization
+   * @default console.error
+   */
+  onError?: typeof console.error
+  /**
+   * Provides a callback to migrate the database from one version to another
+   */
+  onUpgrade?: OnDBUpgradeCallback<T>
+}
+
 export type SerializationConfig<RecordType extends Record<string, any>, T> = {
   write: (data: RecordType) => T
   read: (data: T) => RecordType
@@ -13,8 +34,13 @@ export type TransactionOptions = IDBTransactionOptions & {
   durability?: IDBTransactionDurability
 }
 
+export type IDBTransactionCallback<T extends CollectionSchema> = (
+  ctx: AsyncIDBInstance<T>["collections"],
+  tx: IDBTransaction
+) => unknown
+
 export type IDBTransactionFunction<T extends CollectionSchema> = <
-  CB extends (ctx: AsyncIDBInstance<T>["collections"], tx: IDBTransaction) => unknown
+  CB extends IDBTransactionCallback<T>
 >(
   callback: CB,
   options?: TransactionOptions
@@ -50,7 +76,6 @@ export type AsyncIDBInstance<T extends CollectionSchema> = {
   }
   transaction: IDBTransactionFunction<T>
   getInstance: () => Promise<IDBDatabase>
-  onUpgrade?: OnDBUpgradeCallback<T>
 }
 
 export type DBInstanceCallback = (db: IDBDatabase) => any

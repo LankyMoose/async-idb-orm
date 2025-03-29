@@ -2,6 +2,8 @@ import type {
   AsyncIDBInstance,
   CollectionSchema,
   DBInstanceCallback,
+  AsyncIDBConfig,
+  IDBTransactionCallback,
   OnDBUpgradeCallback,
   OnDBUpgradeCallbackContext,
   TransactionOptions,
@@ -21,20 +23,15 @@ export class AsyncIDB<T extends CollectionSchema> {
     [key in keyof T]: AsyncIDBStore<T[key]>
   }
   onUpgrade?: OnDBUpgradeCallback<T>
-  constructor(
-    private name: string,
-    private schema: T,
-    private version: number,
-    private errHandler: typeof console.error
-  ) {
+  constructor(private name: string, private config: AsyncIDBConfig<T>) {
     this.#db = null
     this.#instanceCallbacks = []
-    this.stores = Object.keys(this.schema).reduce(
-      (acc, name) => ({
+    this.stores = Object.entries(this.config.schema).reduce(
+      (acc, [name, collection]) => ({
         ...acc,
-        [name]: new AsyncIDBStore(this, this.schema[name], name),
+        [name]: new AsyncIDBStore(this, collection, name),
       }),
-      {} as { [key in keyof T]: AsyncIDBStore<T[key]> }
+      {} as AsyncIDBInstance<T>["collections"]
     )
     this.init()
   }
@@ -48,31 +45,51 @@ export class AsyncIDB<T extends CollectionSchema> {
   }
 
   cloneStoresForTransaction(tx: IDBTransaction, eventQueue: Function[]) {
-    return Object.keys(this.stores).reduce((acc, key) => {
+    return Object.entries(this.stores).reduce((acc, [name, store]) => {
       return {
         ...acc,
-        [key]: AsyncIDBStore.cloneForTransaction(tx, this.stores[key], eventQueue),
+        [name]: AsyncIDBStore.cloneForTransaction(tx, store, eventQueue),
       }
     }, {} as AsyncIDBInstance<T>["collections"])
   }
 
-  private validateShema() {
+  async transaction(callback: IDBTransactionCallback<T>, options?: IDBTransactionOptions) {
+    const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
+    const tx = idbInstance.transaction(Object.keys(this.config.schema), "readwrite", options)
+
+    const eventQueue: Function[] = []
+    const txCollections = this.cloneStoresForTransaction(tx, eventQueue)
+
+    let aborted = false
+    tx.addEventListener("abort", () => (aborted = true))
+
+    try {
+      const res = (await await callback(txCollections, tx)) as any
+      for (let i = 0; i < eventQueue.length; i++) eventQueue[i]()
+      return res
+    } catch (error) {
+      if (!aborted) tx.abort()
+      throw error
+    }
+  }
+
+  private init() {
     let schemaValid = true
-    for (const [name, collection] of Object.entries(this.schema)) {
+    for (const [name, collection] of Object.entries(this.config.schema)) {
       Collection.validate(
         this,
         collection,
         (err) => (
           (schemaValid = false),
-          this.errHandler(`[async-idb-orm]: encountered error with collection "${name}":`, err)
+          (this.config.onError ?? console.error)(
+            `[async-idb-orm]: encountered error with collection "${name}":`,
+            err
+          )
         )
       )
     }
-    return schemaValid
-  }
+    if (!schemaValid) return
 
-  private init() {
-    if (!this.validateShema()) return
     for (const store of Object.values(this.stores)) {
       AsyncIDBStore.init(store)
     }
@@ -80,8 +97,8 @@ export class AsyncIDB<T extends CollectionSchema> {
       AsyncIDBStore.finalizeDependencies(this, store)
     }
 
-    const request = indexedDB.open(this.name, this.version)
-    request.onerror = this.errHandler
+    const request = indexedDB.open(this.name, this.config.version)
+    request.onerror = this.config.onError ?? console.error
     request.onupgradeneeded = async (e) => {
       console.log("onupgradeneeded")
       await this.initializeStores(request, e)
