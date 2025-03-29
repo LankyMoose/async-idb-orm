@@ -2,9 +2,7 @@
 
 #### _Promise-based IndexedDB wrapper with an ORM-like API and support for Active Records, relations and migrations_
 
----
-
-### Contents:
+## Contents:
 
 > - [Getting Started](#getting-started)
 > - [Async Iteration](#async-iteration)
@@ -13,12 +11,11 @@
 > - [Relations & Foreign Keys](#relations)
 > - [Serialization](#serialization)
 > - [Migrations](#migrations)
+> - [Automatic Block Resolution](#block-resolution)
 
----
-
-<h3 id="#getting-started">
+<h2 id="#getting-started">
   Getting Started
-</h3>
+</h2>
 
 ```ts
 // db.ts
@@ -54,7 +51,10 @@ const users = Collection.create<User, UserDTO>()
     }),
   })
 
-export const db = idb("users", { users }, 1)
+export const db = idb("users", {
+  schema: { users },
+  version: 1,
+})
 ```
 
 ```ts
@@ -78,11 +78,9 @@ const youngestUser = await db.collections.users.min("idx_age")
 //    ^? User, or null if there are no records
 ```
 
----
-
-<h3 id="#async-iteration">
+<h2 id="#async-iteration">
   Async Iteration
-</h3>
+</h2>
 
 Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
 
@@ -92,11 +90,9 @@ for await (const user of db.collections.users) {
 }
 ```
 
----
-
-<h3 id="#active-records">
+<h2 id="#active-records">
   Active Records
-</h3>
+</h2>
 
 `create`, `find`, `findMany`, and `all` each have an `Active` equivalent that returns an `ActiveRecord<T>` which includes `save` and `delete` methods.
 
@@ -124,11 +120,9 @@ async function setUserAge(userId: string, age: number) {
 }
 ```
 
----
-
-<h3 id="#transactions">
+<h2 id="#transactions">
   Transactions
-</h3>
+</h2>
 
 ```ts
 async function transferFunds(
@@ -173,11 +167,9 @@ async function transferFunds(
 }
 ```
 
----
-
-<h3 id="#relations">
+<h2 id="#relations">
   Relations & Foreign Keys
-</h3>
+</h2>
 
 IndexedDB does not implement foreign key constraints. **async-idb-orm** allows you to define pseudo-foreign-keys on collections that are simulated during query execution.
 
@@ -231,11 +223,9 @@ await db.collections.postComments.create({
 await db.collections.users.delete(bob.id)
 ```
 
----
-
-<h3 id="#serialization">
+<h2 id="#serialization">
   Serialization
-</h3>
+</h2>
 
 **async-idb-orm** provides a simple way to serialize and deserialize collection records. This is useful for storing values that would not otherwise be supported by IndexedDB.
 
@@ -274,11 +264,9 @@ export const users = Collection.create<User, UserDTO>()
   })
 ```
 
----
-
-<h3 id="#migrations">
+<h2 id="#migrations">
   Migrations
-</h3>
+</h2>
 
 **async-idb-orm** supports database migrations. This is useful for upgrading your database schema over time.
 
@@ -288,19 +276,74 @@ Collections that were not previously created will be created automatically durin
 // in this scenario, we decided to add a new key to our Post collection.
 
 const VERSION = 2
-export const db = idb("users", schema, VERSION)
+export const db = idb("users", {
+  schema,
+  version: VERSION,
+  onUpgrade: async (ctx, event: IDBVersionChangeEvent) => {
+    if (event.oldVersion === 0) return // skip initial db setup
 
-db.onUpgrade = async (ctx, event: IDBVersionChangeEvent) => {
-  if (event.oldVersion === 0) return // skip initial db setup
+    if (event.oldVersion === 1) {
+      // migrate from v1 -> v2
+      const oldPosts = (await ctx.collections.posts.all()) as Omit<Post, "someNewKey">[]
+      ctx.deleteStore("posts")
+      ctx.createStore("posts")
+      const newPosts = oldPosts.map((post) => ({ ...post, someNewKey: 42 }))
+      await ctx.collections.posts.upsert(...newPosts)
+      console.log("successfully migrated from v1 -> v2")
+    }
+  },
+})
+```
 
-  if (event.oldVersion === 1) {
-    // migrate from v1 -> v2
-    const oldPosts = (await ctx.collections.posts.all()) as Omit<Post, "someNewKey">[]
-    ctx.deleteStore("posts")
-    ctx.createStore("posts")
-    const newPosts = oldPosts.map((post) => ({ ...post, someNewKey: 42 }))
-    await ctx.collections.posts.upsert(...newPosts)
-    console.log("successfully migrated from v1 -> v2")
-  }
-}
+<h2 id="#block-resolution">
+  Automatic Block resolution
+</h2>
+
+**async-idb-orm** implements automatic block resolution. This is useful for resolving version conflicts between multiple concurrent instances in separate tabs or windows.
+
+### How it works:
+
+_Consider the following scenario:_
+
+> - A user loads your app for the first time and initializes the database with version **1**.
+> - Some time passes, and the app is now redeployed with a new version **2**.
+> - The user opens your app in a new tab, keeping the previous tab open, and attempts to open the database with version **2**.
+> - This causes a [blocked](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/blocked_event) event to be fired. The new tab's `open` request remains in a pending state until all other transactions are complete and connections are closed.
+
+As you can see, using IndexedDB is inevitably complex and error-prone.
+
+_How do you close the other connections if they're from different windows or tabs? How do you make sure every tab is using the most up-to-date version of the database?_
+
+### **async-idb-orm** automatically solves this for you.
+
+Under the hood, we make use of a [BroadcastChannel](https://developer.mozilla.org/en-US/docs/Web/API/BroadcastChannel). This is a feature that's natively supported by all major browsers and allows us to send messages between tabs.
+
+> - When a `blocked` event is fired during the `open` request, the new tab sends a message to the old tab, indicating that it should close the connection.
+> - Once the all transactions are complete and the old connection is closed, the new tab's `open` request continues and initializes the database with version **2**.
+> - Once the new tab has initialized the database, it sends a message back to the old tab to indicate that it should reinitialize the database with version **2**.
+
+![Block Resolution Diagram](https://raw.githubusercontent.com/LankyMoose/async-idb-orm/main/packages/lib/assets/block-resolution.png)
+
+_This all happens automatically behind the scenes, so you don't need to worry about it._
+
+In the config object, you can provide an `onBeforeReinit` callback that will be called before the database is reinitialized. This is a useful time to perform any necessary cleanup steps, or to reload the page in the case it is too old.
+
+```ts
+const VERSION = 1
+export const db = idb("users", {
+  schema,
+  version: VERSION,
+  onUpgrade: async (ctx, event) => {
+    // handle migrations
+  },
+  onBeforeReinit: (oldVersion, newVersion) => {
+    // let's imagine the latest tab has set a "breakingChangesVersion" value, which indicates that any old tabs using a version less than this should reload.
+
+    const breakingChangesVersion = parseInt(localStorage.getItem("breakingChangesVersion") ?? "0")
+
+    if (oldVersion < breakingChangesVersion) {
+      window.location.reload()
+    }
+  },
+})
 ```

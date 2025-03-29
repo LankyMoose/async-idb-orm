@@ -17,9 +17,16 @@ export type AsyncIDBConfig<T extends CollectionSchema> = {
    */
   onError?: typeof console.error
   /**
+   * Called when the database is opened successfully. This can be called upon initial `idb` call, or after a block resolution.
+   * @param {IDBDatabase} db
+   */
+  onOpen?: (db: IDBDatabase) => void
+  /**
    * Provides a callback to migrate the database from one version to another
    */
   onUpgrade?: OnDBUpgradeCallback<T>
+
+  onBeforeReinit?: (oldVersion: number, newVersion: number) => void
 }
 
 export type SerializationConfig<RecordType extends Record<string, any>, T> = {

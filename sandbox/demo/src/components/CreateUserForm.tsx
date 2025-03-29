@@ -4,7 +4,6 @@ import { UserDTO, db } from "$/db"
 const createUserDto = (): UserDTO => ({
   name: "",
   age: 0,
-  alive: true,
 })
 
 export function CreateUserForm() {

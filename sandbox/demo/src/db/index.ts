@@ -3,11 +3,14 @@ import * as schema from "./schema"
 import { Post } from "./types"
 export * from "./types"
 
-const VERSION = 2
+const VERSION = parseInt(localStorage.getItem("version") ?? "1")
 export const db = idb("users", {
   schema,
   version: VERSION,
   onError: console.error,
+  onOpen: (db) => {
+    console.log("db opened", db)
+  },
   onUpgrade: async (ctx, event) => {
     if (event.oldVersion === 0) return // skip initial db setup
     let currentVersion = event.oldVersion
@@ -27,6 +30,7 @@ export const db = idb("users", {
       currentVersion++
     }
   },
+  onBeforeReinit: (oldVersion, newVersion) => {
+    console.log(`reinitializing db from v${oldVersion} to v${newVersion}`)
+  },
 })
-
-db.getInstance().then((idbInstance) => console.log("db initialized", idbInstance))

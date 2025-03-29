@@ -1,16 +1,29 @@
-import type {
-  AsyncIDBInstance,
-  CollectionSchema,
-  DBInstanceCallback,
-  AsyncIDBConfig,
-  IDBTransactionCallback,
-  OnDBUpgradeCallback,
-  OnDBUpgradeCallbackContext,
-  TransactionOptions,
+import {
+  type AsyncIDBInstance,
+  type CollectionSchema,
+  type DBInstanceCallback,
+  type AsyncIDBConfig,
+  type IDBTransactionCallback,
+  type OnDBUpgradeCallback,
+  type OnDBUpgradeCallbackContext,
 } from "./types"
 
 import { Collection } from "./collection.js"
 import { AsyncIDBStore } from "./idbStore.js"
+
+const MSG_TYPES = {
+  CLOSE_FOR_UPGRADE: "[async-idb-orm]:close-for-upgrade",
+  REINIT: "[async-idb-orm]:reinit",
+} as const
+
+type BroadcastChannelMessage =
+  | {
+      type: typeof MSG_TYPES.CLOSE_FOR_UPGRADE
+      newVersion: number
+    }
+  | {
+      type: typeof MSG_TYPES.REINIT
+    }
 
 /**
  * @private
@@ -23,16 +36,36 @@ export class AsyncIDB<T extends CollectionSchema> {
     [key in keyof T]: AsyncIDBStore<T[key]>
   }
   onUpgrade?: OnDBUpgradeCallback<T>
+  bc: BroadcastChannel
+  version: number
+  schema: T
   constructor(private name: string, private config: AsyncIDBConfig<T>) {
     this.#db = null
     this.#instanceCallbacks = []
-    this.stores = Object.entries(this.config.schema).reduce(
-      (acc, [name, collection]) => ({
-        ...acc,
-        [name]: new AsyncIDBStore(this, collection, name),
-      }),
-      {} as AsyncIDBInstance<T>["collections"]
-    )
+    this.schema = config.schema
+    this.version = config.version
+    this.stores = this.createStores()
+
+    let latest = this.version
+    this.bc = new BroadcastChannel(`[async-idb-orm]:${this.name}`)
+    this.bc.onmessage = (e: MessageEvent<BroadcastChannelMessage>) => {
+      /**
+       * - New tab with new version sends us a "CLOSE_FOR_UPGRADE" message, so we close the db.
+       * - Once the other tab initializes it replies with an "REINIT" message.
+       */
+      if (e.data.type === MSG_TYPES.CLOSE_FOR_UPGRADE) {
+        if (this.version === e.data.newVersion) return
+        this.#db?.close()
+        latest = e.data.newVersion
+      } else if (e.data.type === MSG_TYPES.REINIT) {
+        if (this.version === latest) return
+        this.config.onBeforeReinit?.(this.version, latest)
+        this.version = latest
+        this.stores = this.createStores()
+        this.init()
+      }
+    }
+
     this.init()
   }
 
@@ -44,18 +77,9 @@ export class AsyncIDB<T extends CollectionSchema> {
     instanceCallback(this.#db)
   }
 
-  cloneStoresForTransaction(tx: IDBTransaction, eventQueue: Function[]) {
-    return Object.entries(this.stores).reduce((acc, [name, store]) => {
-      return {
-        ...acc,
-        [name]: AsyncIDBStore.cloneForTransaction(tx, store, eventQueue),
-      }
-    }, {} as AsyncIDBInstance<T>["collections"])
-  }
-
   async transaction(callback: IDBTransactionCallback<T>, options?: IDBTransactionOptions) {
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
-    const tx = idbInstance.transaction(Object.keys(this.config.schema), "readwrite", options)
+    const tx = idbInstance.transaction(Object.keys(this.schema), "readwrite", options)
 
     const eventQueue: Function[] = []
     const txCollections = this.cloneStoresForTransaction(tx, eventQueue)
@@ -64,7 +88,7 @@ export class AsyncIDB<T extends CollectionSchema> {
     tx.addEventListener("abort", () => (aborted = true))
 
     try {
-      const res = (await await callback(txCollections, tx)) as any
+      const res = (await callback(txCollections, tx)) as any
       for (let i = 0; i < eventQueue.length; i++) eventQueue[i]()
       return res
     } catch (error) {
@@ -75,7 +99,7 @@ export class AsyncIDB<T extends CollectionSchema> {
 
   private init() {
     let schemaValid = true
-    for (const [name, collection] of Object.entries(this.config.schema)) {
+    for (const [name, collection] of Object.entries(this.schema)) {
       Collection.validate(
         this,
         collection,
@@ -97,20 +121,49 @@ export class AsyncIDB<T extends CollectionSchema> {
       AsyncIDBStore.finalizeDependencies(this, store)
     }
 
-    const request = indexedDB.open(this.name, this.config.version)
+    const request = indexedDB.open(this.name, this.version)
     request.onerror = this.config.onError ?? console.error
+
+    let wasBlocked = false
+    request.onblocked = () => {
+      wasBlocked = true
+      // send a "blocking" message to the other tab, indicating that it should close the connection.
+      this.bc.postMessage({ type: MSG_TYPES.CLOSE_FOR_UPGRADE, newVersion: this.version })
+    }
     request.onupgradeneeded = async (e) => {
-      console.log("onupgradeneeded")
       await this.initializeStores(request, e)
     }
 
     request.onsuccess = () => {
-      console.log("onsuccess")
       this.#db = request.result
+      this.config.onOpen?.(this.#db)
+      if (wasBlocked) {
+        // if our initialization was blocked, we can now let the other tab know we're ready
+        this.bc.postMessage({ type: MSG_TYPES.REINIT })
+      }
       while (this.#instanceCallbacks.length) {
         this.#instanceCallbacks.shift()!(this.#db)
       }
     }
+  }
+
+  private createStores() {
+    return Object.entries(this.schema).reduce(
+      (acc, [name, collection]) => ({
+        ...acc,
+        [name]: new AsyncIDBStore(this, collection, name),
+      }),
+      {} as AsyncIDBInstance<T>["collections"]
+    )
+  }
+
+  private cloneStoresForTransaction(tx: IDBTransaction, eventQueue: Function[]) {
+    return Object.entries(this.stores).reduce((acc, [name, store]) => {
+      return {
+        ...acc,
+        [name]: AsyncIDBStore.cloneForTransaction(tx, store, eventQueue),
+      }
+    }, {} as AsyncIDBInstance<T>["collections"])
   }
 
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {
