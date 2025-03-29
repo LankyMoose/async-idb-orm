@@ -295,11 +295,11 @@ db.onUpgrade = async (ctx, event: IDBVersionChangeEvent) => {
 
   if (event.oldVersion === 1) {
     // migrate from v1 -> v2
-    const oldPosts = (await ctx.getAll("posts")) as Omit<Post, "someNewKey">[]
+    const oldPosts = (await ctx.collections.posts.all()) as Omit<Post, "someNewKey">[]
     ctx.deleteStore("posts")
     ctx.createStore("posts")
     const newPosts = oldPosts.map((post) => ({ ...post, someNewKey: 42 }))
-    await ctx.insert("posts", newPosts)
+    await ctx.collections.posts.upsert(...newPosts)
     console.log("successfully migrated from v1 -> v2")
   }
 }

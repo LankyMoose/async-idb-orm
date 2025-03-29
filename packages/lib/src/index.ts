@@ -31,12 +31,7 @@ function idb<T extends CollectionSchema>(
     const tx = idbInstance.transaction(Object.keys(schema), "readwrite", options)
 
     const eventQueue: Function[] = []
-    const txCollections = Object.keys(collections).reduce((acc, key) => {
-      return {
-        ...acc,
-        [key]: AsyncIDBStore.cloneForTransaction(tx, collections[key], eventQueue),
-      }
-    }, {} as AsyncIDBInstance<T>["collections"])
+    const txCollections = db.cloneStoresForTransaction(tx, eventQueue)
 
     let aborted = false
     tx.addEventListener("abort", () => (aborted = true))

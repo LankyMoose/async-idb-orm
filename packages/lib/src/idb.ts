@@ -47,6 +47,15 @@ export class AsyncIDB<T extends CollectionSchema> {
     instanceCallback(this.#db)
   }
 
+  cloneStoresForTransaction(tx: IDBTransaction, eventQueue: Function[]) {
+    return Object.keys(this.stores).reduce((acc, key) => {
+      return {
+        ...acc,
+        [key]: AsyncIDBStore.cloneForTransaction(tx, this.stores[key], eventQueue),
+      }
+    }, {} as AsyncIDBInstance<T>["collections"])
+  }
+
   private validateShema() {
     let schemaValid = true
     for (const [name, collection] of Object.entries(this.schema)) {
@@ -92,45 +101,7 @@ export class AsyncIDB<T extends CollectionSchema> {
     if (this.onUpgrade) {
       const ctx: OnDBUpgradeCallbackContext<T> = {
         db: dbInstance,
-        getAll: (collectionName) => {
-          const tx = request.transaction
-          if (!tx || tx.mode !== "versionchange") {
-            throw new Error("[async-idb-orm]: transaction mode must be versionchange")
-          }
-          return new Promise((resolve, reject) => {
-            const { read: deserialize } = AsyncIDBStore.getCollection(
-              this.stores[collectionName]
-            ).serializationConfig
-
-            const objectStore = tx.objectStore(collectionName)
-            const getallReq = objectStore.getAll()
-            getallReq.onerror = (err) => reject(err)
-            getallReq.onsuccess = () => resolve(getallReq.result.map(deserialize))
-          })
-        },
-        insert: (collectionName, records) => {
-          const tx = request.transaction
-          if (!tx || tx.mode !== "versionchange") {
-            throw new Error("[async-idb-orm]: transaction mode must be versionchange")
-          }
-          return new Promise((resolve, reject) => {
-            const { write: serialize } = AsyncIDBStore.getCollection(
-              this.stores[collectionName]
-            ).serializationConfig
-
-            const objectStore = tx.objectStore(collectionName)
-            Promise.all(
-              records.map(async (record) => {
-                const serialized = serialize(record)
-                const req = objectStore.put(serialized)
-                req.onerror = (err) => reject(err)
-                await new Promise((res) => (req.onsuccess = res))
-              })
-            )
-              .then(() => resolve())
-              .catch((err) => reject(err))
-          })
-        },
+        collections: this.cloneStoresForTransaction(request.transaction!, []),
         deleteStore: (name) => dbInstance.deleteObjectStore(name),
         createStore: (name) => this.createStore(dbInstance, name),
       }

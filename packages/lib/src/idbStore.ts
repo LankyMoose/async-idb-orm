@@ -512,8 +512,16 @@ export class AsyncIDBStore<
     ) => void
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      const tx = this.#tx
+      if (tx) {
+        return reqHandler(
+          { db: tx.db, objectStore: tx.objectStore(this.name), tx },
+          resolve,
+          reject
+        )
+      }
       this.db.getInstance((db) => {
-        const tx = this.#tx ?? db.transaction(this.#txScope, "readwrite")
+        const tx = db.transaction(this.#txScope, "readwrite")
         const objectStore = tx.objectStore(this.name)
         reqHandler({ db, objectStore, tx }, resolve, reject)
       })
