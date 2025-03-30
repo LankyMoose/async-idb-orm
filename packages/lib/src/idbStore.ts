@@ -36,6 +36,8 @@ export class AsyncIDBStore<
   #tx?: IDBTransaction
   #dependentStoreNames: Set<string>
   #txScope: Set<string>
+  #serialize: (record: CollectionRecord<T>) => any
+  #deserialize: (record: any) => CollectionRecord<T>
   constructor(private db: AsyncIDB<any>, private collection: T, public name: string) {
     this.#onBeforeDelete = []
     this.#onBeforeCreate = []
@@ -46,6 +48,9 @@ export class AsyncIDBStore<
     }
     this.#dependentStoreNames = new Set()
     this.#txScope = new Set([this.name])
+    const { read, write } = this.collection.serializationConfig
+    this.#serialize = write
+    this.#deserialize = read
   }
 
   /**
@@ -102,19 +107,19 @@ export class AsyncIDBStore<
    */
   create(data: CollectionDTO<T>) {
     const { create: transformer } = this.collection.transformers
-    const { write: serialize } = this.collection.serializationConfig
 
     data = this.unwrap(data)
     if (transformer) data = transformer(data)
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
+      const serialized = this.#serialize(data)
       if (this.#onBeforeCreate.length) {
         const fkErrs: Error[] = []
-        await this.getPreCreationForeignKeyErrors(data, ctx, fkErrs)
+        await this.getPreCreationForeignKeyErrors(serialized, ctx, fkErrs)
         if (fkErrs.length) return reject(fkErrs)
       }
 
-      const request = ctx.objectStore.add(serialize(data))
+      const request = ctx.objectStore.add(serialized)
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -143,19 +148,19 @@ export class AsyncIDBStore<
    */
   update(record: CollectionRecord<T>) {
     const { update: transformer } = this.collection.transformers
-    const { write: serialize } = this.collection.serializationConfig
 
     record = this.unwrap(record)
     if (transformer) record = transformer(record)
 
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
+      const serialized = this.#serialize(record)
       if (this.#onBeforeCreate.length) {
         const fkErrs: Error[] = []
-        await this.getPreCreationForeignKeyErrors(record, ctx, fkErrs)
+        await this.getPreCreationForeignKeyErrors(serialized, ctx, fkErrs)
         if (fkErrs.length) return reject(fkErrs)
       }
 
-      const request = ctx.objectStore.put(serialize(record))
+      const request = ctx.objectStore.put(this.#serialize(serialized))
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -243,7 +248,6 @@ export class AsyncIDBStore<
    * @returns {Promise<CollectionRecord<T>[]>}
    */
   findMany(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
-    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       const results: CollectionRecord<T>[] = []
@@ -252,7 +256,7 @@ export class AsyncIDBStore<
         const cursor = request.result
         if (!cursor) return resolve(results)
 
-        const value = deserialize(cursor.value)
+        const value = this.#deserialize(cursor.value)
         if (predicate(value)) {
           results.push(value)
           if (results.length >= limit) return resolve(results)
@@ -278,11 +282,10 @@ export class AsyncIDBStore<
    * @returns {Promise<CollectionRecord<T>[]>}
    */
   all() {
-    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.getAll()
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result.map(deserialize))
+      request.onsuccess = () => resolve(request.result.map(this.#deserialize))
     })
   }
 
@@ -298,7 +301,6 @@ export class AsyncIDBStore<
    * Iterates over all records in the store
    */
   async *[Symbol.asyncIterator]() {
-    const { read: deserialize } = this.collection.serializationConfig
     let objectStore: IDBObjectStore
     if (this.#tx) {
       objectStore = this.#tx.objectStore(this.name)
@@ -335,7 +337,7 @@ export class AsyncIDBStore<
 
     for await (const item of resultQueue) {
       if (item === null) continue
-      yield deserialize(item)
+      yield this.#deserialize(item)
     }
   }
 
@@ -419,7 +421,6 @@ export class AsyncIDBStore<
     name: U,
     direction: "next" | "prev"
   ): Promise<CollectionRecord<T> | null> {
-    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.index(name).openCursor(null, direction)
 
@@ -427,25 +428,23 @@ export class AsyncIDBStore<
       request.onsuccess = () => {
         const cursor = request.result
         if (!cursor) return resolve(null)
-        resolve(deserialize(cursor.value))
+        resolve(this.#deserialize(cursor.value))
       }
     })
   }
 
   private read(id: CollectionKeyPathType<T>) {
-    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.get(id as IDBValidKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         if (!request.result) return resolve(null)
-        resolve(deserialize(request.result))
+        resolve(this.#deserialize(request.result))
       }
     })
   }
 
   private deleteByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
-    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
 
@@ -454,7 +453,7 @@ export class AsyncIDBStore<
         const cursor = request.result
         if (!cursor) return resolve(null)
 
-        const value = deserialize(cursor.value)
+        const value = this.#deserialize(cursor.value)
         if (!predicate(value)) return cursor.continue()
 
         if (this.#onBeforeDelete.length) {
@@ -476,7 +475,6 @@ export class AsyncIDBStore<
   }
 
   private findByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
-    const { read: deserialize } = this.collection.serializationConfig
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       request.onerror = (err) => reject(err)
@@ -484,7 +482,7 @@ export class AsyncIDBStore<
         const cursor = request.result
         if (!cursor) return resolve(null)
 
-        const value = deserialize(cursor.value)
+        const value = this.#deserialize(cursor.value)
         if (!predicate(value)) return cursor.continue()
 
         resolve(value)
@@ -594,13 +592,6 @@ export class AsyncIDBStore<
       store.#dependentStoreNames.add(this.name)
       this.#dependentStoreNames.add(name)
 
-      const deserialize = (store.collection as Collection<T>).serializationConfig.read as (
-        data: any
-      ) => CollectionRecord<T>
-      const serialize = (store.collection as Collection<T>).serializationConfig.write as (
-        data: CollectionRecord<T>
-      ) => any
-
       switch (onDelete) {
         case "cascade":
           store.#onBeforeDelete.push((key, ctx, errs) => {
@@ -621,12 +612,10 @@ export class AsyncIDBStore<
                 const cursor = request.result
                 if (!cursor) return resolve()
 
-                const value = deserialize(cursor.value)
-
-                if (value[field] === key) {
+                if (cursor.value[field] === key) {
                   const dependentErrs: Error[] = []
                   await this.getPreDeletionForeignKeyErrors(
-                    this.getRecordKey(value),
+                    this.getRecordKey(cursor.value),
                     ctx,
                     dependentErrs
                   )
@@ -661,9 +650,7 @@ export class AsyncIDBStore<
                 const cursor = request.result
                 if (!cursor) return resolve()
 
-                const value = deserialize(cursor.value)
-
-                if (value[field] === key) {
+                if (cursor.value[field] === key) {
                   ctx.tx.abort()
                   errs.push(
                     new Error(
@@ -674,7 +661,7 @@ export class AsyncIDBStore<
                 }
                 const dependentErrs: Error[] = []
                 await this.getPreDeletionForeignKeyErrors(
-                  this.getRecordKey(value),
+                  this.getRecordKey(cursor.value),
                   ctx,
                   dependentErrs
                 )
@@ -703,10 +690,9 @@ export class AsyncIDBStore<
                 const cursor = request.result
                 if (!cursor) return resolve()
 
-                const value = deserialize(cursor.value)
-                if (value[field] !== key) return cursor.continue()
+                if (cursor.value[field] !== key) return cursor.continue()
 
-                const updateReq = cursor.update(serialize({ ...value, [field]: null }))
+                const updateReq = cursor.update(this.#serialize({ ...cursor.value, [field]: null }))
                 updateReq.onerror = (err) => {
                   ctx.tx.abort()
                   errs.push(new Error(err as any))

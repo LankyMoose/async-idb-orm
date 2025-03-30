@@ -34,6 +34,9 @@ const seed = async () => {
     TimeStamp.toJSON(john.createdAt) === TimeStamp.toJSON(johnsCreationTime!),
     "Expected createdAt to match"
   )
+  assert((await db.collections.users.count()) === 2, "Expected 2 users")
+  assert((await db.collections.posts.count()) === 1, "Expected 1 post")
+  assert((await db.collections.postComments.count()) === 1, "Expected 1 post comment")
   await john.delete()
   assert((await db.collections.users.count()) === 1, "Expected 1 user")
   // posts & post comments have `cascade delete`, so there should be no posts or post comments
