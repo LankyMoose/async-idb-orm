@@ -8,10 +8,10 @@
 > - [Async Iteration](#async-iteration)
 > - [Active Records](#active-records)
 > - [Transactions](#transactions)
-> - [Relations & Foreign Keys](#relations)
+> - [Relations & Foreign Keys](#relations--foreign-keys)
 > - [Serialization](#serialization)
 > - [Migrations](#migrations)
-> - [Automatic Block Resolution](#block-resolution)
+> - [Automatic Block Resolution](#automatic-block-resolution)
 
 ## Getting Started
 
@@ -76,9 +76,7 @@ const youngestUser = await db.collections.users.min("idx_age")
 //    ^? User, or null if there are no records
 ```
 
-<h2 id="#async-iteration">
-  Async Iteration
-</h2>
+## Async Iteration
 
 Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
 
@@ -161,9 +159,7 @@ async function transferFunds(
 }
 ```
 
-<h2 id="#relations">
-  Relations & Foreign Keys
-</h2>
+## Relations & Foreign Keys
 
 IndexedDB does not implement foreign key constraints. **async-idb-orm** allows you to define pseudo-foreign-keys on collections that are simulated during query execution.
 
@@ -217,9 +213,7 @@ await db.collections.postComments.create({
 await db.collections.users.delete(bob.id)
 ```
 
-<h2 id="#serialization">
-  Serialization
-</h2>
+## Serialization
 
 **async-idb-orm** provides a simple way to serialize and deserialize collection records. This is useful for storing values that would not otherwise be supported by IndexedDB.
 
@@ -258,9 +252,7 @@ export const users = Collection.create<User, UserDTO>()
   })
 ```
 
-<h2 id="#migrations">
-  Migrations
-</h2>
+## Migrations
 
 **async-idb-orm** supports database migrations. This is useful for upgrading your database schema over time.
 
@@ -289,9 +281,7 @@ export const db = idb("users", {
 })
 ```
 
-<h2 id="#block-resolution">
-  Automatic Block resolution
-</h2>
+## Automatic Block resolution
 
 **async-idb-orm** implements automatic block resolution. This is useful for resolving version conflicts between multiple concurrent instances in separate tabs or windows.
 
