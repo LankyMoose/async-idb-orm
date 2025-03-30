@@ -253,10 +253,10 @@ export class AsyncIDBStore<
         if (!cursor) return resolve(results)
 
         const value = deserialize(cursor.value)
-        if (!predicate(value)) return cursor.continue()
-
-        results.push(value)
-        if (results.length >= limit) return resolve(results)
+        if (predicate(value)) {
+          results.push(value)
+          if (results.length >= limit) return resolve(results)
+        }
 
         cursor.continue()
       }
@@ -299,10 +299,13 @@ export class AsyncIDBStore<
    */
   async *[Symbol.asyncIterator]() {
     const { read: deserialize } = this.collection.serializationConfig
-    const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
-    const objectStore: IDBObjectStore = (
-      this.#tx ?? db.transaction(this.name, "readonly")
-    ).objectStore(this.name)
+    let objectStore: IDBObjectStore
+    if (this.#tx) {
+      objectStore = this.#tx.objectStore(this.name)
+    } else {
+      const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
+      objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
+    }
 
     let resolveQueueBlocker: (value: null) => void
     // create an infinite promise that we can resolve on command to yield the next result

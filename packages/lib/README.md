@@ -1,6 +1,6 @@
 # **async-idb-orm**
 
-#### _Promise-based IndexedDB wrapper with an ORM-like API and support for Active Records, relations and migrations_
+**_Promise-based IndexedDB wrapper with an ORM-like API and support for Active Records, relations and migrations_**
 
 ## Contents:
 
@@ -13,7 +13,9 @@
 > - [Migrations](#migrations)
 > - [Automatic Block Resolution](#automatic-block-resolution)
 
-## Getting Started
+---
+
+### Getting Started
 
 ```ts
 // db.ts
@@ -76,7 +78,9 @@ const youngestUser = await db.collections.users.min("idx_age")
 //    ^? User, or null if there are no records
 ```
 
-## Async Iteration
+---
+
+### Async Iteration
 
 Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
 
@@ -86,7 +90,9 @@ for await (const user of db.collections.users) {
 }
 ```
 
-## Active Records
+---
+
+### Active Records
 
 `create`, `find`, `findMany`, and `all` each have an `Active` equivalent that returns an `ActiveRecord<T>` which includes `save` and `delete` methods.
 
@@ -114,7 +120,9 @@ async function setUserAge(userId: string, age: number) {
 }
 ```
 
-## Transactions
+---
+
+### Transactions
 
 ```ts
 async function transferFunds(
@@ -159,7 +167,9 @@ async function transferFunds(
 }
 ```
 
-## Relations & Foreign Keys
+---
+
+### Relations & Foreign Keys
 
 IndexedDB does not implement foreign key constraints. **async-idb-orm** allows you to define pseudo-foreign-keys on collections that are simulated during query execution.
 
@@ -213,7 +223,9 @@ await db.collections.postComments.create({
 await db.collections.users.delete(bob.id)
 ```
 
-## Serialization
+---
+
+### Serialization
 
 **async-idb-orm** provides a simple way to serialize and deserialize collection records. This is useful for storing values that would not otherwise be supported by IndexedDB.
 
@@ -252,7 +264,9 @@ export const users = Collection.create<User, UserDTO>()
   })
 ```
 
-## Migrations
+---
+
+### Migrations
 
 **async-idb-orm** supports database migrations. This is useful for upgrading your database schema over time.
 
@@ -281,11 +295,13 @@ export const db = idb("users", {
 })
 ```
 
-## Automatic Block resolution
+---
+
+### Automatic Block resolution
 
 **async-idb-orm** implements automatic block resolution. This is useful for resolving version conflicts between multiple concurrent instances in separate tabs or windows.
 
-### How it works:
+#### How it works:
 
 _Consider the following scenario:_
 
@@ -298,7 +314,7 @@ As you can see, using IndexedDB is inevitably complex and error-prone.
 
 _How do you close the other connections if they're from different windows or tabs? How do you make sure every tab is using the most up-to-date version of the database?_
 
-### **async-idb-orm** automatically solves this for you.
+#### **async-idb-orm** automatically solves this for you.
 
 Under the hood, we make use of a [BroadcastChannel](https://developer.mozilla.org/en-US/docs/Web/API/BroadcastChannel). This is a feature that's natively supported by all major browsers and allows us to send messages between tabs.
 
