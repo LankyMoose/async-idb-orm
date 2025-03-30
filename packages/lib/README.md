@@ -13,9 +13,7 @@
 > - [Migrations](#migrations)
 > - [Automatic Block Resolution](#block-resolution)
 
-<h2 id="#getting-started">
-  Getting Started
-</h2>
+## Getting Started
 
 ```ts
 // db.ts
@@ -90,9 +88,7 @@ for await (const user of db.collections.users) {
 }
 ```
 
-<h2 id="#active-records">
-  Active Records
-</h2>
+## Active Records
 
 `create`, `find`, `findMany`, and `all` each have an `Active` equivalent that returns an `ActiveRecord<T>` which includes `save` and `delete` methods.
 
@@ -120,9 +116,7 @@ async function setUserAge(userId: string, age: number) {
 }
 ```
 
-<h2 id="#transactions">
-  Transactions
-</h2>
+## Transactions
 
 ```ts
 async function transferFunds(
