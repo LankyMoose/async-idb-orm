@@ -204,7 +204,10 @@ const postComments = Collection.create<PostComment>().withForeignKeys((comments)
   { ref: comments.userId, collection: users, onDelete: "cascade" },
 ])
 
-const db = idb("my-app-db", { users, posts, postComments }, 1)
+const db = idb("my-app-db", {
+  schema: { users, posts, postComments },
+  version: 1,
+})
 
 // throws, because user with id "123" does not exist
 await db.collections.posts.create({ text: "Hello world", userId: "123" })
