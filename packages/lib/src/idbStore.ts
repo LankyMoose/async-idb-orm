@@ -146,21 +146,25 @@ export class AsyncIDBStore<
    * @param {CollectionRecord<T>} record - the record to update. It must contain entries matching the keyPath specified for this store. It will be transformed using the `update` transformer if provided.
    * @returns {Promise<CollectionRecord<T> | null>}
    */
-  update(record: CollectionRecord<T>) {
-    const { update: transformer } = this.collection.transformers
-
+  async update(record: CollectionRecord<T>) {
     record = this.unwrap(record)
-    if (transformer) record = transformer(record)
+    const { create, update } = this.collection.transformers
+    const existing = await this.read(this.getRecordKey(record))
+    if (existing === null && create) {
+      record = create(record)
+    } else if (existing && update) {
+      record = update(record)
+    }
+    const serialized = this.#serialize(record)
 
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
-      const serialized = this.#serialize(record)
       if (this.#onBeforeCreate.length) {
         const fkErrs: Error[] = []
         await this.getPreCreationForeignKeyErrors(serialized, ctx, fkErrs)
         if (fkErrs.length) return reject(fkErrs)
       }
 
-      const request = ctx.objectStore.put(this.#serialize(serialized))
+      const request = ctx.objectStore.put(serialized)
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
