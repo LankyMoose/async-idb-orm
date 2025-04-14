@@ -9,19 +9,6 @@ export class TimeStamp {
   }
 }
 
-export class SuperID {
-  #id: string
-  constructor(id: string) {
-    this.#id = id
-  }
-  toJSON() {
-    return this.#id
-  }
-  static fromJSON(json: string) {
-    return new SuperID(json)
-  }
-}
-
 export type User = {
   id: string
   name: string
@@ -37,7 +24,7 @@ export type UserDTO = {
 export type Post = {
   id: string
   content: string
-  userId: SuperID
+  userId: string
   createdAt: number
 }
 export type PostDTO = {
@@ -48,8 +35,8 @@ export type PostDTO = {
 export type PostComment = {
   id: string
   content: string
-  postId: SuperID
-  userId: SuperID
+  postId: string
+  userId: string
   createdAt: number
 }
 
@@ -63,7 +50,7 @@ export type Todo = {
   id: string
   content: string
   completed: boolean
-  userId: SuperID
+  userId: string
   createdAt: number
 }
 
