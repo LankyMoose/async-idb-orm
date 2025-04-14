@@ -54,18 +54,26 @@ export class AsyncIDBStore<
   }
 
   /**
-   * @param {CollectionEvent} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
-   * @param {(data: CollectionRecord<T>) => void} listener The callback function that will be called when the event is triggered.
+   * @template {CollectionEvent} Evt
+   * @param {Evt} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
+   * @param {CollectionEventCallback<T, Evt>} listener The callback function that will be called when the event is triggered.
    */
-  addEventListener(event: CollectionEvent, listener: (data: CollectionRecord<T>) => void) {
+  addEventListener<Evt extends CollectionEvent>(
+    event: Evt,
+    listener: CollectionEventCallback<T, Evt>
+  ) {
     this.#eventListeners[event].push(listener)
   }
 
   /**
-   * @param {CollectionEvent} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
-   * @param listener The callback function registered with `addEventListener`.
+   * @template {CollectionEvent} Evt
+   * @param {Evt} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
+   * @param {CollectionEventCallback<T, Evt>} listener The callback function registered with `addEventListener`.
    */
-  removeEventListener(event: CollectionEvent, listener: (data: CollectionRecord<T>) => void) {
+  removeEventListener<Evt extends CollectionEvent>(
+    event: Evt,
+    listener: CollectionEventCallback<T, Evt>
+  ) {
     this.#eventListeners[event] = this.#eventListeners[event].filter((l) => l !== listener)
   }
 
@@ -216,7 +224,10 @@ export class AsyncIDBStore<
     return this.queueTask<void>((ctx, resolve, reject) => {
       const request = ctx.objectStore.clear()
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve()
+      request.onsuccess = () => {
+        this.emit("clear", null)
+        resolve()
+      }
     })
   }
 
@@ -494,10 +505,13 @@ export class AsyncIDBStore<
     })
   }
 
-  private emit<U extends CollectionEvent>(evtName: U, data: CollectionRecord<T>) {
+  private emit<U extends CollectionEvent>(
+    evtName: U,
+    data: U extends "clear" ? null : CollectionRecord<T>
+  ) {
     const listeners = this.#eventListeners[evtName] ?? []
     for (const listener of listeners) {
-      listener(data)
+      listener(data as any)
     }
   }
 
