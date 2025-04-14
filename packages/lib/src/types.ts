@@ -104,10 +104,11 @@ export type TransactionContext = {
   objectStore: IDBObjectStore
   tx: IDBTransaction
 }
-export type CollectionEvent = "write" | "delete" | "write|delete"
-export type CollectionEventCallback<T extends Collection<any, any, any, any>> = (
-  data: CollectionRecord<T>
-) => void
+export type CollectionEvent = "write" | "delete" | "write|delete" | "clear"
+export type CollectionEventCallback<
+  T extends Collection<any, any, any, any>,
+  U extends CollectionEvent
+> = U extends "clear" ? (data: null) => void : (data: CollectionRecord<T>) => void
 
 export type CollectionIndexName<T extends Collection<any, any, any, any>> =
   T["indexes"][number]["name"]
@@ -121,9 +122,6 @@ export type CollectionKeyPathType<
   KeyPath = T["keyPath"]
 > = KeyPath extends keyof T[typeof $COLLECTION_INTERNAL]["record"]
   ? T[typeof $COLLECTION_INTERNAL]["record"][KeyPath]
-  : // handle case where keyPath is an array
-  KeyPath extends NonEmptyArray
-  ? ObjectValues<T[typeof $COLLECTION_INTERNAL]["record"], KeyPath>
   : never
 
 export type CollectionIndex<RecordType extends Record<string, any>> = {

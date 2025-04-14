@@ -76,6 +76,11 @@ const oldestUser = await db.collections.users.max("idx_age")
 //    ^? User, or null if there are no records
 const youngestUser = await db.collections.users.min("idx_age")
 //    ^? User, or null if there are no records
+
+const usersYoungerThan30 = await db.collections.users.getIndexRange(
+  "idx_age",
+  IDBKeyRange.bound(0, 30)
+)
 ```
 
 ---
@@ -86,6 +91,11 @@ Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
 
 ```ts
 for await (const user of db.collections.users) {
+  console.log(user)
+}
+
+const ageKeyRange = IDBKeyRange.bound(0, 30)
+for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
   console.log(user)
 }
 ```

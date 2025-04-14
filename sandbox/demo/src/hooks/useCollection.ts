@@ -7,7 +7,11 @@ export const useLiveCollection = <T extends keyof typeof schema>(name: T) => {
 
   useEffect(() => {
     collection.addEventListener("write|delete", state.invalidate)
-    return () => collection.removeEventListener("write|delete", state.invalidate)
+    collection.addEventListener("clear", state.invalidate)
+    return () => {
+      collection.removeEventListener("write|delete", state.invalidate)
+      collection.removeEventListener("clear", state.invalidate)
+    }
   }, [])
   return state
 }

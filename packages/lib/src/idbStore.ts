@@ -32,7 +32,7 @@ export class AsyncIDBStore<
     ctx: TransactionContext,
     errs: Error[]
   ) => Promise<void>)[]
-  #eventListeners: Record<CollectionEvent, CollectionEventCallback<T>[]>
+  #eventListeners: Record<CollectionEvent, CollectionEventCallback<T, CollectionEvent>[]>
   #tx?: IDBTransaction
   #dependentStoreNames: Set<string>
   #txScope: Set<string>
@@ -45,6 +45,7 @@ export class AsyncIDBStore<
       write: [],
       delete: [],
       "write|delete": [],
+      clear: [],
     }
     this.#dependentStoreNames = new Set()
     this.#txScope = new Set([this.name])
@@ -323,33 +324,8 @@ export class AsyncIDBStore<
       const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
       objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
     }
-
-    let resolveQueueBlocker: (value: null) => void
-    // create an infinite promise that we can resolve on command to yield the next result
-    let queueBlocker = new Promise<null>((resolve) => {
-      resolveQueueBlocker = resolve
-    })
-    const resultQueue: Promise<null | CollectionRecord<T>>[] = [queueBlocker]
-
     const request = objectStore.openCursor()
-    request.onerror = (e) => {
-      resolveQueueBlocker(null)
-      throw e
-    }
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (!cursor) return resolveQueueBlocker(null)
-      resultQueue.push(cursor.value)
-      resolveQueueBlocker(null) // unblock to allow resolving of this record
-
-      // reblock until next record
-      queueBlocker = new Promise((resolve) => {
-        resolveQueueBlocker = resolve
-      })
-      resultQueue.push(queueBlocker)
-      cursor.continue()
-    }
-
+    const resultQueue = this.createLazyIterator<CollectionRecord<T>>(request)
     for await (const item of resultQueue) {
       if (item === null) continue
       yield this.#deserialize(item)
@@ -393,6 +369,46 @@ export class AsyncIDBStore<
    */
   min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
     return this.firstByKeyDirection(name, "next")
+  }
+
+  /**
+   * Iterates over all records in an index
+   * @generator
+   * @param {CollectionIndexName<T>} name
+   * @param {IDBKeyRange} [keyRange]
+   */
+  async *iterateIndex<U extends CollectionIndexName<T>>(name: U, keyRange?: IDBKeyRange) {
+    const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
+    const objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
+    const request = objectStore.index(name).openCursor(keyRange ?? null)
+    const resultQueue = this.createLazyIterator<CollectionRecord<T>>(request)
+
+    for await (const item of resultQueue) {
+      if (item === null) continue
+      yield this.#deserialize(item)
+    }
+  }
+
+  /**
+   * Gets a range of records from an index
+   * @param {CollectionIndexName<T>} name
+   * @param {IDBKeyRange} keyRange
+   * @returns {Promise<CollectionRecord<T>[]>}
+   */
+  async getIndexRange<U extends CollectionIndexName<T>>(name: U, keyRange: IDBKeyRange) {
+    return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
+      const request = ctx.objectStore.index(name).openCursor(keyRange)
+      const results: CollectionRecord<T>[] = []
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) return resolve(results)
+
+        const value = this.#deserialize(cursor.value)
+        results.push(value)
+        cursor.continue()
+      }
+    })
   }
 
   static getCollection(store: AsyncIDBStore<any>) {
@@ -545,6 +561,35 @@ export class AsyncIDBStore<
         reqHandler({ db, objectStore, tx }, resolve, reject)
       })
     })
+  }
+
+  private createLazyIterator<T>(request: IDBRequest) {
+    let resolveQueueBlocker: (value: null) => void
+    // create an infinite promise that we can resolve on command to yield the next result
+    let queueBlocker = new Promise<null>((resolve) => {
+      resolveQueueBlocker = resolve
+    })
+    const resultQueue: Promise<null | T>[] = [queueBlocker]
+
+    request.onerror = (e) => {
+      resolveQueueBlocker(null)
+      throw e
+    }
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) return resolveQueueBlocker(null)
+      resultQueue.push(cursor.value)
+      resolveQueueBlocker(null) // unblock to allow resolving of this record
+
+      // reblock until next record
+      queueBlocker = new Promise((resolve) => {
+        resolveQueueBlocker = resolve
+      })
+      resultQueue.push(queueBlocker)
+      cursor.continue()
+    }
+
+    return resultQueue
   }
 
   private async getPreDeletionForeignKeyErrors(

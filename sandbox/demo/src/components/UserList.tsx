@@ -2,30 +2,12 @@ import { Link, useCallback } from "kaioken"
 import { User, db } from "$/db"
 import { useLiveCollection } from "$/hooks/useCollection"
 import { selectedUser } from "$/state/selectedUser"
-
-const userNames = [
-  "John Doe",
-  "Jane Doe",
-  "Bob Smith",
-  "Alice Johnson",
-  "Charlie Brown",
-  "Emily Davis",
-  "Michael Johnson",
-  "Olivia Wilson",
-  "William Brown",
-  "Sophia Anderson",
-  "James Lee",
-  "Emma Clark",
-  "Daniel Foster",
-  "Ava Green",
-]
-
-function randomUserName() {
-  return userNames[Math.floor(Math.random() * userNames.length)]
-}
+import { randomUserName } from "$/random"
 
 export function UsersList() {
   const { data: users, loading, error } = useLiveCollection("users")
+
+  console.log("UsersList", users)
 
   const addRandom = useCallback(async () => {
     await db.collections.users.create({

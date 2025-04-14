@@ -5,9 +5,10 @@ import { CreateUserForm } from "./components/CreateUserForm"
 import { UserPosts } from "./components/UserPosts"
 import { db, TimeStamp } from "./db"
 import { assert, assertThrows } from "./assert"
+import { randomUserName } from "./random"
 window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
 
-const seed = async () => {
+const test = async () => {
   selectedUser.value = null
   await db.collections.postComments.clear()
   await db.collections.posts.clear()
@@ -71,6 +72,29 @@ const seed = async () => {
   await db.collections.users.delete(bob.id)
   assert((await db.collections.todos.count()) === 0, "Expected 0 todos")
   assert((await db.collections.users.count()) === 0, "Expected 0 users")
+
+  // key ranges
+
+  await db.collections.users.upsert(
+    // @ts-ignore
+    ...Array.from({ length: 100 }, (_, i) => ({
+      age: i,
+      id: crypto.randomUUID(),
+      name: randomUserName(),
+    }))
+  )
+
+  const usersYoungerThan30 = await db.collections.users.getIndexRange(
+    "idx_age",
+    IDBKeyRange.bound(0, 30)
+  )
+  assert(
+    usersYoungerThan30.length === 31,
+    `Expected 31 users younger than 30, got ${usersYoungerThan30.length}`
+  )
+  await db.collections.users.clear()
+  const count = await db.collections.users.count()
+  assert(count === 0, "Expected 0 users, got " + count)
 }
 
 function Home() {
@@ -85,7 +109,7 @@ export function App() {
           <Link to="/users">Users</Link>
         </nav>
         <div>
-          <button onclick={seed}>Seed</button>
+          <button onclick={test}>Test</button>
         </div>
         <div style="display: flex; align-items: center; gap: 1rem;">
           Selected user:{" "}
