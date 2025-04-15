@@ -41,6 +41,11 @@ export type AsyncIDBConfig<T extends CollectionSchema> = {
    * @param {number} newVersion
    */
   onBeforeReinit?: (oldVersion: number, newVersion: number) => void
+
+  /**
+   * By default, collection events are relayed to other tabs. To disable this, set `relayEvents` to `false`
+   */
+  relayEvents?: boolean
 }
 
 export type SerializationConfig<RecordType extends Record<string, any>, T> = {
@@ -118,7 +123,7 @@ export type CollectionEvent = "write" | "delete" | "write|delete" | "clear"
 export type CollectionEventCallback<
   T extends Collection<any, any, any, any>,
   U extends CollectionEvent
-> = U extends "clear" ? (data: null) => void : (data: CollectionRecord<T>) => void
+> = (data: U extends "clear" ? null : CollectionRecord<T>) => void
 
 export type CollectionIndexName<T extends Collection<any, any, any, any>> =
   T["indexes"][number]["name"]

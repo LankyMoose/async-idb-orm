@@ -10,20 +10,7 @@ import {
 
 import { Collection } from "./collection.js"
 import { AsyncIDBStore } from "./idbStore.js"
-
-const MSG_TYPES = {
-  CLOSE_FOR_UPGRADE: "[async-idb-orm]:close-for-upgrade",
-  REINIT: "[async-idb-orm]:reinit",
-} as const
-
-type BroadcastChannelMessage =
-  | {
-      type: typeof MSG_TYPES.CLOSE_FOR_UPGRADE
-      newVersion: number
-    }
-  | {
-      type: typeof MSG_TYPES.REINIT
-    }
+import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
 
 /**
  * @private
@@ -37,6 +24,7 @@ export class AsyncIDB<T extends CollectionSchema> {
   }
   onUpgrade?: OnDBUpgradeCallback<T>
   bc: BroadcastChannel
+  relayEnabled?: boolean
   version: number
   schema: T
   constructor(private name: string, private config: AsyncIDBConfig<T>) {
@@ -45,6 +33,7 @@ export class AsyncIDB<T extends CollectionSchema> {
     this.schema = config.schema
     this.version = config.version
     this.stores = this.createStores()
+    this.relayEnabled = config.relayEvents !== false
 
     let latest = this.version
     this.bc = new BroadcastChannel(`[async-idb-orm]:${this.name}`)
@@ -53,16 +42,24 @@ export class AsyncIDB<T extends CollectionSchema> {
        * - New tab with new version sends us a "CLOSE_FOR_UPGRADE" message, so we close the db.
        * - Once the other tab initializes it replies with an "REINIT" message.
        */
-      if (e.data.type === MSG_TYPES.CLOSE_FOR_UPGRADE) {
-        if (this.version === e.data.newVersion) return
-        this.#db?.close()
-        latest = e.data.newVersion
-      } else if (e.data.type === MSG_TYPES.REINIT) {
-        if (this.version === latest) return
-        this.config.onBeforeReinit?.(this.version, latest)
-        this.version = latest
-        this.stores = this.createStores()
-        this.init()
+      switch (e.data.type) {
+        case MSG_TYPES.CLOSE_FOR_UPGRADE:
+          if (this.version === e.data.newVersion) return
+          this.#db?.close()
+          latest = e.data.newVersion
+          break
+        case MSG_TYPES.REINIT:
+          if (this.version === latest) return
+          this.config.onBeforeReinit?.(this.version, latest)
+          this.version = latest
+          this.stores = this.createStores()
+          this.init()
+          break
+        case MSG_TYPES.RELAY:
+          const store = this.stores[e.data.event.name]
+          if (!store) return
+          AsyncIDBStore.relay(store, e.data.event.name, e.data.event.data)
+          break
       }
     }
 

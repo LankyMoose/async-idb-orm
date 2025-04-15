@@ -5,10 +5,11 @@
 ## Contents:
 
 > - [Getting Started](#getting-started)
-> - [Async Iteration](#async-iteration)
+> - [Events](#events)
 > - [Active Records](#active-records)
 > - [Transactions](#transactions)
 > - [Relations & Foreign Keys](#relations--foreign-keys)
+> - [Async Iteration](#async-iteration)
 > - [Serialization](#serialization)
 > - [Migrations](#migrations)
 > - [Automatic Block Resolution](#automatic-block-resolution)
@@ -85,19 +86,35 @@ const usersYoungerThan30 = await db.collections.users.getIndexRange(
 
 ---
 
-### Async Iteration
+### Events
 
-Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
+**async-idb-orm** supports the following events:
+
+- `write` - triggered when a record is created or updated
+- `delete` - triggered when a record is deleted
+- `write|delete` - triggered when a record is created, updated, or deleted
+- `clear` - triggered when all records are deleted via `db.<collection>.clear`
 
 ```ts
-for await (const user of db.collections.users) {
-  console.log(user)
+const onUserDeleted = (user: User) => {
+  console.log("User deleted:", user)
 }
 
-const ageKeyRange = IDBKeyRange.bound(0, 30)
-for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
-  console.log(user)
-}
+db.collections.users.addEventListener("delete", onUserDeleted)
+db.collections.users.delete(user.id)
+// User deleted: {...}
+db.collections.users.removeEventListener("delete", onUserDeleted)
+```
+
+By default, **async-idb-orm** automatically relays events to other tabs/windows that are using the same database.
+To disable this, set the `relayEvents` option to `false`:
+
+```ts
+export const db = idb("users", {
+  schema,
+  version: 1,
+  relayEvents: false,
+})
 ```
 
 ---
@@ -234,6 +251,24 @@ await db.collections.postComments.create({
 
 // deletes bob, his post and alice's comment
 await db.collections.users.delete(bob.id)
+```
+
+---
+
+### Async Iteration
+
+Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
+
+```ts
+for await (const user of db.collections.users) {
+  console.log(user)
+}
+
+// You can also iterate over indexes, like so:
+const ageKeyRange = IDBKeyRange.bound(0, 30)
+for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
+  console.log(user)
+}
 ```
 
 ---

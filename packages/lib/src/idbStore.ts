@@ -14,6 +14,7 @@ import type {
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
+import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
 
 /**
  * A utility instance that represents a collection in an IndexedDB database and provides methods for interacting with the collection.
@@ -22,6 +23,7 @@ import { Collection } from "./collection.js"
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
 > {
+  #isRelaying = false
   #onBeforeCreate: ((
     data: CollectionRecord<T>,
     ctx: TransactionContext,
@@ -413,6 +415,16 @@ export class AsyncIDBStore<
     })
   }
 
+  static relay<U extends CollectionEvent>(
+    store: AsyncIDBStore<any>,
+    evtName: U,
+    data: U extends "clear" ? null : CollectionRecord<any>
+  ) {
+    store.#isRelaying = true
+    store.emit(evtName, data)
+    store.#isRelaying = false
+  }
+
   static getCollection(store: AsyncIDBStore<any>) {
     return store.collection as Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
   }
@@ -530,6 +542,12 @@ export class AsyncIDBStore<
     const listeners = this.#eventListeners[evtName] ?? []
     for (const listener of listeners) {
       listener(data as any)
+    }
+    if (!this.#isRelaying && this.db.relayEnabled) {
+      this.db.bc.postMessage({
+        type: MSG_TYPES.RELAY,
+        event: { name: evtName, data },
+      } satisfies BroadcastChannelMessage)
     }
   }
 
