@@ -58,11 +58,12 @@ export class AsyncIDBStore<
    * @template {CollectionEvent} Evt
    * @param {Evt} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
    * @param {CollectionEventCallback<T, Evt>} listener The callback function that will be called when the event is triggered.
+   * @returns {void}
    */
   addEventListener<Evt extends CollectionEvent>(
     event: Evt,
     listener: CollectionEventCallback<T, Evt>
-  ) {
+  ): void {
     this.#eventListeners[event].push(listener)
   }
 
@@ -70,11 +71,12 @@ export class AsyncIDBStore<
    * @template {CollectionEvent} Evt
    * @param {Evt} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
    * @param {CollectionEventCallback<T, Evt>} listener The callback function registered with `addEventListener`.
+   * @returns {void}
    */
   removeEventListener<Evt extends CollectionEvent>(
     event: Evt,
     listener: CollectionEventCallback<T, Evt>
-  ) {
+  ): void {
     this.#eventListeners[event] = this.#eventListeners[event].filter((l) => l !== listener)
   }
 

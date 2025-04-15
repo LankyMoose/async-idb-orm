@@ -49,7 +49,8 @@ type ForeignKeyConfigCallback<RecordType extends Record<string, any>> = (fields:
 const keyPassThroughProxy = new Proxy({}, { get: (_: any, key: string) => key })
 
 /**
- * @description Collection builder - see `Collection.create()`
+ * @description Collection builder
+ * @see {@link Collection.create}
  */
 export class Collection<
   RecordType extends Record<string, any>,
@@ -103,8 +104,6 @@ export class Collection<
 
   /**
    * Sets the foreign keys for this collection
-   * @param {ForeignKeyConfigCallback<RecordType> | CollectionForeignKeyConfig<RecordType>[]} callbackOrKeys
-   * @returns {this}
    */
   withForeignKeys(
     callbackOrKeys: ForeignKeyConfigCallback<RecordType> | CollectionForeignKeyConfig<RecordType>[]
@@ -117,8 +116,6 @@ export class Collection<
 
   /**
    * Sets the transformers for this collection
-   * @param {CollectionTransformers<RecordType, DTO>} transformers
-   * @returns {this}
    */
   withTransformers(transformers: CollectionTransformers<RecordType, DTO>): this {
     this.transformers = transformers

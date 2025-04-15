@@ -18,7 +18,6 @@ export type AsyncIDBConfig<T extends CollectionSchema> = {
   onError?: typeof console.error
   /**
    * Called when the database is opened successfully. This can be called upon initial `idb` call, or after a block resolution.
-   * @param {IDBDatabase} db
    */
   onOpen?: (db: IDBDatabase) => void
   /**
@@ -26,6 +25,21 @@ export type AsyncIDBConfig<T extends CollectionSchema> = {
    */
   onUpgrade?: OnDBUpgradeCallback<T>
 
+  /**
+   * Provides a callback to hande the outcome of a **block resolution**. Useful for doing a reload of the page in case the tab is too old.
+   *
+   * @example
+   * ```ts
+   * onBeforeReinit: (oldVersion, newVersion) => {
+   *   // let's imagine the latest tab has set a "breakingChangesVersion" value, which indicates that any old tabs using a version less than this should reload.
+   *   if (oldVersion < parseInt(localStorage.getItem("breakingChangesVersion") ?? "0")) {
+   *     window.location.reload()
+   *   }
+   * }
+   * ```
+   * @param {number} oldVersion
+   * @param {number} newVersion
+   */
   onBeforeReinit?: (oldVersion: number, newVersion: number) => void
 }
 
@@ -60,14 +74,10 @@ export type OnDBUpgradeCallbackContext<T extends CollectionSchema> = {
   }
   /**
    * Deletes a store from IndexedDB
-   * @param {keyof T & string} name
-   * @returns {void}
    */
   deleteStore: (name: keyof T & string) => void
   /**
    * Creates a store in IndexedDB and its indexes, if any
-   * @param {keyof T & string} name
-   * @returns {IDBObjectStore}
    */
   createStore: (name: keyof T & string) => IDBObjectStore
 }
@@ -133,12 +143,3 @@ export type CollectionIndex<RecordType extends Record<string, any>> = {
 export type RecordKeyPath<RecordType extends Record<string, any>> =
   | (keyof RecordType & string)
   | ((keyof RecordType & string)[] & NonEmptyArray)
-
-type ObjectValues<T extends Record<string, any>, K extends Array<keyof T>> = K extends [
-  infer First,
-  ...infer Rest
-]
-  ? First extends keyof T
-    ? [T[First], ...ObjectValues<T, Rest extends Array<keyof T> ? Rest : []>]
-    : []
-  : []
