@@ -56,9 +56,9 @@ export class AsyncIDB<T extends CollectionSchema> {
           this.init()
           break
         case MSG_TYPES.RELAY:
-          const store = this.stores[e.data.event.name]
+          const store = this.stores[e.data.name]
           if (!store) return
-          AsyncIDBStore.relay(store, e.data.event.name, e.data.event.data)
+          AsyncIDBStore.relay(store, e.data.event, e.data.data)
           break
       }
     }

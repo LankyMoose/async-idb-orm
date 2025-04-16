@@ -17,23 +17,28 @@ export function UsersList() {
   }, [])
 
   return (
-    <div>
-      <div style="display:flex; align-items:center; justify-content:space-between; gap: 2rem;">
-        <h3>Users</h3>
-        <button onclick={addRandom}>Add random user</button>
+    <>
+      <div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap: 2rem;">
+          <h3>Users</h3>
+          <button onclick={addRandom}>Add random user</button>
+        </div>
+        {loading ? (
+          <p>Loading...</p>
+        ) : error ? (
+          <p>{error.message}</p>
+        ) : (
+          <>
+            {users.map((user) => (
+              <UserCard key={user.id} user={user} />
+            ))}
+          </>
+        )}
       </div>
-      {loading ? (
-        <p>Loading...</p>
-      ) : error ? (
-        <p>{error.message}</p>
-      ) : (
-        <>
-          {users.map((user) => (
-            <UserCard key={user.id} user={user} />
-          ))}
-        </>
-      )}
-    </div>
+      {window.parent === window ? (
+        <iframe src="./users" width="100%" height="500px" style="border: none;" />
+      ) : null}
+    </>
   )
 }
 

@@ -546,7 +546,9 @@ export class AsyncIDBStore<
     if (!this.#isRelaying && this.db.relayEnabled) {
       this.db.bc.postMessage({
         type: MSG_TYPES.RELAY,
-        event: { name: evtName, data },
+        name: this.name,
+        event: evtName,
+        data,
       } satisfies BroadcastChannelMessage)
     }
   }

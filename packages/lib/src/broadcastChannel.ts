@@ -16,8 +16,7 @@ export type BroadcastChannelMessage =
     }
   | {
       type: typeof MSG_TYPES.RELAY
-      event: {
-        name: CollectionEvent
-        data: null | Record<string, any>
-      }
+      event: CollectionEvent
+      name: string
+      data: null | Record<string, any>
     }
