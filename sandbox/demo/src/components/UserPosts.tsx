@@ -1,6 +1,7 @@
 import { db, Post } from "$/db"
 import { selectedUser } from "$/state/selectedUser"
-import { navigate, useAsync, useEffect, useRouter } from "kaioken"
+import { useAsync, useEffect } from "kaioken"
+import { navigate, useRouter } from "kaioken/router"
 
 export function UserPosts() {
   const { params } = useRouter()

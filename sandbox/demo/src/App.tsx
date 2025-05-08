@@ -1,4 +1,4 @@
-import { Link, Router, Route, navigate } from "kaioken"
+import { Link, Router, Route, navigate } from "kaioken/router"
 import { selectedUser } from "./state/selectedUser"
 import { UsersList } from "./components/UserList"
 import { CreateUserForm } from "./components/CreateUserForm"

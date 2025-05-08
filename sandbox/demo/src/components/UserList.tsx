@@ -1,8 +1,9 @@
-import { Link, useCallback } from "kaioken"
+import { useCallback } from "kaioken"
 import { User, db } from "$/db"
 import { useLiveCollection } from "$/hooks/useCollection"
 import { selectedUser } from "$/state/selectedUser"
 import { randomUserName } from "$/random"
+import { Link } from "kaioken/router"
 
 export function UsersList() {
   const { data: users, loading, error } = useLiveCollection("users")
