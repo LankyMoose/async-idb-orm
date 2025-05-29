@@ -52,8 +52,16 @@ const users = Collection.create<User, UserDTO>()
     }),
   })
 
+/**
+ * for numeric keyPaths, you can also specify `autoIncrement: true` to get
+ * an auto-incrementing key. The key becomes optional in the expected
+ * return type of a `create` transformer.
+ */
+type Post = { id: number; text: string; userId: string }
+const posts = Collection.create<Post>().withKeyPath("id", { autoIncrement: true })
+
 export const db = idb("users", {
-  schema: { users },
+  schema: { users, posts },
   version: 1,
 })
 ```
