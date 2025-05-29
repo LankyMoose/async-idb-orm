@@ -11,6 +11,7 @@ import type {
   ActiveRecordMethods,
   CollectionEventCallback,
   TransactionContext,
+  CollectionIDMode,
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
@@ -21,7 +22,7 @@ import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
  * @template {Collection} T
  */
 export class AsyncIDBStore<
-  T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
+  T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>
 > {
   #isRelaying = false
   #onBeforeCreate: ((
@@ -136,10 +137,13 @@ export class AsyncIDBStore<
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        if (!request.result) return reject(request.error)
-        this.emit("write", data)
-        this.emit("write|delete", data)
-        resolve(data)
+        if (request.result === undefined) return reject(request.error)
+        const res = !this.collection.idMode
+          ? data
+          : { ...data, [this.collection.keyPath]: request.result }
+        this.emit("write", res)
+        this.emit("write|delete", res)
+        resolve(res)
       }
     })
   }
@@ -426,7 +430,13 @@ export class AsyncIDBStore<
   }
 
   static getCollection(store: AsyncIDBStore<any>) {
-    return store.collection as Collection<Record<string, any>, any, any, CollectionIndex<any>[]>
+    return store.collection as Collection<
+      Record<string, any>,
+      any,
+      any,
+      CollectionIndex<any>[],
+      CollectionIDMode
+    >
   }
 
   static cloneForTransaction(

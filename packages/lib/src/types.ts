@@ -105,7 +105,7 @@ export type DBInstanceCallback = (db: IDBDatabase) => any
 type NonEmptyArray = [any, ...any[]]
 
 export type CollectionSchema = {
-  [key: string]: Collection<any, any, any, any>
+  [key: string]: Collection<any, any, any, any, any>
 }
 
 export type ActiveRecord<T> = T & ActiveRecordMethods<T>
@@ -121,19 +121,19 @@ export type TransactionContext = {
 }
 export type CollectionEvent = "write" | "delete" | "write|delete" | "clear"
 export type CollectionEventCallback<
-  T extends Collection<any, any, any, any>,
+  T extends Collection<any, any, any, any, any>,
   U extends CollectionEvent
 > = (data: U extends "clear" ? null : CollectionRecord<T>) => void
 
-export type CollectionIndexName<T extends Collection<any, any, any, any>> =
+export type CollectionIndexName<T extends Collection<any, any, any, any, any>> =
   T["indexes"][number]["name"]
-export type CollectionRecord<T extends Collection<any, any, any, any>> =
+export type CollectionRecord<T extends Collection<any, any, any, any, any>> =
   T[typeof $COLLECTION_INTERNAL]["record"]
-export type CollectionDTO<T extends Collection<any, any, any, any>> =
+export type CollectionDTO<T extends Collection<any, any, any, any, any>> =
   T[typeof $COLLECTION_INTERNAL]["dto"]
 
 export type CollectionKeyPathType<
-  T extends Collection<any, any, any, any>,
+  T extends Collection<any, any, any, any, any>,
   KeyPath = T["keyPath"]
 > = KeyPath extends keyof T[typeof $COLLECTION_INTERNAL]["record"]
   ? T[typeof $COLLECTION_INTERNAL]["record"][KeyPath]
@@ -143,6 +143,11 @@ export type CollectionIndex<RecordType extends Record<string, any>> = {
   name: string
   key: RecordKeyPath<RecordType>
   options?: IDBIndexParameters
+}
+
+export enum CollectionIDMode {
+  UserAssigned = "userAssigned",
+  AutoIncrement = "autoIncrement",
 }
 
 export type RecordKeyPath<RecordType extends Record<string, any>> =

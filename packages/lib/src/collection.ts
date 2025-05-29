@@ -1,6 +1,6 @@
 import { AsyncIDB } from "idb"
 import { AsyncIDBStore } from "./idbStore"
-import type { CollectionIndex, SerializationConfig } from "./types"
+import { CollectionIDMode, CollectionIndex, SerializationConfig } from "./types"
 
 const CollectionBuilderSentinel = Symbol()
 
@@ -15,30 +15,40 @@ type KeyPathInvalidationEventArgs =
   | [typeof ERR_KEYPATH_EMPTY, null]
   | [typeof ERR_KEYPATH_DUPLICATE, string]
 
+type Prettify<T> = {
+  [K in keyof T]: T[K]
+} & {}
+
 export type CollectionTransformers<
   RecordType extends Record<string, any>,
-  DTO extends Record<string, any>
+  DTO extends Record<string, any>,
+  IDMode extends CollectionIDMode,
+  KeyPath extends string
 > = {
   /**
    * @optional
    * @description Transformer for creating the record
-   * @param {DTO} data
-   * @returns {RecordType}
    */
-  create?: (data: DTO) => RecordType
+  create?: (
+    data: DTO
+  ) => IDMode extends CollectionIDMode.AutoIncrement
+    ? Prettify<Omit<RecordType, KeyPath> & { [key in KeyPath]?: number }>
+    : RecordType
   /**
    * @optional
    * @description Transformer for updating the record
-   * @param {RecordType} data
-   * @returns {RecordType}
    */
   update?: (data: RecordType) => RecordType
+}
+
+type InvalidRecordKeyError = Error & {
+  Brand: "InvalidRecordKeyError"
 }
 
 type ForeignKeyOnDelete = "cascade" | "restrict" | "no action" | "set null"
 type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
   ref: keyof RecordType & string
-  collection: Collection<any, any, any, any>
+  collection: Collection<any, any, any, any, any>
   onDelete: ForeignKeyOnDelete
 }
 
@@ -56,12 +66,14 @@ export class Collection<
   RecordType extends Record<string, any>,
   DTO extends Record<string, any> = RecordType,
   KeyPath extends keyof RecordType & string = "id" extends keyof RecordType & string ? "id" : never,
-  Indexes extends CollectionIndex<RecordType>[] = never
+  Indexes extends CollectionIndex<RecordType>[] = never,
+  IDMode extends CollectionIDMode = CollectionIDMode.UserAssigned
 > {
   [$COLLECTION_INTERNAL]: {
     record: RecordType
     dto: DTO
   }
+  idMode: IDMode
   keyPath: KeyPath
   indexes: Indexes
   foreignKeys: CollectionForeignKeyConfig<RecordType>[]
@@ -81,14 +93,26 @@ export class Collection<
     this.indexes = [] as any as Indexes
     this.foreignKeys = []
     this[$COLLECTION_INTERNAL] = null!
+    this.idMode = "userAssignedId" as IDMode
   }
-
   /**
    * Sets the key for this collection
    */
-  withKeyPath<const Key extends KeyPath>(keyPath: Key): Collection<RecordType, DTO, Key, Indexes> {
-    this.keyPath = keyPath
-    return this as any as Collection<RecordType, DTO, Key, Indexes>
+  withKeyPath<const Key extends keyof RecordType & string, const AutoIncr extends boolean>(
+    keyPath: Key,
+    options?: {
+      autoIncrement?: AutoIncr
+    }
+  ): AutoIncr extends true
+    ? RecordType[Key] extends number
+      ? Collection<RecordType, DTO, Key, Indexes, CollectionIDMode.AutoIncrement>
+      : InvalidRecordKeyError
+    : Collection<RecordType, DTO, Key, Indexes, CollectionIDMode.UserAssigned> {
+    if (options?.autoIncrement) {
+      this.idMode = CollectionIDMode.AutoIncrement as IDMode
+    }
+    this.keyPath = keyPath as any
+    return this as any
   }
 
   /**
@@ -97,9 +121,9 @@ export class Collection<
    */
   withIndexes<const IdxArray extends CollectionIndex<RecordType>[]>(
     indexes: IdxArray
-  ): Collection<RecordType, DTO, KeyPath, IdxArray> {
+  ): Collection<RecordType, DTO, KeyPath, IdxArray, IDMode> {
     this.indexes = indexes as unknown as Indexes
-    return this as any as Collection<RecordType, DTO, KeyPath, IdxArray>
+    return this as any as Collection<RecordType, DTO, KeyPath, IdxArray, IDMode>
   }
 
   /**
@@ -117,8 +141,8 @@ export class Collection<
   /**
    * Sets the transformers for this collection
    */
-  withTransformers(transformers: CollectionTransformers<RecordType, DTO>): this {
-    this.transformers = transformers
+  withTransformers(transformers: CollectionTransformers<RecordType, DTO, IDMode, KeyPath>): this {
+    this.transformers = transformers as any
     return this
   }
 
@@ -150,7 +174,11 @@ export class Collection<
   static create<
     RecordType extends Record<string, any>,
     DTO extends Record<string, any> = any
-  >(): Collection<RecordType, DTO> {
+  >(): Collection<
+    RecordType,
+    DTO,
+    "id" extends keyof RecordType & string ? "id" : keyof RecordType & string
+  > {
     return new Collection<RecordType, DTO>(CollectionBuilderSentinel)
   }
 

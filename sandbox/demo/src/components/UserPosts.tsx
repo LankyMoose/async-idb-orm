@@ -6,10 +6,8 @@ import { navigate, useRouter } from "kaioken/router"
 export function UserPosts() {
   const { params } = useRouter()
   if (!params.userId) return navigate("/users")
-  const posts = useAsync(
-    () => db.collections.posts.findMany((p) => p.userId === params.userId),
-    [params.userId]
-  )
+  const userId = parseInt(params.userId)
+  const posts = useAsync(() => db.collections.posts.findMany((p) => p.userId === userId), [userId])
 
   useEffect(() => {
     db.collections.posts.addEventListener("write|delete", posts.invalidate)
@@ -17,7 +15,7 @@ export function UserPosts() {
   }, [])
 
   const onCreatePostClick = async () => {
-    await db.collections.posts.create({ userId: params.userId, content: "New post" })
+    await db.collections.posts.create({ userId, content: "New post" })
   }
 
   return (
@@ -26,7 +24,7 @@ export function UserPosts() {
         <h3 style="display:flex;gap:0.5rem;align-items:center">
           Posts by
           <span style="padding: 0.25rem 0.5rem; border-radius: 8px; background: #444; border: 1px solid #333; font-size: small">
-            <UsernameView userId={params.userId} />
+            <UsernameView userId={userId} />
           </span>
         </h3>
         <button onclick={onCreatePostClick}>Create post</button>
@@ -125,7 +123,7 @@ function PostCommentsView({ postId }: { postId: string }) {
   )
 }
 
-function UsernameView({ userId }: { userId: string }) {
+function UsernameView({ userId }: { userId: number }) {
   const { data, loading, error } = useAsync(() => db.collections.users.find(userId), [userId])
   return loading ? "Loading..." : error ? error.message : data ? data.name : "User not found"
 }

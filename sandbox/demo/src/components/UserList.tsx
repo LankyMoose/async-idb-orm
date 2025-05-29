@@ -36,9 +36,9 @@ export function UsersList() {
           </>
         )}
       </div>
-      {window.parent === window ? (
+      {/* {window.parent === window ? (
         <iframe src="./users" width="100%" height="500px" style="border: none;" />
-      ) : null}
+      ) : null} */}
     </>
   )
 }

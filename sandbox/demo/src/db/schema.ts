@@ -12,6 +12,7 @@ import {
 } from "./types.ts"
 
 export const users = Collection.create<User, UserDTO>()
+  .withKeyPath("id", { autoIncrement: true })
   .withIndexes([
     { key: "age", name: "idx_age" },
     { key: ["name", "id"], name: "idx_name_id" },
@@ -19,7 +20,6 @@ export const users = Collection.create<User, UserDTO>()
   .withTransformers({
     create: (dto) => ({
       ...dto,
-      id: crypto.randomUUID(),
       name: dto.name ?? "John Doe",
       createdAt: new TimeStamp(),
       alive: "alive" in dto && typeof dto.alive === "boolean" ? dto.alive : true,

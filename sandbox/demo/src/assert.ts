@@ -1,5 +1,8 @@
 export function assert(booleanish: unknown, msg: string): asserts booleanish is true {
-  if (!booleanish) throw new Error(msg)
+  if (!booleanish) {
+    throw new Error(msg)
+  }
+  console.debug("passed: ", msg)
 }
 export async function assertThrows(cb: () => Promise<void>, msg: string) {
   let didThrow = false

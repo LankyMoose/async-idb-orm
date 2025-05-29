@@ -19,6 +19,7 @@ const test = async () => {
     const john = await c.users.create({ name: "John Doe", age: 30 })
     johnsCreationTime = john.createdAt
     const sarah = await c.users.create({ name: "Sarah Connor", age: 25 })
+    assert(sarah.id === john.id + 1, "Expected Sarah to have the next id")
 
     const post = await c.posts.create({ userId: john.id, content: "Hello world" })
     await c.postComments.create({
@@ -39,6 +40,9 @@ const test = async () => {
   assert((await db.collections.posts.count()) === 1, "Expected 1 post")
   assert((await db.collections.postComments.count()) === 1, "Expected 1 post comment")
   await john.delete()
+  const john2 = await db.collections.users.create(db.collections.users.unwrap(john))
+  assert(john.id === john2.id, "Expected to create a new user with the same id")
+  await db.collections.users.delete(john.id)
   assert((await db.collections.users.count()) === 1, "Expected 1 user")
   // posts & post comments have `cascade delete`, so there should be no posts or post comments
   assert((await db.collections.posts.count()) === 0, "Expected 0 posts")
@@ -64,6 +68,7 @@ const test = async () => {
 
   const todo = await db.collections.todos.create({ userId: bob.id, content: "Buy milk" })
   assert(todo, "Expected to create todo")
+  // todos have 'restrict' fk mode, so this should throw
   assertThrows(async () => {
     await db.collections.users.delete(bob.id)
   }, "Expected to throw when deleting user has todo(s)")

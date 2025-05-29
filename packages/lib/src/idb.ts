@@ -6,6 +6,7 @@ import {
   type IDBTransactionCallback,
   type OnDBUpgradeCallback,
   type OnDBUpgradeCallbackContext,
+  CollectionIDMode,
 } from "./types"
 
 import { Collection } from "./collection.js"
@@ -184,8 +185,11 @@ export class AsyncIDB<T extends CollectionSchema> {
 
   private createStore(db: IDBDatabase, name: keyof T): IDBObjectStore {
     const store = this.stores[name]
-    const { keyPath, indexes } = AsyncIDBStore.getCollection(store)
-    const objectStore = db.createObjectStore(store.name, { keyPath })
+    const { keyPath, indexes, idMode } = AsyncIDBStore.getCollection(store)
+    const objectStore = db.createObjectStore(store.name, {
+      keyPath,
+      autoIncrement: idMode === CollectionIDMode.AutoIncrement,
+    })
 
     for (const { name, key, options } of indexes) {
       objectStore.createIndex(name, key, options)
