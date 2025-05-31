@@ -1,27 +1,31 @@
 export { idb }
 export { Collection } from "./collection.js"
+export { Relations } from "./relations.js"
 export type * from "./types"
 
+import { Collection } from "./collection.js"
 import { AsyncIDB } from "./idb.js"
-import type { AsyncIDBInstance, CollectionSchema, AsyncIDBConfig } from "./types"
+import { Relations } from "./relations.js"
+import type { AsyncIDBInstance, CollectionSchema, AsyncIDBConfig, RelationsSchema } from "./types"
 
 /**
  * Creates a new AsyncIDB instance
  * @template {CollectionSchema} T
+ * @template {RelationsSchema} R
  * @param {string} name
- * @param {AsyncIDBConfig<T>} config
- * @returns {AsyncIDBInstance<T>}
+ * @param {AsyncIDBConfig<T, R>} config
+ * @returns {AsyncIDBInstance<T, R>}
  */
-function idb<T extends CollectionSchema>(
+function idb<T extends CollectionSchema, R extends RelationsSchema>(
   name: string,
-  config: AsyncIDBConfig<T>
-): AsyncIDBInstance<T> {
+  config: AsyncIDBConfig<T, R>
+): AsyncIDBInstance<T, R> {
   if (isNaN(config.version) || Math.floor(config.version) !== config.version)
     throw new Error("[async-idb-orm]: Version must be an integer with no decimal places")
 
   const db = new AsyncIDB(name, config)
 
-  const getInstance: AsyncIDBInstance<T>["getInstance"] = () => {
+  const getInstance: AsyncIDBInstance<T, R>["getInstance"] = () => {
     return new Promise((res) => db.getInstance(res))
   }
 
@@ -31,3 +35,33 @@ function idb<T extends CollectionSchema>(
     getInstance,
   }
 }
+
+// const users = Collection.create<{ id: number; name: string }>().withKeyPath("id", {
+//   autoIncrement: true,
+// })
+
+// const posts = Collection.create<{ id: number; content: string; userId: number }>()
+//   .withKeyPath("id", { autoIncrement: true })
+//   .withForeignKeys((posts) => [{ ref: posts.userId, collection: users, onDelete: "cascade" }])
+
+// const userPostRelations = Relations.create(users, posts).as({
+//   userPosts: (userFields, postFields) => ({
+//     type: "one-to-many",
+//     from: userFields.id,
+//     to: postFields.userId,
+//   }),
+// })
+
+// const postUserRelations = Relations.create(posts, users).as({
+//   author: (postFields, userFields) => ({
+//     type: "one-to-one",
+//     from: postFields.userId,
+//     to: userFields.id,
+//   }),
+// })
+
+// const db = idb("users", {
+//   schema: { users, posts },
+//   version: 1,
+//   relations: { userPostRelations, postUserRelations },
+// })

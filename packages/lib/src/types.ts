@@ -1,12 +1,20 @@
 import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
+import type { Relations } from "./relations"
 
-export type AsyncIDBConfig<T extends CollectionSchema> = {
+export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsSchema> = {
   /**
    * Collection schema - `Record<string, Collection>`
    * @see {@link Collection}
    */
   schema: T
+
+  /**
+   * Relations schema - `Record<string, Relations>`
+   * @see {@link Relations}
+   */
+  relations?: R
+
   /**
    * Database version - increment this to trigger an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event
    */
@@ -23,7 +31,7 @@ export type AsyncIDBConfig<T extends CollectionSchema> = {
   /**
    * Provides a callback to migrate the database from one version to another
    */
-  onUpgrade?: OnDBUpgradeCallback<T>
+  onUpgrade?: OnDBUpgradeCallback<T, R>
 
   /**
    * Provides a callback to hande the outcome of a **block resolution**. Useful for doing a reload of the page in case the tab is too old.
@@ -60,22 +68,22 @@ export type TransactionOptions = IDBTransactionOptions & {
   durability?: IDBTransactionDurability
 }
 
-export type IDBTransactionCallback<T extends CollectionSchema> = (
-  ctx: AsyncIDBInstance<T>["collections"],
+export type IDBTransactionCallback<T extends CollectionSchema, R extends RelationsSchema> = (
+  ctx: AsyncIDBInstance<T, R>["collections"],
   tx: IDBTransaction
 ) => unknown
 
-export type IDBTransactionFunction<T extends CollectionSchema> = <
-  CB extends IDBTransactionCallback<T>
+export type IDBTransactionFunction<T extends CollectionSchema, R extends RelationsSchema> = <
+  CB extends IDBTransactionCallback<T, R>
 >(
   callback: CB,
   options?: TransactionOptions
 ) => Promise<ReturnType<CB>>
 
-export type OnDBUpgradeCallbackContext<T extends CollectionSchema> = {
+export type OnDBUpgradeCallbackContext<T extends CollectionSchema, R extends RelationsSchema> = {
   db: IDBDatabase
   collections: {
-    [key in keyof T]: AsyncIDBStore<T[key]>
+    [key in keyof T]: AsyncIDBStore<T[key], R>
   }
   /**
    * Deletes a store from IndexedDB
@@ -87,16 +95,16 @@ export type OnDBUpgradeCallbackContext<T extends CollectionSchema> = {
   createStore: (name: keyof T & string) => IDBObjectStore
 }
 
-export type OnDBUpgradeCallback<T extends CollectionSchema> = (
-  ctx: OnDBUpgradeCallbackContext<T>,
+export type OnDBUpgradeCallback<T extends CollectionSchema, R extends RelationsSchema> = (
+  ctx: OnDBUpgradeCallbackContext<T, R>,
   event: IDBVersionChangeEvent
 ) => Promise<void>
 
-export type AsyncIDBInstance<T extends CollectionSchema> = {
+export type AsyncIDBInstance<T extends CollectionSchema, R extends RelationsSchema> = {
   collections: {
-    [key in keyof T]: AsyncIDBStore<T[key]>
+    [key in keyof T]: AsyncIDBStore<T[key], R>
   }
-  transaction: IDBTransactionFunction<T>
+  transaction: IDBTransactionFunction<T, R>
   getInstance: () => Promise<IDBDatabase>
 }
 
@@ -106,6 +114,9 @@ type NonEmptyArray = [any, ...any[]]
 
 export type CollectionSchema = {
   [key: string]: Collection<any, any, any, any, any>
+}
+export type RelationsSchema = {
+  [key: string]: Relations<any, any, any>
 }
 
 export type ActiveRecord<T> = T & ActiveRecordMethods<T>
