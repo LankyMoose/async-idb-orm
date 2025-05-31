@@ -29,10 +29,12 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
   relayEnabled?: boolean
   version: number
   schema: T
+  public relations?: R;
   constructor(private name: string, private config: AsyncIDBConfig<T, R>) {
     this.#db = null
     this.#instanceCallbacks = []
     this.schema = config.schema
+    this.relations = config.relations;
     this.version = config.version
     this.stores = this.createStores()
     this.relayEnabled = config.relayEvents !== false
@@ -150,7 +152,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
     return Object.entries(this.schema).reduce(
       (acc, [name, collection]) => ({
         ...acc,
-        [name]: new AsyncIDBStore(this, collection, name),
+        [name]: new AsyncIDBStore(this, collection, name, this.relations),
       }),
       {} as AsyncIDBInstance<T, R>["collections"]
     )

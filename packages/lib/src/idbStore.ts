@@ -13,7 +13,10 @@ import type {
   TransactionContext,
   CollectionIDMode,
   RelationsSchema,
+  WithOption,
+  FindResult,
 } from "./types"
+import type { Relations, RelationsDefinition } from "./relations"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
 import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
@@ -43,7 +46,7 @@ export class AsyncIDBStore<
   #txScope: Set<string>
   #serialize: (record: CollectionRecord<T>) => any
   #deserialize: (record: any) => CollectionRecord<T>
-  constructor(private db: AsyncIDB<any, R>, private collection: T, public name: string) {
+  constructor(private db: AsyncIDB<any, R>, private collection: T, public name: string, private relations?: R) {
     this.#onBeforeDelete = []
     this.#onBeforeCreate = []
     this.#eventListeners = {
@@ -247,11 +250,124 @@ export class AsyncIDBStore<
    * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey
    * @returns {Promise<CollectionRecord<T> | null>}
    */
-  find(predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)) {
-    if (predicateOrKey instanceof Function) {
-      return this.findByPredicate(predicateOrKey)
+  async find<
+    RelSchema extends RelationsSchema | undefined = R, // R is the RelationsSchema for the whole DB
+    Coll extends Collection<any,any,any,any,any> = T, // T is the current collection
+    WO extends WithOption<RelSchema, Coll> | undefined = undefined
+  >(
+    predicateOrKey: CollectionKeyPathType<Coll> | ((item: CollectionRecord<Coll>) => boolean),
+    options?: { with?: WO }
+  ): Promise<FindResult<Coll, RelSchema, WO> | null> {
+    let record: CollectionRecord<Coll> | null = null;
+
+    if (typeof predicateOrKey === 'function') {
+      record = await this.findByPredicate(predicateOrKey as (item: CollectionRecord<T>) => boolean) as CollectionRecord<Coll> | null;
+      if (record === null) {
+        return null;
+      }
+      if (options?.with) {
+        // For predicate-based find with 'with' options, log a warning and return without relations
+        // as per subtask instructions.
+        console.warn("[async-idb-orm]: The 'with' option for relations is not fully supported with predicate-based find. Returning record without relations.");
+        return record as FindResult<Coll, RelSchema, WO>;
+      }
+      return record as FindResult<Coll, RelSchema, WO>;
+    } else {
+      // Key-based find
+      record = await this.read(predicateOrKey as CollectionKeyPathType<T>) as CollectionRecord<Coll> | null;
+      if (record === null) {
+        return null;
+      }
+
+      if (!options?.with || !this.relations) {
+        return record as FindResult<Coll, RelSchema, WO>;
+      }
+
+      const relatedData: any = {};
+      const dbRelations = this.relations as RelSchema; // Type assertion for global relations
+
+      for (const relationName in options.with) {
+        if (!(options.with as any)[relationName]) continue; // Skip if relation is set to false/undefined in options.with
+
+        if (!dbRelations || !(relationName in dbRelations)) {
+            console.warn(`[async-idb-orm]: Relation "${relationName}" not found in the database schema.`);
+            continue;
+        }
+
+        const relationInstance = dbRelations[relationName as keyof RelSchema] as Relations<any, any, any>;
+
+        // Check if this relation originates from the current collection
+        // This check might seem redundant if WithOption is correctly typed, but good for runtime safety
+        let currentCollectionName: string | undefined;
+        for (const [name, storeInstance] of Object.entries(this.db.stores)) {
+            if (AsyncIDBStore.getCollection(storeInstance) === AsyncIDBStore.getCollection(this as AsyncIDBStore<any,any>)) {
+                currentCollectionName = name;
+                break;
+            }
+        }
+
+        let relationFromCollectionName: string | undefined;
+         for (const [name, storeInstance] of Object.entries(this.db.stores)) {
+            if (AsyncIDBStore.getCollection(storeInstance) === relationInstance.fromCollection) {
+                relationFromCollectionName = name;
+                break;
+            }
+        }
+
+        if (currentCollectionName !== relationFromCollectionName) {
+            console.warn(`[async-idb-orm]: Relation "${relationName}" does not originate from collection "${currentCollectionName}". Skipping.`);
+            continue;
+        }
+
+
+        let targetCollectionName: string | undefined;
+        for (const [name, storeInstance] of Object.entries(this.db.stores)) {
+          if (AsyncIDBStore.getCollection(storeInstance) === relationInstance.toCollection) {
+            targetCollectionName = name;
+            break;
+          }
+        }
+
+        if (!targetCollectionName) {
+          console.warn(`[async-idb-orm]: Target collection for relation "${relationName}" not found. Skipping.`);
+          continue;
+        }
+
+        const targetStore = this.db.stores[targetCollectionName] as AsyncIDBStore<Collection<any,any,any,any,any>, any>;
+
+        // The relationName (e.g. "posts") should be a key in relationInstance.config
+        const relationConfigCallback = relationInstance.config[relationName as keyof typeof relationInstance.config];
+
+        if (typeof relationConfigCallback !== 'function') {
+          console.warn(`[async-idb-orm]: Configuration for relation "${relationName}" is not a function. Skipping.`);
+          continue;
+        }
+
+        // Create dummy field selectors. The actual values don't matter, only the keys.
+        const keyPassThroughProxy = new Proxy({}, { get: (_target: any, key: string) => key });
+        const relationDefinition = relationConfigCallback(keyPassThroughProxy, keyPassThroughProxy) as RelationsDefinition<Coll, Collection<any,any,any,any,any>>;
+
+        const fromValue = (record as any)[relationDefinition.from];
+
+        if (fromValue === undefined || fromValue === null) {
+          relatedData[relationName] = relationDefinition.type === "one-to-many" ? [] : null;
+          continue;
+        }
+
+        if (relationDefinition.type === "one-to-one") {
+          // Assuming relationDefinition.to is the primary key of the target store for one-to-one.
+          // A more robust version would use an index if 'to' is not the PK.
+          // The nested find should not have 'with' options to avoid loops.
+          const relatedRecord = await targetStore.find(fromValue as CollectionKeyPathType<any>);
+          relatedData[relationName] = relatedRecord;
+        } else if (relationDefinition.type === "one-to-many") {
+          // The nested findMany should not have 'with' options.
+          const relatedRecords = await targetStore.findMany(item => (item as any)[relationDefinition.to] === fromValue);
+          relatedData[relationName] = relatedRecords;
+        }
+      }
+      return { ...record, ...relatedData } as FindResult<Coll, RelSchema, WO>;
     }
-    return this.read(predicateOrKey)
   }
 
   /**

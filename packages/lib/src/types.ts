@@ -1,6 +1,6 @@
 import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
-import type { Relations } from "./relations"
+import type { Relations, RelationsDefinition } from "./relations" // Added RelationsDefinition
 
 export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsSchema> = {
   /**
@@ -164,3 +164,72 @@ export enum CollectionIDMode {
 export type RecordKeyPath<RecordType extends Record<string, any>> =
   | (keyof RecordType & string)
   | ((keyof RecordType & string)[] & NonEmptyArray)
+
+// New Helper Types:
+
+// To get a union of all collection names from a CollectionSchema
+export type CollectionName<S extends CollectionSchema> = keyof S & string;
+
+// Gets the target collection type from a Relations instance
+export type RelationTargetCollection<Rel extends Relations<any, any, any>> = Rel extends Relations<any, infer ToCol, any> ? ToCol : never;
+
+// Gets the RelationsDefinition from a specific relation configuration
+export type ResolvedRelation<
+  Rel extends Relations<any, any, any>,
+  RelName extends keyof Rel['config']
+> = Rel['config'][RelName] extends (...args: any[]) => infer R ? R extends RelationsDefinition<any,any> ? R : never : never;
+
+// Determines the type of the related record (single object or array)
+export type RelatedRecordType<RelDef extends RelationsDefinition<any, any>> =
+  RelDef['type'] extends 'one-to-many'
+    ? CollectionRecord<RelDef['toCollection']>[]
+    : CollectionRecord<RelDef['toCollection']>;
+
+// Types for `find` method options and result:
+
+// Represents the 'with' clause for find.
+// DBRelations is the global RelationsSchema for the database.
+// StoreName is the name of the current collection/store.
+// This type should list valid relation names originating FROM the StoreName's collection.
+export type WithOption<
+  DBRelations extends RelationsSchema | undefined,
+  StoreCollection extends Collection<any,any,any,any,any>
+> = DBRelations extends RelationsSchema ? {
+  [RelName in keyof DBRelations as DBRelations[RelName]['fromCollection'] extends StoreCollection ? RelName : never]?: true
+} : never;
+
+
+// Represents the result of a find operation, including related records.
+// CurrentCollection is the collection on which find is called.
+// CurrentStoreRelations is the specific Relations instance configured for the CurrentCollection's relations (if any).
+// WO is the WithOption passed to find.
+export type FindResult<
+  CurrentCollection extends Collection<any, any, any, any, any>,
+  DBRelations extends RelationsSchema | undefined, // Global relations schema
+  WO extends WithOption<DBRelations, CurrentCollection> | undefined
+> = CollectionRecord<CurrentCollection> & (
+  WO extends undefined ? {} :
+  DBRelations extends RelationsSchema ? {
+    // For each relation name K in WO (that is true)
+    [K in keyof WO as WO[K] extends true ? K : never]:
+      // K must be a key of DBRelations
+      K extends keyof DBRelations ?
+        // Get the specific relation configuration
+        DBRelations[K] extends Relations<infer FromCol, infer ToCol, infer ConfigK> ?
+          // Ensure the 'from' collection matches our current collection
+          FromCol extends CurrentCollection ?
+            // Get the definition for this specific relation name (K)
+            keyof ConfigK extends infer RelNameInConfig ? // This part is tricky, assumes K is directly a key in ConfigK
+              RelNameInConfig extends keyof ConfigK ? // Check if RelNameInConfig is a valid key
+                ConfigK[RelNameInConfig] extends (...args: any[]) => infer RelDef ?
+                  RelDef extends RelationsDefinition<any, infer TargetCol, infer RelType> ?
+                    RelType extends 'one-to-many' ? CollectionRecord<TargetCol>[] : CollectionRecord<TargetCol>
+                  : never // RelDef is not RelationsDefinition
+                : never // ConfigK[RelNameInConfig] is not a function
+              : never // RelNameInConfig is not a key of ConfigK (should not happen if K is from WO)
+            : never // keyof ConfigK is not inferrable or K is not in it
+          : {} // FromCollection does not match CurrentCollection
+        : {} // Relation K not found in DBRelations (should not happen)
+      : {} // K is not a key of DBRelations (should not happen)
+  } : {} // DBRelations is undefined
+);
