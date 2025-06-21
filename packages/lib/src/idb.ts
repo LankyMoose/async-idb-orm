@@ -7,6 +7,7 @@ import {
   type OnDBUpgradeCallback,
   type OnDBUpgradeCallbackContext,
   CollectionIDMode,
+  RelationsShema,
 } from "./types"
 
 import { Collection } from "./collection.js"
@@ -17,18 +18,18 @@ import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
  * @private
  * Internal usage only. Do not use directly.
  */
-export class AsyncIDB<T extends CollectionSchema> {
+export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
   #db: IDBDatabase | null
   #instanceCallbacks: DBInstanceCallback[]
   stores: {
-    [key in keyof T]: AsyncIDBStore<T[key]>
+    [key in keyof T]: AsyncIDBStore<T[key], R>
   }
-  onUpgrade?: OnDBUpgradeCallback<T>
+  onUpgrade?: OnDBUpgradeCallback<T, R>
   bc: BroadcastChannel
   relayEnabled?: boolean
   version: number
   schema: T
-  constructor(private name: string, private config: AsyncIDBConfig<T>) {
+  constructor(private name: string, private config: AsyncIDBConfig<T, R>) {
     this.#db = null
     this.#instanceCallbacks = []
     this.schema = config.schema
@@ -75,7 +76,7 @@ export class AsyncIDB<T extends CollectionSchema> {
     instanceCallback(this.#db)
   }
 
-  async transaction(callback: IDBTransactionCallback<T>, options?: IDBTransactionOptions) {
+  async transaction(callback: IDBTransactionCallback<T, R>, options?: IDBTransactionOptions) {
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
     const tx = idbInstance.transaction(Object.keys(this.schema), "readwrite", options)
 
@@ -151,7 +152,7 @@ export class AsyncIDB<T extends CollectionSchema> {
         ...acc,
         [name]: new AsyncIDBStore(this, collection, name),
       }),
-      {} as AsyncIDBInstance<T>["collections"]
+      {} as AsyncIDBInstance<T, R>["collections"]
     )
   }
 
@@ -161,13 +162,13 @@ export class AsyncIDB<T extends CollectionSchema> {
         ...acc,
         [name]: AsyncIDBStore.cloneForTransaction(tx, store, eventQueue),
       }
-    }, {} as AsyncIDBInstance<T>["collections"])
+    }, {} as AsyncIDBInstance<T, R>["collections"])
   }
 
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {
     const dbInstance = request.result
     if (this.onUpgrade) {
-      const ctx: OnDBUpgradeCallbackContext<T> = {
+      const ctx: OnDBUpgradeCallbackContext<T, R> = {
         db: dbInstance,
         collections: this.cloneStoresForTransaction(request.transaction!, []),
         deleteStore: (name) => dbInstance.deleteObjectStore(name),

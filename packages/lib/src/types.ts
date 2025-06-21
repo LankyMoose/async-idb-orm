@@ -1,12 +1,18 @@
 import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
+import type { Relations } from "./relations"
 
-export type AsyncIDBConfig<T extends CollectionSchema> = {
+export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsShema> = {
   /**
    * Collection schema - `Record<string, Collection>`
    * @see {@link Collection}
    */
   schema: T
+  /**
+   * Relations schema - `Record<string, Relations>`
+   * @see {@link Relations}
+   */
+  relations: R
   /**
    * Database version - increment this to trigger an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event
    */
@@ -23,7 +29,7 @@ export type AsyncIDBConfig<T extends CollectionSchema> = {
   /**
    * Provides a callback to migrate the database from one version to another
    */
-  onUpgrade?: OnDBUpgradeCallback<T>
+  onUpgrade?: OnDBUpgradeCallback<T, R>
 
   /**
    * Provides a callback to hande the outcome of a **block resolution**. Useful for doing a reload of the page in case the tab is too old.
@@ -60,22 +66,22 @@ export type TransactionOptions = IDBTransactionOptions & {
   durability?: IDBTransactionDurability
 }
 
-export type IDBTransactionCallback<T extends CollectionSchema> = (
-  ctx: AsyncIDBInstance<T>["collections"],
+export type IDBTransactionCallback<T extends CollectionSchema, R extends RelationsShema> = (
+  ctx: AsyncIDBInstance<T, R>["collections"],
   tx: IDBTransaction
 ) => unknown
 
-export type IDBTransactionFunction<T extends CollectionSchema> = <
-  CB extends IDBTransactionCallback<T>
+export type IDBTransactionFunction<T extends CollectionSchema, R extends RelationsShema> = <
+  CB extends IDBTransactionCallback<T, R>
 >(
   callback: CB,
   options?: TransactionOptions
 ) => Promise<ReturnType<CB>>
 
-export type OnDBUpgradeCallbackContext<T extends CollectionSchema> = {
+export type OnDBUpgradeCallbackContext<T extends CollectionSchema, R extends RelationsShema> = {
   db: IDBDatabase
   collections: {
-    [key in keyof T]: AsyncIDBStore<T[key]>
+    [key in keyof T]: AsyncIDBStore<T[key], R>
   }
   /**
    * Deletes a store from IndexedDB
@@ -87,16 +93,16 @@ export type OnDBUpgradeCallbackContext<T extends CollectionSchema> = {
   createStore: (name: keyof T & string) => IDBObjectStore
 }
 
-export type OnDBUpgradeCallback<T extends CollectionSchema> = (
-  ctx: OnDBUpgradeCallbackContext<T>,
+export type OnDBUpgradeCallback<T extends CollectionSchema, R extends RelationsShema> = (
+  ctx: OnDBUpgradeCallbackContext<T, R>,
   event: IDBVersionChangeEvent
 ) => Promise<void>
 
-export type AsyncIDBInstance<T extends CollectionSchema> = {
+export type AsyncIDBInstance<T extends CollectionSchema, R extends RelationsShema> = {
   collections: {
-    [key in keyof T]: AsyncIDBStore<T[key]>
+    [key in keyof T]: AsyncIDBStore<T[key], R>
   }
-  transaction: IDBTransactionFunction<T>
+  transaction: IDBTransactionFunction<T, R>
   getInstance: () => Promise<IDBDatabase>
 }
 
@@ -104,8 +110,14 @@ export type DBInstanceCallback = (db: IDBDatabase) => any
 
 type NonEmptyArray = [any, ...any[]]
 
+export type RelationsShema = {
+  [key: string]: Relations<any, any, any>
+}
+
+export type AnyCollection = Collection<any, any, any, any, any>
+
 export type CollectionSchema = {
-  [key: string]: Collection<any, any, any, any, any>
+  [key: string]: AnyCollection
 }
 
 export type ActiveRecord<T> = T & ActiveRecordMethods<T>
@@ -120,20 +132,16 @@ export type TransactionContext = {
   tx: IDBTransaction
 }
 export type CollectionEvent = "write" | "delete" | "write|delete" | "clear"
-export type CollectionEventCallback<
-  T extends Collection<any, any, any, any, any>,
-  U extends CollectionEvent
-> = (data: U extends "clear" ? null : CollectionRecord<T>) => void
+export type CollectionEventCallback<T extends AnyCollection, U extends CollectionEvent> = (
+  data: U extends "clear" ? null : CollectionRecord<T>
+) => void
 
-export type CollectionIndexName<T extends Collection<any, any, any, any, any>> =
-  T["indexes"][number]["name"]
-export type CollectionRecord<T extends Collection<any, any, any, any, any>> =
-  T[typeof $COLLECTION_INTERNAL]["record"]
-export type CollectionDTO<T extends Collection<any, any, any, any, any>> =
-  T[typeof $COLLECTION_INTERNAL]["dto"]
+export type CollectionIndexName<T extends AnyCollection> = T["indexes"][number]["name"]
+export type CollectionRecord<T extends AnyCollection> = T[typeof $COLLECTION_INTERNAL]["record"]
+export type CollectionDTO<T extends AnyCollection> = T[typeof $COLLECTION_INTERNAL]["dto"]
 
 export type CollectionKeyPathType<
-  T extends Collection<any, any, any, any, any>,
+  T extends AnyCollection,
   KeyPath = T["keyPath"]
 > = KeyPath extends keyof T[typeof $COLLECTION_INTERNAL]["record"]
   ? T[typeof $COLLECTION_INTERNAL]["record"][KeyPath]

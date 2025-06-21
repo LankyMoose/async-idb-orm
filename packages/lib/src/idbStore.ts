@@ -12,6 +12,7 @@ import type {
   CollectionEventCallback,
   TransactionContext,
   CollectionIDMode,
+  RelationsShema,
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
@@ -22,7 +23,8 @@ import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
  * @template {Collection} T
  */
 export class AsyncIDBStore<
-  T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>
+  T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
+  _R extends RelationsShema
 > {
   #isRelaying = false
   #onBeforeCreate: ((
@@ -41,7 +43,7 @@ export class AsyncIDBStore<
   #txScope: Set<string>
   #serialize: (record: CollectionRecord<T>) => any
   #deserialize: (record: any) => CollectionRecord<T>
-  constructor(private db: AsyncIDB<any>, private collection: T, public name: string) {
+  constructor(private db: AsyncIDB<any, any>, private collection: T, public name: string) {
     this.#onBeforeDelete = []
     this.#onBeforeCreate = []
     this.#eventListeners = {
@@ -420,7 +422,7 @@ export class AsyncIDBStore<
   }
 
   static relay<U extends CollectionEvent>(
-    store: AsyncIDBStore<any>,
+    store: AsyncIDBStore<any, any>,
     evtName: U,
     data: U extends "clear" ? null : CollectionRecord<any>
   ) {
@@ -429,7 +431,7 @@ export class AsyncIDBStore<
     store.#isRelaying = false
   }
 
-  static getCollection(store: AsyncIDBStore<any>) {
+  static getCollection(store: AsyncIDBStore<any, any>) {
     return store.collection as Collection<
       Record<string, any>,
       any,
@@ -441,7 +443,7 @@ export class AsyncIDBStore<
 
   static cloneForTransaction(
     tx: IDBTransaction,
-    store: AsyncIDBStore<any>,
+    store: AsyncIDBStore<any, any>,
     eventQueue: Function[]
   ) {
     const cloned = new AsyncIDBStore(store.db, store.collection, store.name)
@@ -453,11 +455,11 @@ export class AsyncIDBStore<
     return cloned
   }
 
-  static init(store: AsyncIDBStore<any>) {
+  static init(store: AsyncIDBStore<any, any>) {
     store.initForeignKeys()
   }
 
-  static finalizeDependencies(db: AsyncIDB<any>, store: AsyncIDBStore<any>) {
+  static finalizeDependencies(db: AsyncIDB<any, any>, store: AsyncIDBStore<any, any>) {
     const seenNames = new Set<string>([store.name])
     const stack: string[] = [...store.#dependentStoreNames]
 
