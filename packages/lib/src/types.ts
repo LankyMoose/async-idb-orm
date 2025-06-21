@@ -162,7 +162,7 @@ export type RecordKeyPath<RecordType extends Record<string, any>> =
   | (keyof RecordType & string)
   | ((keyof RecordType & string)[] & NonEmptyArray)
 
-// Relations API types - simplified but working version
+// Relations API types - improved version with proper type inference
 export type RelationWithOptions<R extends RelationsShema> = {
   limit?: number
   where?: (record: any) => boolean
@@ -173,16 +173,43 @@ export type FindOptions<R extends RelationsShema = any> = {
   with?: Record<string, boolean | RelationWithOptions<R>>
 }
 
-// For now, let's keep it simple and return properly typed results
+// Extract all relation names from the relations schema
+type ExtractAllRelationNames<R extends RelationsShema> = {
+  [K in keyof R]: R[K] extends Relations<any, any, infer RelMap> ? keyof RelMap : never
+}[keyof R]
+
+// Find the relation definition for a given relation name
+type FindRelationForName<R extends RelationsShema, RelationName extends string> = {
+  [K in keyof R]: R[K] extends Relations<any, infer To, infer RelMap>
+    ? RelationName extends keyof RelMap
+      ? RelMap[RelationName] extends { type: infer Type }
+        ? Type extends "one-to-one"
+          ? CollectionRecord<To> | null
+          : Type extends "one-to-many"
+          ? CollectionRecord<To>[]
+          : never
+        : never
+      : never
+    : never
+}[keyof R]
+
+// Map relation names in 'with' options to their types
+type MapRelationsToTypes<R extends RelationsShema, WithOptions extends Record<string, any>> = {
+  [K in keyof WithOptions]: K extends string
+    ? FindRelationForName<R, K> extends never
+      ? any // fallback for unknown relations
+      : FindRelationForName<R, K>
+    : never
+}
+
+// Main result type with proper relation inference
 export type RelationResult<
   T extends AnyCollection,
   R extends RelationsShema,
   Options extends FindOptions<R>
 > = Options extends { with: infer With }
   ? With extends Record<string, any>
-    ? CollectionRecord<T> & {
-        [K in keyof With]: any[] | any | null // We'll improve this later when we have the runtime working
-      }
+    ? CollectionRecord<T> & MapRelationsToTypes<R, With>
     : CollectionRecord<T>
   : CollectionRecord<T>
 
