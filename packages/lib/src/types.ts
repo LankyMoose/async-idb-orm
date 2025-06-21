@@ -16,7 +16,7 @@ export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsShema>
    * Relations schema - `Record<string, Relations>`
    * @see {@link Relations}
    */
-  relations: R
+  relations?: R
   /**
    * Database version - increment this to trigger an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event
    */
