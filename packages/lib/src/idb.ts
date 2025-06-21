@@ -29,10 +29,12 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
   relayEnabled?: boolean
   version: number
   schema: T
+  relations: R
   constructor(private name: string, private config: AsyncIDBConfig<T, R>) {
     this.#db = null
     this.#instanceCallbacks = []
     this.schema = config.schema
+    this.relations = config.relations
     this.version = config.version
     this.stores = this.createStores()
     this.relayEnabled = config.relayEvents !== false
