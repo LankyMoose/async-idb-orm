@@ -2,6 +2,10 @@ import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
 import type { Relations } from "./relations"
 
+type Prettify<T> = {
+  [K in keyof T]: T[K]
+} & {}
+
 export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsShema> = {
   /**
    * Collection schema - `Record<string, Collection>`
@@ -162,15 +166,61 @@ export type RecordKeyPath<RecordType extends Record<string, any>> =
   | (keyof RecordType & string)
   | ((keyof RecordType & string)[] & NonEmptyArray)
 
-// Relations API types - improved version with proper type inference
-export type RelationWithOptions<R extends RelationsShema> = {
+// Relations API types - improved version with recursive nested relations support
+
+// Extract the target collection for a specific relation name from a source collection
+type GetTargetCollectionForRelation<
+  R extends RelationsShema,
+  SourceCollection extends AnyCollection,
+  RelationName extends string
+> = {
+  [K in keyof R]: R[K] extends Relations<infer From, infer To, infer RelMap>
+    ? From extends SourceCollection
+      ? RelationName extends keyof RelMap
+        ? To
+        : never
+      : never
+    : never
+}[keyof R]
+
+// Recursive relation options that are aware of the target collection
+type RelationWithOptionsForCollection<R extends RelationsShema, T extends AnyCollection> = {
   limit?: number
   where?: (record: any) => boolean
-  with?: Record<string, boolean | RelationWithOptions<R>> // for nested relations
+  with?: T extends AnyCollection
+    ? {
+        [K in ValidRelationNamesForCollection<R, T> & string]?:
+          | boolean
+          | RelationWithOptionsForCollection<R, GetTargetCollectionForRelation<R, T, K>>
+      }
+    : Record<string, boolean | RelationWithOptionsForCollection<R, any>>
 }
 
-export type FindOptions<R extends RelationsShema = any> = {
-  with?: Record<string, boolean | RelationWithOptions<R>>
+// Main RelationWithOptions type (for backward compatibility)
+export type RelationWithOptions<R extends RelationsShema> = RelationWithOptionsForCollection<R, any>
+
+// Extract valid relation names for a specific collection
+// Only include relations where the current collection is the 'From' collection
+type ValidRelationNamesForCollection<
+  R extends RelationsShema,
+  CurrentCollection extends AnyCollection
+> = {
+  [K in keyof R]: R[K] extends Relations<infer From, any, infer RelMap>
+    ? From extends CurrentCollection
+      ? keyof RelMap
+      : never
+    : never
+}[keyof R]
+
+// Improved FindOptions that constrains relation names to valid ones for the collection
+export type FindOptions<R extends RelationsShema = any, T extends AnyCollection = any> = {
+  with?: T extends AnyCollection
+    ? {
+        [K in ValidRelationNamesForCollection<R, T> & string]?:
+          | boolean
+          | RelationWithOptionsForCollection<R, GetTargetCollectionForRelation<R, T, K>>
+      }
+    : Record<string, boolean | RelationWithOptions<R>>
 }
 
 // Extract all relation names from the relations schema
@@ -206,10 +256,10 @@ type MapRelationsToTypes<R extends RelationsShema, WithOptions extends Record<st
 export type RelationResult<
   T extends AnyCollection,
   R extends RelationsShema,
-  Options extends FindOptions<R>
+  Options extends FindOptions<R, T>
 > = Options extends { with: infer With }
   ? With extends Record<string, any>
-    ? CollectionRecord<T> & MapRelationsToTypes<R, With>
+    ? CollectionRecord<T> & Prettify<MapRelationsToTypes<R, With>>
     : CollectionRecord<T>
   : CollectionRecord<T>
 

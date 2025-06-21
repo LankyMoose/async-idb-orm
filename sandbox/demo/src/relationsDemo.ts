@@ -87,9 +87,13 @@ export async function demonstrateBasicRelations() {
   // Load user with all their posts
   const userWithPosts = await db.collections.users.find(alice.id, {
     with: {
-      userPosts: true,
+      userPosts: {
+        limit: 5,
+        where: (post) => post.content.includes("Important"),
+      },
     },
   })
+
   console.log("User with posts:", userWithPosts)
 
   // Load post with its author

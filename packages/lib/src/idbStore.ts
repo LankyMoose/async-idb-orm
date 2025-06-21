@@ -250,7 +250,7 @@ export class AsyncIDBStore<
    * @param {FindOptions<_R, string>} [options] - Options for finding with relations
    * @returns {Promise<CollectionRecord<T> | null>}
    */
-  find<Options extends FindOptions<_R>>(
+  find<Options extends FindOptions<_R, T>>(
     predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean),
     options?: Options
   ): Promise<RelationResult<T, _R, Options>> {
@@ -496,7 +496,7 @@ export class AsyncIDBStore<
     })
   }
 
-  private async read<Options extends FindOptions<_R>>(
+  private async read<Options extends FindOptions<_R, T>>(
     id: CollectionKeyPathType<T>,
     options?: Options
   ): Promise<RelationResult<T, _R, Options>> {
@@ -553,7 +553,7 @@ export class AsyncIDBStore<
     })
   }
 
-  private async findByPredicate<Options extends FindOptions<_R>>(
+  private async findByPredicate<Options extends FindOptions<_R, T>>(
     predicate: (item: CollectionRecord<T>) => boolean,
     options?: Options
   ): Promise<RelationResult<T, _R, Options>> {
