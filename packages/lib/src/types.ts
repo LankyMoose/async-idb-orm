@@ -161,3 +161,37 @@ export enum CollectionIDMode {
 export type RecordKeyPath<RecordType extends Record<string, any>> =
   | (keyof RecordType & string)
   | ((keyof RecordType & string)[] & NonEmptyArray)
+
+// Relations API types - simplified but working version
+export type RelationWithOptions<R extends RelationsShema> = {
+  limit?: number
+  where?: (record: any) => boolean
+  with?: Record<string, boolean | RelationWithOptions<R>> // for nested relations
+}
+
+export type FindOptions<R extends RelationsShema = any> = {
+  with?: Record<string, boolean | RelationWithOptions<R>>
+}
+
+// For now, let's keep it simple and return properly typed results
+export type RelationResult<
+  T extends AnyCollection,
+  R extends RelationsShema,
+  Options extends FindOptions<R>
+> = Options extends { with: infer With }
+  ? With extends Record<string, any>
+    ? CollectionRecord<T> & {
+        [K in keyof With]: any[] | any | null // We'll improve this later when we have the runtime working
+      }
+    : CollectionRecord<T>
+  : CollectionRecord<T>
+
+// Legacy types for backward compatibility
+export type RelationsWith<R extends RelationsShema, _CollectionName extends string> = Record<
+  string,
+  boolean | RelationWithOptions<R>
+>
+export type RelationsWithOptions<
+  R extends RelationsShema,
+  _CollectionName extends string
+> = RelationWithOptions<R>

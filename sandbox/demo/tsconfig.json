@@ -19,6 +19,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "jsx": "preserve",
+    "jsxImportSource": "kaioken",
+    "noImplicitAny": false,
     "paths": {
       "$/*": ["./src/*"]
     }

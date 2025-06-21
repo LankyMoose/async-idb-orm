@@ -42,10 +42,10 @@ export class Relations<
   }
 
   as<const Config extends RelationsConfig<From, To>>(cfg: Config) {
-    this.relationsMap = Object.entries(cfg).reduce((acc, [key, value]) => ({
-      ...acc,
-      [key]: value(keyPassThroughProxy, keyPassThroughProxy),
-    })) as any
+    this.relationsMap = Object.entries(cfg).reduce((acc, [key, value]) => {
+      acc[key] = value(keyPassThroughProxy, keyPassThroughProxy)
+      return acc
+    }, {} as any)
     return this as any as Relations<
       From,
       To,

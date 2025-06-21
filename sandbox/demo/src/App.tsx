@@ -6,6 +6,7 @@ import { UserPosts } from "./components/UserPosts"
 import { db, TimeStamp } from "./db"
 import { assert, assertThrows } from "./assert"
 import { randomUserName } from "./random"
+import { runCompleteDemo } from "./relationsDemo"
 window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
 
 const test = async () => {
@@ -113,8 +114,9 @@ export function App() {
         <nav>
           <Link to="/users">Users</Link>
         </nav>
-        <div>
+        <div style="display: flex; gap: 0.5rem;">
           <button onclick={test}>Test</button>
+          <button onclick={runCompleteDemo}>Relations Demo</button>
         </div>
         <div style="display: flex; align-items: center; gap: 1rem;">
           Selected user:{" "}

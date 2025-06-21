@@ -36,15 +36,3 @@ export const db = idb("users", {
     console.log(`reinitializing db from v${oldVersion} to v${newVersion}`)
   },
 })
-
-const userWithPosts = await db.collections.users.find(1, {
-  with: {
-    userPosts: true,
-  },
-})
-
-const postWithAuthor = await db.collections.posts.find("101", {
-  with: {
-    author: true,
-  },
-})
