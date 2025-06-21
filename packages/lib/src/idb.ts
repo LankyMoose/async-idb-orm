@@ -34,7 +34,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
     this.#db = null
     this.#instanceCallbacks = []
     this.schema = config.schema
-    this.relations = config.relations
+    this.relations = config.relations ?? ({} as R)
     this.version = config.version
     this.stores = this.createStores()
     this.relayEnabled = config.relayEvents !== false
@@ -121,6 +121,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
     for (const store of Object.values(this.stores)) {
       AsyncIDBStore.finalizeDependencies(this, store)
     }
+    AsyncIDBStore.buildRelationsMap(this)
 
     const request = indexedDB.open(this.name, this.version)
     request.onerror = this.config.onError ?? console.error

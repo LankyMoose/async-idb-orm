@@ -5,10 +5,10 @@ const RelationsBuilderSentinel = Symbol()
 
 type RelationType = "one-to-one" | "one-to-many"
 
-type RelationDefinition<From extends AnyCollection, To extends AnyCollection> = {
+export type RelationDefinition<From extends AnyCollection, To extends AnyCollection> = {
   type: RelationType
-  from: keyof CollectionRecord<From>
-  to: keyof CollectionRecord<To>
+  from: keyof CollectionRecord<From> & string
+  to: keyof CollectionRecord<To> & string
 }
 
 type RelationsConfig<From extends AnyCollection, To extends AnyCollection> = {
@@ -22,14 +22,14 @@ type RelationsConfig<From extends AnyCollection, To extends AnyCollection> = {
   ) => RelationDefinition<From, To>
 }
 
-type RelationMap<From extends AnyCollection, To extends AnyCollection> = {
+export type RelationsDefinitionMap<From extends AnyCollection, To extends AnyCollection> = {
   [key: string]: RelationDefinition<From, To>
 }
 
 export class Relations<
   From extends AnyCollection,
   To extends AnyCollection,
-  RelationsMap extends RelationMap<From, To> = never
+  RelationsMap extends RelationsDefinitionMap<From, To> = never
 > {
   relationsMap!: RelationsMap
   private constructor(key: symbol, public from: From, public to: To) {

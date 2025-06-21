@@ -15,10 +15,20 @@ import type {
   RelationsShema,
   FindOptions,
   RelationResult,
+  AnyCollection,
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
 import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
+import { RelationDefinition, RelationsDefinitionMap } from "relations"
+
+type RelationMapEntry = {
+  definition: RelationDefinition<any, any>
+  from: string
+  to: string
+}
+
+type RelationMap = Map<string, RelationMapEntry>
 
 /**
  * A utility instance that represents a collection in an IndexedDB database and provides methods for interacting with the collection.
@@ -45,6 +55,7 @@ export class AsyncIDBStore<
   #txScope: Set<string>
   #serialize: (record: CollectionRecord<T>) => any
   #deserialize: (record: any) => CollectionRecord<T>
+  private static relationMap: RelationMap = new Map()
   constructor(private db: AsyncIDB<any, any>, private collection: T, public name: string) {
     this.#onBeforeDelete = []
     this.#onBeforeCreate = []
@@ -480,6 +491,49 @@ export class AsyncIDBStore<
     }
   }
 
+  static buildRelationsMap(db: AsyncIDB<any, RelationsShema>) {
+    AsyncIDBStore.relationMap.clear()
+
+    const relations = db.relations
+    for (const relationsGroupName in relations) {
+      const { from, to, relationsMap } = relations[relationsGroupName] as {
+        from: AnyCollection
+        to: AnyCollection
+        relationsMap: RelationsDefinitionMap<AnyCollection, AnyCollection>
+      }
+
+      const fromName = Object.entries(db.stores).find(
+        ([_, store]) => store.collection === from
+      )?.[0]
+      const toName = Object.entries(db.stores).find(([_, store]) => store.collection === to)?.[0]
+      if (!fromName || !toName) {
+        console.warn(`[async-idb-orm]: No store found for ${relationsGroupName} in ${db.stores}`)
+        continue
+      }
+
+      for (const relationName in relationsMap) {
+        const definition = relationsMap[relationName]
+        const fromCacheKey = `${fromName}:${relationName}`
+
+        if (AsyncIDBStore.relationMap.has(fromCacheKey)) {
+          console.warn(
+            `[async-idb-orm]: Relation map already has an entry for ${fromCacheKey}:`,
+            AsyncIDBStore.relationMap.get(fromCacheKey)
+          )
+          continue
+        }
+
+        AsyncIDBStore.relationMap.set(fromCacheKey, {
+          definition,
+          from: fromName,
+          to: toName,
+        })
+      }
+    }
+
+    console.log("Relation map:", AsyncIDBStore.relationMap)
+  }
+
   private firstByKeyDirection<U extends CollectionIndexName<T>>(
     name: U,
     direction: "next" | "prev"
@@ -500,8 +554,6 @@ export class AsyncIDBStore<
     id: CollectionKeyPathType<T>,
     options?: Options
   ): Promise<RelationResult<T, _R, Options>> {
-    console.log("read() called with options:", options)
-
     const record = await this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.get(id as IDBValidKey)
       request.onerror = (err) => reject(err)
@@ -511,15 +563,10 @@ export class AsyncIDBStore<
       }
     })
 
-    console.log("record retrieved:", record)
-    console.log("options?.with:", options?.with)
-
     if (!record || !options?.with) {
-      console.log("Returning record without relations - no record or no with options")
       return record as RelationResult<T, _R, Options>
     }
 
-    console.log("Calling resolveRelations with:", record, options.with)
     return this.resolveRelations(record, options.with) as unknown as RelationResult<T, _R, Options>
   }
 
@@ -842,145 +889,69 @@ export class AsyncIDBStore<
     record: CollectionRecord<T>,
     withOptions: Record<string, boolean | any>
   ): Promise<any> {
-    console.log("resolveRelations called with:", record, withOptions)
-    const result = { ...(record as any) }
-
     for (const [relationName, options] of Object.entries(withOptions)) {
-      console.log("Processing relation:", relationName, "options:", options)
       if (!options) {
-        console.log("Skipping relation", relationName, "- falsy options")
         continue
       }
 
       // Find the relation definition from the database relations schema
-      const relationDef = await this.findRelationDefinition(relationName, record)
+      const relationDef = AsyncIDBStore.relationMap.get(`${this.name}:${relationName}`)
       if (!relationDef) {
-        console.log("No relation definition found for:", relationName)
+        console.warn(
+          `[async-idb-orm]: No relation definition found for ${relationName} in ${this.name}`
+        )
         continue
       }
 
-      const relationOptions = typeof options === "boolean" ? undefined : options
-      const relatedRecords = await this.fetchRelatedRecords(relationDef, record, relationOptions)
-      console.log("Related records for", relationName, ":", relatedRecords)
-      result[relationName] = relatedRecords
+      ;(record as any)[relationName] = await this.fetchRelatedRecords(
+        relationDef,
+        record,
+        typeof options === "boolean" ? undefined : options
+      )
     }
 
-    console.log("Final result with relations:", result)
-    return result
+    return record
   }
 
-  private async findRelationDefinition(relationName: string, _record: CollectionRecord<T>) {
-    // This method will find the relation definition from the relations schema
-    const relations = this.db.relations
-    console.log("Relations schema:", relations)
-    console.log("Looking for relation:", relationName)
-    if (!relations) {
-      console.log("No relations schema found")
-      return null
+  private async fetchRelatedRecords(
+    relationMapEntry: RelationMapEntry,
+    record: CollectionRecord<T>,
+    options?: {
+      limit?: number
+      where?: (item: CollectionRecord<T>) => boolean
+      with?: Record<string, boolean | any>
     }
+  ) {
+    const { definition, to: targetStoreName } = relationMapEntry
+    const { type: relationType, from: sourceField, to: targetField } = definition
+    const sourceValue = record[sourceField]
+    const targetStore = this.db.stores[targetStoreName]
 
-    // Search through all relations for the specified relationName
-    for (const [relationsKey, relationsObj] of Object.entries(relations)) {
-      console.log("Checking relation:", relationsKey, relationsObj)
-      if (relationsObj && typeof relationsObj === "object" && "relationsMap" in relationsObj) {
-        const relationsMap = (relationsObj as any).relationsMap
-        console.log("Relations map:", relationsMap)
-        // Handle both object and array formats
-        const hasRelation =
-          relationsMap && typeof relationsMap === "object"
-            ? Array.isArray(relationsMap)
-              ? relationsMap.includes(relationName)
-              : relationName in relationsMap
-            : false
-        if (hasRelation) {
-          const definition = relationsMap[relationName]
-          const fromCollection = (relationsObj as any).from
-          const toCollection = (relationsObj as any).to
-
-          console.log("Found relation definition:", {
-            relationName,
-            definition,
-            fromCollection,
-            toCollection,
-            currentCollection: this.collection,
-          })
-
-          // Determine if this store is the "from" or "to" collection
-          const isFromCollection = this.collection === fromCollection
-
-          return {
-            definition,
-            fromCollection,
-            toCollection,
-            isFromCollection,
-            relationsKey,
-          }
-        }
-      }
-    }
-
-    console.log("No relation found for:", relationName)
-    return null
-  }
-
-  private async fetchRelatedRecords(relationDef: any, record: CollectionRecord<T>, options?: any) {
-    const { definition, fromCollection, toCollection, isFromCollection } = relationDef
-    const { type, from, to } = definition
-
-    // Determine which collection to query and what value to match
-    let sourceField: string
-    let targetField: string
-    let targetCollection: any
-
-    if (isFromCollection) {
-      // This store is the "from" collection, so we query the "to" collection
-      sourceField = from
-      targetField = to
-      targetCollection = toCollection
-    } else {
-      // This store is the "to" collection, so we query the "from" collection
-      sourceField = to
-      targetField = from
-      targetCollection = fromCollection
-    }
-
-    const sourceValue = (record as any)[sourceField]
-
-    // Find the target store
-    const targetStoreName = Object.entries((this.db as any).stores).find(
-      ([, store]) => (store as any).collection === targetCollection
-    )?.[0]
-
-    if (!targetStoreName) return type === "one-to-many" ? [] : null
-
-    const targetStore = (this.db as any).stores[targetStoreName]
-
-    // Build the predicate with optional filtering
     const basePredicate = (item: any) => item[targetField] === sourceValue
     const predicate = options?.where
-      ? (item: any) => basePredicate(item) && options.where(item)
+      ? (item: any) => basePredicate(item) && options.where!(item)
       : basePredicate
 
-    if (type === "one-to-one") {
+    if (relationType === "one-to-one") {
       const result = await targetStore.find(predicate)
       // Handle nested relations if specified
       if (result && options?.with) {
         return await targetStore.resolveRelations(result, options.with)
       }
       return result
-    } else if (type === "one-to-many") {
+    } else if (relationType === "one-to-many") {
       const limit = options?.limit || Infinity
       const results = await targetStore.findMany(predicate, limit)
 
       // Handle nested relations if specified
       if (results.length > 0 && options?.with) {
         return await Promise.all(
-          results.map((result: any) => targetStore.resolveRelations(result, options.with))
+          results.map((result) => targetStore.resolveRelations(result, options.with!))
         )
       }
       return results
     }
 
-    return type === "one-to-many" ? [] : null
+    return relationType === "one-to-many" ? [] : null
   }
 }
