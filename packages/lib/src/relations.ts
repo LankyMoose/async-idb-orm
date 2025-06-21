@@ -55,16 +55,3 @@ export class Relations<
     >
   }
 }
-
-const objectWithFunctions = {
-  foo: () => "Hello",
-  bar: () => "world",
-}
-
-type ObjWithFunctionsToObjectWithReturnTypes<T extends Record<string, () => any>> = {
-  [K in keyof T]: ReturnType<T[K]>
-}
-
-type ObjWithFunctionsToObjectWithReturnTypesResult = ObjWithFunctionsToObjectWithReturnTypes<
-  typeof objectWithFunctions
->
