@@ -1,11 +1,13 @@
 import { idb } from "async-idb-orm"
-import * as schema from "./schema"
 import { Post } from "./types"
+import * as schema from "./schema"
+import * as relations from "./relations"
 export * from "./types"
 
 const VERSION = parseInt(localStorage.getItem("version") ?? "1")
 export const db = idb("users", {
   schema,
+  relations,
   version: VERSION,
   onError: console.error,
   onOpen: (db) => {
@@ -32,5 +34,17 @@ export const db = idb("users", {
   },
   onBeforeReinit: (oldVersion, newVersion) => {
     console.log(`reinitializing db from v${oldVersion} to v${newVersion}`)
+  },
+})
+
+const userWithPosts = await db.collections.users.find(1, {
+  with: {
+    userPosts: true,
+  },
+})
+
+const postWithAuthor = await db.collections.posts.find("101", {
+  with: {
+    author: true,
   },
 })
