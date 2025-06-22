@@ -49,7 +49,6 @@ export class AsyncIDBStore<
   ) => Promise<void>)[]
   #eventListeners: Record<CollectionEvent, CollectionEventCallback<T, CollectionEvent>[]>
   #tx?: IDBTransaction
-  #dependentStoreNames: Set<string>
   #serialize: (record: CollectionRecord<T>) => any
   #deserialize: (record: any) => CollectionRecord<T>
   #relations: Record<string, StoreRelation> = {}
@@ -62,7 +61,6 @@ export class AsyncIDBStore<
       "write|delete": [],
       clear: [],
     }
-    this.#dependentStoreNames = new Set()
     const { read, write } = this.collection.serializationConfig
     this.#serialize = write
     this.#deserialize = read
@@ -313,7 +311,7 @@ export class AsyncIDBStore<
     })
 
     const _with = options?.with
-    if (!_with) return results as any as RelationResult<T, _R, Options>[]
+    if (!_with) return results as RelationResult<T, _R, Options>[]
     return Promise.all(results.map((item) => this.resolveRelations(item, _with)))
   }
 
@@ -493,7 +491,13 @@ export class AsyncIDBStore<
     cloned.emit = (event, data) => eventQueue.push(() => store.emit(event, data))
     cloned.#onBeforeCreate = store.#onBeforeCreate
     cloned.#onBeforeDelete = store.#onBeforeDelete
+    cloned.#relations = store.#relations
     return cloned
+  }
+
+  static init(store: AsyncIDBStore<any, any>) {
+    store.initForeignKeys()
+    store.cacheRelations()
   }
 
   private cacheRelations() {
@@ -517,11 +521,6 @@ export class AsyncIDBStore<
       },
       {}
     )
-  }
-
-  static init(store: AsyncIDBStore<any, any>) {
-    store.initForeignKeys()
-    store.cacheRelations()
   }
 
   private firstByKeyDirection<U extends CollectionIndexName<T>>(
@@ -754,8 +753,6 @@ export class AsyncIDBStore<
       const [name, store] = Object.entries(this.db.stores).find(
         ([, s]) => s.collection === collection
       )!
-      store.#dependentStoreNames.add(this.name)
-      this.#dependentStoreNames.add(name)
 
       switch (onDelete) {
         case "cascade":
