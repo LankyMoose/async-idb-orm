@@ -4,17 +4,17 @@ export { Relations } from "./relations.js"
 export type * from "./types"
 
 import { AsyncIDB } from "./idb.js"
-import type { AsyncIDBInstance, CollectionSchema, AsyncIDBConfig, RelationsShema } from "./types"
+import type { AsyncIDBInstance, CollectionSchema, AsyncIDBConfig, RelationsSchema } from "./types"
 
 /**
  * Creates a new AsyncIDB instance
  * @template {CollectionSchema} T
- * @template {RelationsShema} R
+ * @template {RelationsSchema} R
  * @param {string} name
  * @param {AsyncIDBConfig<T, R>} config
  * @returns {AsyncIDBInstance<T, R>}
  */
-function idb<T extends CollectionSchema, R extends RelationsShema = {}>(
+function idb<T extends CollectionSchema, R extends RelationsSchema = {}>(
   name: string,
   config: AsyncIDBConfig<T, R>
 ): AsyncIDBInstance<T, R> {

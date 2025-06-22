@@ -7,7 +7,7 @@ import {
   type OnDBUpgradeCallback,
   type OnDBUpgradeCallbackContext,
   CollectionIDMode,
-  RelationsShema,
+  RelationsSchema,
 } from "./types"
 
 import { Collection } from "./collection.js"
@@ -18,7 +18,7 @@ import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
  * @private
  * Internal usage only. Do not use directly.
  */
-export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
+export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
   #db: IDBDatabase | null
   #instanceCallbacks: DBInstanceCallback[]
   stores: {

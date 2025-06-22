@@ -11,8 +11,7 @@ import type {
   ActiveRecordMethods,
   CollectionEventCallback,
   TransactionContext,
-  CollectionIDMode,
-  RelationsShema,
+  RelationsSchema,
   FindOptions,
   RelationResult,
   AnyCollection,
@@ -20,8 +19,9 @@ import type {
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
-import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
-import { RelationDefinition, Relations } from "./relations"
+import { BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
+import { RelationDefinition, Relations } from "./relations.js"
+import { abortTx } from "./utils.js"
 
 type StoreRelation = {
   other: AsyncIDBStore<any, any>
@@ -34,7 +34,7 @@ type StoreRelation = {
  */
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
-  _R extends RelationsShema
+  R extends RelationsSchema
 > {
   #isRelaying = false
   #onBeforeCreate: ((
@@ -237,7 +237,7 @@ export class AsyncIDBStore<
   }
 
   /**
-   * Deletes all records in the store
+   * Deletes all records in the store. Use with caution: **this method is not foreign key aware**
    * @returns {Promise<void>}
    */
   clear() {
@@ -254,27 +254,35 @@ export class AsyncIDBStore<
   /**
    * Finds a record based on keyPath or predicate
    * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey
-   * @param {FindOptions<_R, string>} [options] - Options for finding with relations
-   * @returns {Promise<RelationResult<T, _R, Options> | null>}
+   * @param {FindOptions<R, string>} [options] - Options for finding with relations
+   * @returns {Promise<RelationResult<T, R, Options> | null>}
    */
-  find<Options extends FindOptions<_R, T>>(
+  find<Options extends FindOptions<R, T>>(
     predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean),
     options?: Options
-  ): Promise<RelationResult<T, _R, Options> | null> {
-    if (predicateOrKey instanceof Function) {
-      return this.findByPredicate(predicateOrKey, options)
-    }
-    return this.read(predicateOrKey, options)
+  ): Promise<RelationResult<T, R, Options> | null> {
+    return new Promise<RelationResult<T, R, Options> | null>((resolve, reject) => {
+      this.db.getInstance((db) => {
+        const queryCtx = new RelationalQueryContext(db, this.#tx)
+        if (typeof predicateOrKey === "function") {
+          queryCtx
+            .findByPredicate<T, R, typeof this, Options>(this, predicateOrKey, options, 1)
+            .then((res) => resolve(res[0] ?? null), reject)
+        } else {
+          queryCtx
+            .findByKey<T, R, typeof this, Options>(this, predicateOrKey, options)
+            .then(resolve, reject)
+        }
+      })
+    })
   }
 
   /**
    * Finds a record based on keyPath or predicate and upgrades it to an active record.
-   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey
-   * @returns {Promise<ActiveRecord<CollectionRecord<T>> | null>}
    */
   async findActive(
-    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
-  ) {
+    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean) // asdasd
+  ): Promise<ActiveRecord<CollectionRecord<T>> | null> {
     const res = await this.find(predicateOrKey)
     if (res === null) return null
     return this.wrap(res)
@@ -283,36 +291,22 @@ export class AsyncIDBStore<
   /**
    * Finds many records based on keyPath or predicate
    * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicate
-   * @param {FindManyOptions<_R, string>} [options] - Options for finding with relations
+   * @param {FindManyOptions<R, string>} [options] - Options for finding with relations
    * @param limit The maximum number of records to return (defaults to `Infinity`)
-   * @returns {Promise<RelationResult<T, _R, Options>[]>}
+   * @returns {Promise<RelationResult<T, R, Options>[]>}
    */
-  async findMany<Options extends FindManyOptions<_R, T>>(
+  async findMany<Options extends FindManyOptions<R, T>>(
     predicate: (item: CollectionRecord<T>) => boolean,
     options?: Options
-  ): Promise<RelationResult<T, _R, Options>[]> {
-    const limit = options?.limit || Infinity
-    const results = await this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.openCursor()
-      const results: CollectionRecord<T>[] = []
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (!cursor) return resolve(results)
-
-        const value = this.#deserialize(cursor.value)
-        if (predicate(value)) {
-          results.push(value)
-          if (results.length >= limit) return resolve(results)
-        }
-
-        cursor.continue()
-      }
+  ): Promise<RelationResult<T, R, Options>[]> {
+    return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
+      this.db.getInstance((db) => {
+        const queryCtx = new RelationalQueryContext(db, this.#tx)
+        queryCtx
+          .findByPredicate<T, R, typeof this, Options>(this, predicate, options)
+          .then(resolve, reject)
+      })
     })
-
-    const _with = options?.with
-    if (!_with) return results as RelationResult<T, _R, Options>[]
-    return Promise.all(results.map((item) => this.resolveRelations(item, _with)))
   }
 
   /**
@@ -321,36 +315,27 @@ export class AsyncIDBStore<
    * @param limit The maximum number of records to return (defaults to `Infinity`)
    * @returns {Promise<CollectionRecord<T>[]>}
    */
-  async findManyActive(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
+  async findManyActive(
+    predicate: (item: CollectionRecord<T>) => boolean,
+    limit = Infinity
+  ): Promise<CollectionRecord<T>[]> {
     return (await this.findMany(predicate, { limit })).map((item) => this.wrap(item))
   }
 
   /**
    * Gets all records in the store
-   * @param {FindManyOptions<_R, string>} [options] - Options for finding with relations
-   * @returns {Promise<CollectionRecord<T>[]>}
+   * @param {FindManyOptions<R, string>} [options] - Options for finding with relations
+   * @returns {Promise<RelationResult<T, R, Options>[]>}
    */
-  all<Options extends FindManyOptions<_R, T>>(
+  all<Options extends FindOptions<R, T>>(
     options?: Options
-  ): Promise<RelationResult<T, _R, Options>[]> {
-    return this.queueTask<RelationResult<T, _R, Options>[]>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.getAll()
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        const deserialized = request.result.map(this.#deserialize) as RelationResult<
-          T,
-          _R,
-          Options
-        >[]
-        if (options?.with) {
-          return resolve(
-            Promise.all(
-              deserialized.map((item) => this.resolveRelations(item, options.with!))
-            ) as any as RelationResult<T, _R, Options>[]
-          )
-        }
-        resolve(deserialized)
-      }
+  ): Promise<RelationResult<T, R, Options>[]> {
+    return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
+      this.db.getInstance((db) => {
+        new RelationalQueryContext(db, this.#tx)
+          .findAll<T, R, typeof this, Options>(this, options)
+          .then((r) => resolve(r as RelationResult<T, R, Options>[]), reject)
+      })
     })
   }
 
@@ -471,13 +456,11 @@ export class AsyncIDBStore<
   }
 
   static getCollection(store: AsyncIDBStore<any, any>) {
-    return store.collection as Collection<
-      Record<string, any>,
-      any,
-      any,
-      CollectionIndex<any>[],
-      CollectionIDMode
-    >
+    return store.collection as AnyCollection
+  }
+
+  static getRelations(store: AsyncIDBStore<any, any>) {
+    return store.#relations
   }
 
   static cloneForTransaction(
@@ -539,11 +522,8 @@ export class AsyncIDBStore<
     })
   }
 
-  private async read<Options extends FindOptions<_R, T>>(
-    id: CollectionKeyPathType<T>,
-    options?: Options
-  ): Promise<RelationResult<T, _R, Options>> {
-    const record = await this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
+  private async read(id: CollectionKeyPathType<T>) {
+    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.get(id as IDBValidKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -551,12 +531,6 @@ export class AsyncIDBStore<
         resolve(this.#deserialize(request.result))
       }
     })
-
-    if (!record || !options?.with) {
-      return record as RelationResult<T, _R, Options>
-    }
-
-    return this.resolveRelations(record, options.with) as unknown as RelationResult<T, _R, Options>
   }
 
   private deleteByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
@@ -587,31 +561,6 @@ export class AsyncIDBStore<
         return resolve(value)
       }
     })
-  }
-
-  private async findByPredicate<Options extends FindOptions<_R, T>>(
-    predicate: (item: CollectionRecord<T>) => boolean,
-    options?: Options
-  ): Promise<RelationResult<T, _R, Options> | null> {
-    const record = await this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.openCursor()
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (!cursor) return resolve(null)
-
-        const value = this.#deserialize(cursor.value)
-        if (!predicate(value)) return cursor.continue()
-
-        resolve(value)
-      }
-    })
-
-    if (!record || !options?.with) {
-      return record as RelationResult<T, _R, Options> | null
-    }
-
-    return this.resolveRelations(record, options.with) as unknown as RelationResult<T, _R, Options>
   }
 
   private emit<U extends CollectionEvent>(
@@ -872,34 +821,6 @@ export class AsyncIDBStore<
     }
   }
 
-  private async resolveRelations(
-    record: CollectionRecord<T>,
-    withOptions: Record<string, boolean | any>
-  ): Promise<any> {
-    for (const [relationName, options] of Object.entries(withOptions)) {
-      if (!options) {
-        continue
-      }
-
-      // Find the relation definition from the database relations schema
-      const relationDef = this.#relations[relationName]
-      if (!relationDef) {
-        console.warn(
-          `[async-idb-orm]: No relation definition found for ${relationName} in ${this.name}`
-        )
-        continue
-      }
-
-      ;(record as any)[relationName] = await this.fetchRelatedRecords(
-        relationDef,
-        record,
-        typeof options === "boolean" ? undefined : options
-      )
-    }
-
-    return record
-  }
-
   private assertNoRelations(record: CollectionRecord<T>, action: string) {
     for (const relationName in this.#relations) {
       if (relationName in record) {
@@ -907,10 +828,140 @@ export class AsyncIDBStore<
       }
     }
   }
+}
 
-  private async fetchRelatedRecords(
-    relationDef: StoreRelation,
+class RelationalQueryContext {
+  tx: IDBTransaction
+  constructor(public db: IDBDatabase, tx?: IDBTransaction) {
+    this.tx = tx ?? this.db.transaction(this.db.objectStoreNames, "readonly")
+  }
+
+  async findAll<
+    T extends AnyCollection,
+    R extends RelationsSchema,
+    Store extends AsyncIDBStore<T, R>,
+    Options extends FindOptions<R, T>
+  >(store: Store, options?: Options): Promise<RelationResult<T, R, FindOptions<R, T>>[]> {
+    const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig
+    return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
+      const objectStore = this.tx.objectStore(store.name)
+      const request = objectStore.getAll()
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        const deserialized = request.result.map(deserialize) as RelationResult<T, R, Options>[]
+        if (options?.with) {
+          return Promise.all(
+            deserialized.map((item) =>
+              this.resolveRelations<T, R, Store>(store, item, options.with!)
+            )
+          ).then((results) => resolve(results as any as RelationResult<T, R, Options>[]), reject)
+        }
+
+        resolve(deserialized)
+      }
+    })
+  }
+
+  async findByKey<
+    T extends AnyCollection,
+    R extends RelationsSchema,
+    Store extends AsyncIDBStore<T, R>,
+    Options extends FindOptions<R, T>
+  >(
+    store: Store,
+    id: CollectionKeyPathType<T>,
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null> {
+    return new Promise((resolve, reject) => {
+      const objectStore = this.tx.objectStore(store.name)
+      const request = objectStore.get(id)
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        if (!request.result) {
+          return resolve(null)
+        }
+        const record = AsyncIDBStore.getCollection(store).serializationConfig.read(request.result)
+
+        if (options?.with) {
+          return this.resolveRelations<T, R, Store>(store, record, options.with).then(
+            resolve,
+            reject
+          )
+        }
+
+        resolve(record)
+      }
+    })
+  }
+
+  async findByPredicate<
+    T extends AnyCollection,
+    R extends RelationsSchema,
+    Store extends AsyncIDBStore<T, R>,
+    Options extends FindOptions<R, T>
+  >(
+    store: Store,
+    predicate: (item: CollectionRecord<T>) => boolean,
+    options?: Options,
+    limit?: number
+  ): Promise<RelationResult<T, R, Options>[]> {
+    limit ||= Infinity
+    const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig
+    return new Promise<RelationResult<T, R, Options>[]>((_resolve, reject) => {
+      const objectStore = this.tx.objectStore(store.name)
+      const request = objectStore.openCursor()
+      const results: RelationResult<T, R, Options>[] = []
+
+      const resolve = () => {
+        if (options?.with) {
+          return Promise.all(
+            results.map((record) =>
+              this.resolveRelations<T, R, Store>(store, record, options.with!)
+            )
+          ).then(() => _resolve(results))
+        }
+        _resolve(results)
+      }
+
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) return resolve()
+
+        const value = deserialize(cursor.value)
+        if (predicate(value)) {
+          results.push(value)
+          if (results.length >= limit) return resolve()
+        }
+
+        cursor.continue()
+      }
+    })
+  }
+
+  private async resolveRelations<
+    T extends AnyCollection,
+    R extends RelationsSchema,
+    Store extends AsyncIDBStore<T, R>
+  >(
+    store: Store,
     record: CollectionRecord<T>,
+    withOptions: Record<string, boolean | any>
+  ): Promise<any> {
+    const relations = AsyncIDBStore.getRelations(store)
+    await Promise.all(
+      Object.entries(withOptions).map(([relationName, options]) =>
+        this.fetchRelatedRecords(record, relations[relationName], options).then((result) => {
+          ;(record as any)[relationName] = result
+        })
+      )
+    )
+    return record
+  }
+
+  private async fetchRelatedRecords<T extends AnyCollection>(
+    record: CollectionRecord<T>,
+    relationDef: StoreRelation,
     options?: {
       limit?: number
       where?: (item: CollectionRecord<T>) => boolean
@@ -927,32 +978,11 @@ export class AsyncIDBStore<
       : basePredicate
 
     if (relationType === "one-to-one") {
-      const result = await other.find(predicate)
-      // Handle nested relations if specified
-      if (result && options?.with) {
-        return await other.resolveRelations(result, options.with)
-      }
-      return result
+      return (await this.findByPredicate(other, predicate, options?.with, 1))[0] ?? null
     } else if (relationType === "one-to-many") {
-      const limit = options?.limit || Infinity
-      const results = await other.findMany(predicate, { limit })
-
-      // Handle nested relations if specified
-      if (results.length > 0 && options?.with) {
-        return await Promise.all(
-          results.map((result) => other.resolveRelations(result, options.with!))
-        )
-      }
-      return results
+      return this.findByPredicate(other, predicate, options?.with, options?.limit)
     }
 
     return relationType === "one-to-many" ? [] : null
   }
-}
-
-const abortTx = (tx: IDBTransaction) => {
-  try {
-    if (tx.error) return
-    tx.abort()
-  } catch {}
 }

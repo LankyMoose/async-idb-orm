@@ -6,7 +6,7 @@ type Prettify<T> = {
   [K in keyof T]: T[K]
 } & {}
 
-export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsShema> = {
+export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsSchema> = {
   /**
    * Collection schema - `Record<string, Collection>`
    * @see {@link Collection}
@@ -70,19 +70,19 @@ export type TransactionOptions = IDBTransactionOptions & {
   durability?: IDBTransactionDurability
 }
 
-export type IDBTransactionCallback<T extends CollectionSchema, R extends RelationsShema> = (
+export type IDBTransactionCallback<T extends CollectionSchema, R extends RelationsSchema> = (
   ctx: AsyncIDBInstance<T, R>["collections"],
   tx: IDBTransaction
 ) => unknown
 
-export type IDBTransactionFunction<T extends CollectionSchema, R extends RelationsShema> = <
+export type IDBTransactionFunction<T extends CollectionSchema, R extends RelationsSchema> = <
   CB extends IDBTransactionCallback<T, R>
 >(
   callback: CB,
   options?: TransactionOptions
 ) => Promise<ReturnType<CB>>
 
-export type OnDBUpgradeCallbackContext<T extends CollectionSchema, R extends RelationsShema> = {
+export type OnDBUpgradeCallbackContext<T extends CollectionSchema, R extends RelationsSchema> = {
   db: IDBDatabase
   collections: {
     [key in keyof T]: AsyncIDBStore<T[key], R>
@@ -97,12 +97,12 @@ export type OnDBUpgradeCallbackContext<T extends CollectionSchema, R extends Rel
   createStore: (name: keyof T & string) => IDBObjectStore
 }
 
-export type OnDBUpgradeCallback<T extends CollectionSchema, R extends RelationsShema> = (
+export type OnDBUpgradeCallback<T extends CollectionSchema, R extends RelationsSchema> = (
   ctx: OnDBUpgradeCallbackContext<T, R>,
   event: IDBVersionChangeEvent
 ) => Promise<void>
 
-export type AsyncIDBInstance<T extends CollectionSchema, R extends RelationsShema> = {
+export type AsyncIDBInstance<T extends CollectionSchema, R extends RelationsSchema> = {
   collections: {
     [key in keyof T]: AsyncIDBStore<T[key], R>
   }
@@ -114,7 +114,7 @@ export type DBInstanceCallback = (db: IDBDatabase) => any
 
 type NonEmptyArray = [any, ...any[]]
 
-export type RelationsShema = {
+export type RelationsSchema = {
   [key: string]: Relations<any, any, any>
 }
 
@@ -170,7 +170,7 @@ export type RecordKeyPath<RecordType extends Record<string, any>> =
 
 // Extract the target collection for a specific relation name from a source collection
 type GetTargetCollectionForRelation<
-  R extends RelationsShema,
+  R extends RelationsSchema,
   SourceCollection extends AnyCollection,
   RelationName extends string
 > = {
@@ -184,7 +184,7 @@ type GetTargetCollectionForRelation<
 }[keyof R]
 
 // Recursive relation options that are aware of the target collection
-type RelationWithOptionsForCollection<R extends RelationsShema, T extends AnyCollection> = {
+type RelationWithOptionsForCollection<R extends RelationsSchema, T extends AnyCollection> = {
   limit?: number
   where?: (record: any) => boolean
   with?: T extends AnyCollection
@@ -197,12 +197,15 @@ type RelationWithOptionsForCollection<R extends RelationsShema, T extends AnyCol
 }
 
 // Main RelationWithOptions type (for backward compatibility)
-export type RelationWithOptions<R extends RelationsShema> = RelationWithOptionsForCollection<R, any>
+export type RelationWithOptions<R extends RelationsSchema> = RelationWithOptionsForCollection<
+  R,
+  any
+>
 
 // Extract valid relation names for a specific collection
 // Only include relations where the current collection is the 'From' collection
 type ValidRelationNamesForCollection<
-  R extends RelationsShema,
+  R extends RelationsSchema,
   CurrentCollection extends AnyCollection
 > = {
   [K in keyof R]: R[K] extends Relations<infer From, any, infer RelMap>
@@ -213,7 +216,7 @@ type ValidRelationNamesForCollection<
 }[keyof R]
 
 // Improved FindOptions that constrains relation names to valid ones for the collection
-export type FindOptions<R extends RelationsShema = any, T extends AnyCollection = any> = {
+export type FindOptions<R extends RelationsSchema = any, T extends AnyCollection = any> = {
   with?: T extends AnyCollection
     ? {
         [K in ValidRelationNamesForCollection<R, T> & string]?:
@@ -224,7 +227,7 @@ export type FindOptions<R extends RelationsShema = any, T extends AnyCollection 
 }
 
 export type FindManyOptions<
-  R extends RelationsShema = any,
+  R extends RelationsSchema = any,
   T extends AnyCollection = any
 > = FindOptions<R, T> & {
   /** The maximum number of records to return (defaults to `Infinity`) */
@@ -232,7 +235,7 @@ export type FindManyOptions<
 }
 
 // Find the relation definition for a given relation name
-type FindRelationForName<R extends RelationsShema, RelationName extends string> = {
+type FindRelationForName<R extends RelationsSchema, RelationName extends string> = {
   [K in keyof R]: R[K] extends Relations<any, infer To, infer RelMap>
     ? RelationName extends keyof RelMap
       ? RelMap[RelationName] extends { type: infer Type }
@@ -247,7 +250,7 @@ type FindRelationForName<R extends RelationsShema, RelationName extends string> 
 }[keyof R]
 
 // Map relation names in 'with' options to their types
-type MapRelationsToTypes<R extends RelationsShema, WithOptions extends Record<string, any>> = {
+type MapRelationsToTypes<R extends RelationsSchema, WithOptions extends Record<string, any>> = {
   [K in keyof WithOptions & string]: FindRelationForName<R, K> extends Array<infer T>
     ? T[]
     : FindRelationForName<R, K> | null
@@ -256,7 +259,7 @@ type MapRelationsToTypes<R extends RelationsShema, WithOptions extends Record<st
 // Main result type with proper relation inference
 export type RelationResult<
   T extends AnyCollection,
-  R extends RelationsShema,
+  R extends RelationsSchema,
   Options extends FindOptions<R, T>
 > = Options extends { with: infer With }
   ? With extends Record<string, any>
@@ -265,11 +268,11 @@ export type RelationResult<
   : CollectionRecord<T>
 
 // Legacy types for backward compatibility
-export type RelationsWith<R extends RelationsShema, _CollectionName extends string> = Record<
+export type RelationsWith<R extends RelationsSchema, _CollectionName extends string> = Record<
   string,
   boolean | RelationWithOptions<R>
 >
 export type RelationsWithOptions<
-  R extends RelationsShema,
+  R extends RelationsSchema,
   _CollectionName extends string
 > = RelationWithOptions<R>
