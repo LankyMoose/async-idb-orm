@@ -29,8 +29,6 @@ type RelationMapEntry = {
   to: string
 }
 
-const $RELATIONAL_DERIVED = Symbol()
-
 type RelationMap = Map<string, RelationMapEntry>
 
 /**
@@ -107,9 +105,7 @@ export class AsyncIDBStore<
    * @returns {ActiveRecord<CollectionRecord<T>>}
    */
   wrap(record: CollectionRecord<T>): ActiveRecord<CollectionRecord<T>> {
-    if ($RELATIONAL_DERIVED in record) {
-      throw new Error("[async-idb-orm]: unable to wrap a relational record")
-    }
+    this.assertNoRelations(record, "wrap")
     return Object.assign<CollectionRecord<T>, ActiveRecordMethods<CollectionRecord<T>>>(record, {
       save: async () => {
         const res = await this.update(record)
@@ -185,6 +181,7 @@ export class AsyncIDBStore<
    * @returns {Promise<CollectionRecord<T> | null>}
    */
   async update(record: CollectionRecord<T>) {
+    this.assertNoRelations(record, "update")
     record = this.unwrap(record)
     const { create, update } = this.collection.transformers
     const existing = await this.read(this.getRecordKey(record))
@@ -265,12 +262,12 @@ export class AsyncIDBStore<
    * Finds a record based on keyPath or predicate
    * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey
    * @param {FindOptions<_R, string>} [options] - Options for finding with relations
-   * @returns {Promise<CollectionRecord<T> | null>}
+   * @returns {Promise<RelationResult<T, _R, Options> | null>}
    */
   find<Options extends FindOptions<_R, T>>(
     predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean),
     options?: Options
-  ): Promise<RelationResult<T, _R, Options>> {
+  ): Promise<RelationResult<T, _R, Options> | null> {
     if (predicateOrKey instanceof Function) {
       return this.findByPredicate(predicateOrKey, options)
     }
@@ -635,7 +632,7 @@ export class AsyncIDBStore<
   private async findByPredicate<Options extends FindOptions<_R, T>>(
     predicate: (item: CollectionRecord<T>) => boolean,
     options?: Options
-  ): Promise<RelationResult<T, _R, Options>> {
+  ): Promise<RelationResult<T, _R, Options> | null> {
     const record = await this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       request.onerror = (err) => reject(err)
@@ -651,7 +648,7 @@ export class AsyncIDBStore<
     })
 
     if (!record || !options?.with) {
-      return record as RelationResult<T, _R, Options>
+      return record as RelationResult<T, _R, Options> | null
     }
 
     return this.resolveRelations(record, options.with) as unknown as RelationResult<T, _R, Options>
@@ -940,10 +937,22 @@ export class AsyncIDBStore<
         record,
         typeof options === "boolean" ? undefined : options
       )
-      ;(record as any)[$RELATIONAL_DERIVED] = true
     }
 
     return record
+  }
+
+  private assertNoRelations(record: CollectionRecord<T>, action: string) {
+    AsyncIDBStore.relationMap.forEach((entry, name) => {
+      if (entry.from === this.name) {
+        const relationName = name.split(":")[1]
+        if (relationName in record) {
+          throw new Error(
+            `[async-idb-orm]: unable to ${action} record with relation ${relationName}`
+          )
+        }
+      }
+    })
   }
 
   private async fetchRelatedRecords(
