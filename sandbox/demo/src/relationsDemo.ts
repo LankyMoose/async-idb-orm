@@ -1,3 +1,4 @@
+import { assertThrows } from "./assert"
 import { db, Post, PostComment, Todo } from "./db"
 
 /**
@@ -11,7 +12,7 @@ import { db, Post, PostComment, Todo } from "./db"
  * - Multiple relation types (one-to-one, one-to-many)
  */
 
-export async function setupTestData() {
+async function setupTestData() {
   console.log("Setting up test data...")
 
   // Clear existing data
@@ -80,7 +81,7 @@ export async function setupTestData() {
   return { users: [user1, user2], posts, comments, todos }
 }
 
-export async function demonstrateBasicRelations() {
+async function demonstrateBasicRelations() {
   console.log("\n=== 1. Basic Relations Demo ===")
   const alice = await db.collections.users.find((u) => u.name === "Alice Johnson")
 
@@ -93,6 +94,10 @@ export async function demonstrateBasicRelations() {
       },
     },
   })
+
+  assertThrows(() => {
+    db.collections.users.wrap(userWithPosts)
+  }, "should not be able to upgrade relational record -> active record")
 
   console.log("User with posts:", userWithPosts)
 
@@ -108,7 +113,7 @@ export async function demonstrateBasicRelations() {
   }
 }
 
-export async function demonstrateFilteredRelations() {
+async function demonstrateFilteredRelations() {
   console.log("\n=== 2. Filtered Relations Demo ===")
   const alice = await db.collections.users.find((u) => u.name === "Alice Johnson")
 
@@ -133,7 +138,7 @@ export async function demonstrateFilteredRelations() {
   console.log("User with recent posts:", userWithRecentPosts)
 }
 
-export async function demonstrateLimitedRelations() {
+async function demonstrateLimitedRelations() {
   console.log("\n=== 3. Limited Relations Demo ===")
   const alice = await db.collections.users.find((u) => u.name === "Alice Johnson")
 
@@ -158,7 +163,7 @@ export async function demonstrateLimitedRelations() {
   console.log("User with limited todos (3):", userWithLimitedTodos)
 }
 
-export async function demonstrateComplexRelations() {
+async function demonstrateComplexRelations() {
   console.log("\n=== 4. Complex Relations Demo ===")
 
   // Combine filtering and limiting
@@ -184,7 +189,7 @@ export async function demonstrateComplexRelations() {
   console.log("User with multiple relations:", userWithMultipleRelations)
 }
 
-export async function demonstrateReverseRelations() {
+async function demonstrateReverseRelations() {
   console.log("\n=== 5. Reverse Relations Demo ===")
 
   // Load comment with its post and author
@@ -223,6 +228,16 @@ export async function runCompleteDemo() {
     await demonstrateComplexRelations()
     await demonstrateReverseRelations()
 
+    // cleanup - have to delete todos before users because of foreign key constraint
+    const todos = await db.collections.todos.all()
+    for (const todo of todos) {
+      await db.collections.todos.delete(todo.id)
+    }
+
+    const users = await db.collections.users.all()
+    for (const user of users) {
+      await db.collections.users.delete(user.id)
+    }
     console.log("\n✅ Relations API Demo completed successfully!")
   } catch (error) {
     console.error("❌ Demo failed:", error)

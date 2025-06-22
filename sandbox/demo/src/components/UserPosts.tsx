@@ -1,4 +1,4 @@
-import { db, Post } from "$/db"
+import { db, Post, PostComment } from "$/db"
 import { selectedUser } from "$/state/selectedUser"
 import { useAsync, useEffect } from "kaioken"
 import { navigate, useRouter } from "kaioken/router"
@@ -7,12 +7,26 @@ export function UserPosts() {
   const { params } = useRouter()
   if (!params.userId) return navigate("/users")
   const userId = parseInt(params.userId)
-  const posts = useAsync(() => db.collections.posts.findMany((p) => p.userId === userId), [userId])
+  const posts = useAsync(() => {
+    return db.collections.posts.findMany((p) => p.userId === userId, {
+      with: { postComments: true },
+    })
+  }, [userId])
+
+  console.log("posts", posts.data)
 
   useEffect(() => {
+    const onRelatedCommentChanged = (r: PostComment) =>
+      posts.data?.some((p) => p.id === r.postId) && posts.invalidate()
+
     db.collections.posts.addEventListener("write|delete", posts.invalidate)
-    return () => db.collections.posts.removeEventListener("write|delete", posts.invalidate)
-  }, [])
+    db.collections.postComments.addEventListener("write|delete", onRelatedCommentChanged)
+
+    return () => {
+      db.collections.posts.removeEventListener("write|delete", posts.invalidate)
+      db.collections.postComments.removeEventListener("write|delete", onRelatedCommentChanged)
+    }
+  }, [!!posts.data])
 
   const onCreatePostClick = async () => {
     await db.collections.posts.create({ userId, content: "New post" })
@@ -47,7 +61,7 @@ export function UserPosts() {
   )
 }
 
-function PostItemView({ post }: { post: Post }) {
+function PostItemView({ post }: { post: Post & { postComments: PostComment[] } }) {
   return (
     <div>
       <div style="display:flex;gap:2rem;align-items:center;justify-content:space-between">
@@ -62,23 +76,12 @@ function PostItemView({ post }: { post: Post }) {
           Delete
         </button>
       )}
-      <PostCommentsView postId={post.id} />
+      <PostCommentsView comments={post.postComments} postId={post.id} />
     </div>
   )
 }
 
-function PostCommentsView({ postId }: { postId: string }) {
-  const postComments = useAsync(
-    () => db.collections.postComments.findMany((c) => c.postId === postId),
-    [postId]
-  )
-
-  useEffect(() => {
-    db.collections.postComments.addEventListener("write|delete", postComments.invalidate)
-    return () =>
-      db.collections.postComments.removeEventListener("write|delete", postComments.invalidate)
-  }, [])
-
+function PostCommentsView({ postId, comments }: { postId: string; comments: PostComment[] }) {
   const handleCreateComment = async () => {
     if (!selectedUser.value) {
       alert("Please select a user")
@@ -97,27 +100,15 @@ function PostCommentsView({ postId }: { postId: string }) {
         Add Comment
       </button>
       <div>
-        {postComments.loading ? (
-          <p>Loading comments...</p>
-        ) : postComments.error ? (
-          <p>{postComments.error.message}</p>
-        ) : (
-          <>
-            {postComments.data.length === 0 ? (
-              <i>No comments</i>
-            ) : (
-              postComments.data.map((comment) => (
-                <div
-                  key={comment.id}
-                  style="display:flex;gap:2rem;align-items:center; background: #1a1a1a; padding: 0.5rem; border-radius: 8px;"
-                >
-                  <p>{comment.content}</p>
-                  <UsernameView userId={comment.userId} />
-                </div>
-              ))
-            )}
-          </>
-        )}
+        {comments.map((comment) => (
+          <div
+            key={comment.id}
+            style="display:flex;gap:2rem;align-items:center; background: #1a1a1a; padding: 0.5rem; border-radius: 8px;"
+          >
+            <p>{comment.content}</p>
+            <UsernameView userId={comment.userId} />
+          </div>
+        ))}
       </div>
     </>
   )

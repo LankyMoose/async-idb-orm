@@ -16,6 +16,7 @@ import type {
   FindOptions,
   RelationResult,
   AnyCollection,
+  FindManyOptions,
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
@@ -27,6 +28,8 @@ type RelationMapEntry = {
   from: string
   to: string
 }
+
+const $RELATIONAL_DERIVED = Symbol()
 
 type RelationMap = Map<string, RelationMapEntry>
 
@@ -104,6 +107,9 @@ export class AsyncIDBStore<
    * @returns {ActiveRecord<CollectionRecord<T>>}
    */
   wrap(record: CollectionRecord<T>): ActiveRecord<CollectionRecord<T>> {
+    if ($RELATIONAL_DERIVED in record) {
+      throw new Error("[async-idb-orm]: unable to wrap a relational record")
+    }
     return Object.assign<CollectionRecord<T>, ActiveRecordMethods<CollectionRecord<T>>>(record, {
       save: async () => {
         const res = await this.update(record)
@@ -287,11 +293,16 @@ export class AsyncIDBStore<
   /**
    * Finds many records based on keyPath or predicate
    * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicate
+   * @param {FindManyOptions<_R, string>} [options] - Options for finding with relations
    * @param limit The maximum number of records to return (defaults to `Infinity`)
-   * @returns {Promise<CollectionRecord<T>[]>}
+   * @returns {Promise<RelationResult<T, _R, Options>[]>}
    */
-  findMany(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
-    return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
+  async findMany<Options extends FindManyOptions<_R, T>>(
+    predicate: (item: CollectionRecord<T>) => boolean,
+    options?: Options
+  ): Promise<RelationResult<T, _R, Options>[]> {
+    const limit = options?.limit || Infinity
+    const results = await this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
       const results: CollectionRecord<T>[] = []
       request.onerror = (err) => reject(err)
@@ -308,6 +319,10 @@ export class AsyncIDBStore<
         cursor.continue()
       }
     })
+
+    const _with = options?.with
+    if (!_with) return results as any as RelationResult<T, _R, Options>[]
+    return Promise.all(results.map((item) => this.resolveRelations(item, _with)))
   }
 
   /**
@@ -317,7 +332,7 @@ export class AsyncIDBStore<
    * @returns {Promise<CollectionRecord<T>[]>}
    */
   async findManyActive(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
-    return (await this.findMany(predicate, limit)).map((item) => this.wrap(item))
+    return (await this.findMany(predicate, { limit })).map((item) => this.wrap(item))
   }
 
   /**
@@ -738,7 +753,7 @@ export class AsyncIDBStore<
               const key = record[ref]
               const request = objectStore.get(key)
               request.onerror = (e) => {
-                tx.abort()
+                abortTx(tx)
                 const err = new Error(
                   `[async-idb-orm]: An error occurred while applying FK ${this.name}:${ref} (${key})`
                 )
@@ -775,7 +790,7 @@ export class AsyncIDBStore<
               const objectStore = tx.objectStore(this.name)
               const request = objectStore.openCursor()
               request.onerror = (err) => {
-                ctx.tx.abort()
+                abortTx(tx)
                 const e = new Error(
                   "[async-idb-orm]: An error occurred while applying FK -> cascade delete"
                 )
@@ -795,7 +810,7 @@ export class AsyncIDBStore<
                     dependentErrs
                   )
                   if (dependentErrs.length) {
-                    ctx.tx.abort()
+                    abortTx(tx)
                     return resolve()
                   }
                   cursor.delete()
@@ -813,7 +828,7 @@ export class AsyncIDBStore<
               const objectStore = tx.objectStore(this.name)
               const request = objectStore.openCursor()
               request.onerror = (err) => {
-                ctx.tx.abort()
+                abortTx(tx)
                 const e = new Error(
                   "[async-idb-orm]: An error occurred while enforcing FK -> delete restriction"
                 )
@@ -826,7 +841,7 @@ export class AsyncIDBStore<
                 if (!cursor) return resolve()
 
                 if (cursor.value[field] === key) {
-                  ctx.tx.abort()
+                  abortTx(tx)
                   errs.push(
                     new Error(
                       `[async-idb-orm]: Failed to delete record in collection ${name} because it is referenced by another record in collection ${this.name}`
@@ -841,7 +856,7 @@ export class AsyncIDBStore<
                   dependentErrs
                 )
                 if (dependentErrs.length) {
-                  ctx.tx.abort()
+                  abortTx(tx)
                   return resolve()
                 }
                 cursor.continue()
@@ -857,7 +872,7 @@ export class AsyncIDBStore<
               const objectStore = tx.objectStore(this.name)
               const request = objectStore.openCursor()
               request.onerror = (err) => {
-                ctx.tx.abort()
+                abortTx(tx)
                 errs.push(new Error(err as any))
                 resolve()
               }
@@ -869,7 +884,7 @@ export class AsyncIDBStore<
 
                 const updateReq = cursor.update(this.#serialize({ ...cursor.value, [field]: null }))
                 updateReq.onerror = (err) => {
-                  ctx.tx.abort()
+                  abortTx(tx)
                   errs.push(new Error(err as any))
                   resolve()
                 }
@@ -908,6 +923,7 @@ export class AsyncIDBStore<
         record,
         typeof options === "boolean" ? undefined : options
       )
+      ;(record as any)[$RELATIONAL_DERIVED] = true
     }
 
     return record
@@ -941,7 +957,7 @@ export class AsyncIDBStore<
       return result
     } else if (relationType === "one-to-many") {
       const limit = options?.limit || Infinity
-      const results = await targetStore.findMany(predicate, limit)
+      const results = await targetStore.findMany(predicate, { limit })
 
       // Handle nested relations if specified
       if (results.length > 0 && options?.with) {
@@ -954,4 +970,11 @@ export class AsyncIDBStore<
 
     return relationType === "one-to-many" ? [] : null
   }
+}
+
+const abortTx = (tx: IDBTransaction) => {
+  try {
+    if (tx.error) return
+    tx.abort()
+  } catch {}
 }
