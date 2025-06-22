@@ -50,7 +50,6 @@ export class AsyncIDBStore<
   #eventListeners: Record<CollectionEvent, CollectionEventCallback<T, CollectionEvent>[]>
   #tx?: IDBTransaction
   #dependentStoreNames: Set<string>
-  #txScope: Set<string>
   #serialize: (record: CollectionRecord<T>) => any
   #deserialize: (record: any) => CollectionRecord<T>
   #relations: Record<string, StoreRelation> = {}
@@ -64,7 +63,6 @@ export class AsyncIDBStore<
       clear: [],
     }
     this.#dependentStoreNames = new Set()
-    this.#txScope = new Set([this.name])
     const { read, write } = this.collection.serializationConfig
     this.#serialize = write
     this.#deserialize = read
@@ -526,64 +524,6 @@ export class AsyncIDBStore<
     store.cacheRelations()
   }
 
-  static finalizeDependencies(db: AsyncIDB<any, any>, store: AsyncIDBStore<any, any>) {
-    const seenNames = new Set<string>([store.name])
-    const stack: string[] = [...store.#dependentStoreNames]
-
-    while (stack.length) {
-      const name = stack.shift()!
-      if (seenNames.has(name)) {
-        continue
-      }
-      store.#txScope.add(name)
-      seenNames.add(name)
-      stack.push(...db.stores[name].#dependentStoreNames)
-    }
-  }
-
-  static buildRelationsMap(db: AsyncIDB<any, RelationsShema>) {
-    AsyncIDBStore.relationMap.clear()
-
-    const relations = db.relations
-    for (const relationsGroupName in relations) {
-      const { from, to, relationsMap } = relations[relationsGroupName] as {
-        from: AnyCollection
-        to: AnyCollection
-        relationsMap: RelationsDefinitionMap<AnyCollection, AnyCollection>
-      }
-
-      const fromName = Object.entries(db.stores).find(
-        ([_, store]) => store.collection === from
-      )?.[0]
-      const toName = Object.entries(db.stores).find(([_, store]) => store.collection === to)?.[0]
-      if (!fromName || !toName) {
-        console.warn(`[async-idb-orm]: No store found for ${relationsGroupName} in ${db.stores}`)
-        continue
-      }
-
-      for (const relationName in relationsMap) {
-        const definition = relationsMap[relationName]
-        const fromCacheKey = `${fromName}:${relationName}`
-
-        if (AsyncIDBStore.relationMap.has(fromCacheKey)) {
-          console.warn(
-            `[async-idb-orm]: Relation map already has an entry for ${fromCacheKey}:`,
-            AsyncIDBStore.relationMap.get(fromCacheKey)
-          )
-          continue
-        }
-
-        AsyncIDBStore.relationMap.set(fromCacheKey, {
-          definition,
-          from: fromName,
-          to: toName,
-        })
-      }
-    }
-
-    console.log("Relation map:", AsyncIDBStore.relationMap)
-  }
-
   private firstByKeyDirection<U extends CollectionIndexName<T>>(
     name: U,
     direction: "next" | "prev"
@@ -718,7 +658,7 @@ export class AsyncIDBStore<
         )
       }
       this.db.getInstance((db) => {
-        const tx = db.transaction(this.#txScope, "readwrite")
+        const tx = db.transaction(this.db.storeNames, "readwrite")
         const objectStore = tx.objectStore(this.name)
         reqHandler({ db, objectStore, tx }, resolve, reject)
       })

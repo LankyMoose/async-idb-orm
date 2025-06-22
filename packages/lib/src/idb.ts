@@ -24,6 +24,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
   stores: {
     [key in keyof T]: AsyncIDBStore<T[key], R>
   }
+  storeNames: string[]
   onUpgrade?: OnDBUpgradeCallback<T, R>
   bc: BroadcastChannel
   relayEnabled?: boolean
@@ -37,6 +38,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
     this.relations = config.relations ?? ({} as R)
     this.version = config.version
     this.stores = this.createStores()
+    this.storeNames = Object.keys(this.schema)
     this.relayEnabled = config.relayEvents !== false
 
     let latest = this.version
@@ -80,7 +82,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
 
   async transaction(callback: IDBTransactionCallback<T, R>, options?: IDBTransactionOptions) {
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
-    const tx = idbInstance.transaction(Object.keys(this.schema), "readwrite", options)
+    const tx = idbInstance.transaction(this.storeNames, "readwrite", options)
 
     const eventQueue: Function[] = []
     const txCollections = this.cloneStoresForTransaction(tx, eventQueue)
@@ -118,10 +120,6 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsShema> {
     for (const store of Object.values(this.stores)) {
       AsyncIDBStore.init(store)
     }
-    for (const store of Object.values(this.stores)) {
-      AsyncIDBStore.finalizeDependencies(this, store)
-    }
-    AsyncIDBStore.buildRelationsMap(this)
 
     const request = indexedDB.open(this.name, this.version)
     request.onerror = this.config.onError ?? console.error
