@@ -3,7 +3,7 @@ import { keyPassThroughProxy } from "./utils.js"
 
 const RelationsBuilderSentinel = Symbol()
 
-type RelationType = "one-to-one" | "one-to-many"
+export type RelationType = "one-to-one" | "one-to-many"
 
 export type RelationDefinition<From extends AnyCollection, To extends AnyCollection> = {
   type: RelationType

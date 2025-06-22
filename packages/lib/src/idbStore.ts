@@ -21,15 +21,12 @@ import type {
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
 import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
-import { RelationDefinition, RelationsDefinitionMap } from "relations"
+import { RelationDefinition, Relations } from "./relations"
 
-type RelationMapEntry = {
-  definition: RelationDefinition<any, any>
-  from: string
-  to: string
+type StoreRelation = {
+  other: AsyncIDBStore<any, any>
+  def: RelationDefinition<any, any>
 }
-
-type RelationMap = Map<string, RelationMapEntry>
 
 /**
  * A utility instance that represents a collection in an IndexedDB database and provides methods for interacting with the collection.
@@ -56,7 +53,7 @@ export class AsyncIDBStore<
   #txScope: Set<string>
   #serialize: (record: CollectionRecord<T>) => any
   #deserialize: (record: any) => CollectionRecord<T>
-  private static relationMap: RelationMap = new Map()
+  #relations: Record<string, StoreRelation> = {}
   constructor(private db: AsyncIDB<any, any>, private collection: T, public name: string) {
     this.#onBeforeDelete = []
     this.#onBeforeCreate = []
@@ -501,8 +498,32 @@ export class AsyncIDBStore<
     return cloned
   }
 
+  private cacheRelations() {
+    this.#relations = Object.entries(this.db.relations).reduce<Record<string, StoreRelation>>(
+      (acc, [_, rels]) => {
+        if (!(rels instanceof Relations)) return acc
+        if (rels.from !== this.collection) return acc
+
+        for (const relationName in rels.relationsMap) {
+          const tgtCollection: AnyCollection = rels.to
+          const tgtStore = Object.entries(this.db.stores).find(
+            ([_, store]) => store.collection === tgtCollection
+          )?.[1]
+          if (!tgtStore) continue
+          acc[relationName] = {
+            other: tgtStore,
+            def: rels.relationsMap[relationName],
+          }
+        }
+        return acc
+      },
+      {}
+    )
+  }
+
   static init(store: AsyncIDBStore<any, any>) {
     store.initForeignKeys()
+    store.cacheRelations()
   }
 
   static finalizeDependencies(db: AsyncIDB<any, any>, store: AsyncIDBStore<any, any>) {
@@ -924,7 +945,7 @@ export class AsyncIDBStore<
       }
 
       // Find the relation definition from the database relations schema
-      const relationDef = AsyncIDBStore.relationMap.get(`${this.name}:${relationName}`)
+      const relationDef = this.#relations[relationName]
       if (!relationDef) {
         console.warn(
           `[async-idb-orm]: No relation definition found for ${relationName} in ${this.name}`
@@ -943,20 +964,15 @@ export class AsyncIDBStore<
   }
 
   private assertNoRelations(record: CollectionRecord<T>, action: string) {
-    AsyncIDBStore.relationMap.forEach((entry, name) => {
-      if (entry.from === this.name) {
-        const relationName = name.split(":")[1]
-        if (relationName in record) {
-          throw new Error(
-            `[async-idb-orm]: unable to ${action} record with relation ${relationName}`
-          )
-        }
+    for (const relationName in this.#relations) {
+      if (relationName in record) {
+        throw new Error(`[async-idb-orm]: unable to ${action} record with relation ${relationName}`)
       }
-    })
+    }
   }
 
   private async fetchRelatedRecords(
-    relationMapEntry: RelationMapEntry,
+    relationDef: StoreRelation,
     record: CollectionRecord<T>,
     options?: {
       limit?: number
@@ -964,10 +980,9 @@ export class AsyncIDBStore<
       with?: Record<string, boolean | any>
     }
   ) {
-    const { definition, to: targetStoreName } = relationMapEntry
-    const { type: relationType, from: sourceField, to: targetField } = definition
+    const { def, other } = relationDef
+    const { type: relationType, from: sourceField, to: targetField } = def
     const sourceValue = record[sourceField]
-    const targetStore = this.db.stores[targetStoreName]
 
     const basePredicate = (item: any) => item[targetField] === sourceValue
     const predicate = options?.where
@@ -975,20 +990,20 @@ export class AsyncIDBStore<
       : basePredicate
 
     if (relationType === "one-to-one") {
-      const result = await targetStore.find(predicate)
+      const result = await other.find(predicate)
       // Handle nested relations if specified
       if (result && options?.with) {
-        return await targetStore.resolveRelations(result, options.with)
+        return await other.resolveRelations(result, options.with)
       }
       return result
     } else if (relationType === "one-to-many") {
       const limit = options?.limit || Infinity
-      const results = await targetStore.findMany(predicate, { limit })
+      const results = await other.findMany(predicate, { limit })
 
       // Handle nested relations if specified
       if (results.length > 0 && options?.with) {
         return await Promise.all(
-          results.map((result) => targetStore.resolveRelations(result, options.with!))
+          results.map((result) => other.resolveRelations(result, options.with!))
         )
       }
       return results
