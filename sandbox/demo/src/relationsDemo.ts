@@ -1,5 +1,5 @@
-import { assertThrows } from "./assert"
-import { db, Post, PostComment, Todo } from "./db"
+import { assert, assertThrows } from "./assert"
+import { db, Post, Todo } from "./db"
 
 /**
  * Comprehensive Relations API Demo
@@ -13,8 +13,6 @@ import { db, Post, PostComment, Todo } from "./db"
  */
 
 async function setupTestData() {
-  console.log("Setting up test data...")
-
   // Clear existing data
   await db.collections.postComments.clear()
   await db.collections.posts.clear()
@@ -32,8 +30,6 @@ async function setupTestData() {
     age: 32,
   })
 
-  console.log("Created users:", { user1, user2 })
-
   // Create test posts
   const posts: Post[] = []
   for (let i = 0; i < 5; i++) {
@@ -50,20 +46,20 @@ async function setupTestData() {
   })
   posts.push(bobPost)
 
-  console.log("Created posts:", posts)
-
   // Create test comments
-  const comments: PostComment[] = []
   for (let i = 0; i < 3; i++) {
-    const comment = await db.collections.postComments.create({
+    await db.collections.postComments.create({
       content: `Comment ${i + 1} on post 1`,
       postId: posts[0].id,
       userId: user2.id, // Bob commenting on Alice's post
     })
-    comments.push(comment)
   }
-
-  console.log("Created comments:", comments)
+  // add a comment on Bob's important post
+  await db.collections.postComments.create({
+    content: "Comment on Bob's important post",
+    postId: bobPost.id,
+    userId: user1.id, // Alice commenting on Bob's important post
+  })
 
   // Create test todos
   const todos: Todo[] = []
@@ -74,144 +70,91 @@ async function setupTestData() {
     })
     todos.push(todo)
   }
-
-  console.log("Created todos:", todos)
-  console.log("Test data setup complete!")
-
-  return { users: [user1, user2], posts, comments, todos }
 }
 
 async function demonstrateBasicRelations() {
-  console.log("\n=== 1. Basic Relations Demo ===")
-  const alice = await db.collections.users.find((u) => u.name === "Alice Johnson")
-
-  // Load user with all their posts
-  const userWithPosts = await db.collections.users.find(alice.id, {
+  const userWithPosts = await db.collections.users.find(() => true, {
     with: {
       userPosts: {
-        limit: 5,
         where: (post) => post.content.includes("Important"),
+        limit: 1,
       },
     },
   })
+
+  assert(userWithPosts, "should find user with posts")
+  assert(userWithPosts.userPosts.length === 1, "should find 1 important post")
 
   assertThrows(() => {
     db.collections.users.wrap(userWithPosts)
   }, "should not be able to upgrade relational record -> active record")
 
-  console.log("User with posts:", userWithPosts)
-
-  // Load posts with their authors
   const postsWithAuthors = await db.collections.posts.all({
     with: {
       author: true,
     },
   })
-  console.log("All posts with authors:", postsWithAuthors)
-}
-
-async function demonstrateFilteredRelations() {
-  console.log("\n=== 2. Filtered Relations Demo ===")
-  const alice = await db.collections.users.find((u) => u.name === "Alice Johnson")
-
-  // Load user with only "important" posts
-  const userWithImportantPosts = await db.collections.users.find(alice.id, {
-    with: {
-      userPosts: {
-        where: (post) => post.content.includes("Important"),
-      },
-    },
-  })
-  console.log("User with important posts:", userWithImportantPosts)
-
-  // Load user with recent posts (all posts in this demo are recent)
-  const userWithRecentPosts = await db.collections.users.find(alice.id, {
-    with: {
-      userPosts: {
-        where: (post) => post.createdAt > Date.now() - 24 * 60 * 60 * 1000,
-      },
-    },
-  })
-  console.log("User with recent posts:", userWithRecentPosts)
+  assert(
+    postsWithAuthors.every((post) => !!post.author),
+    "should find all posts with authors"
+  )
 }
 
 async function demonstrateLimitedRelations() {
-  console.log("\n=== 3. Limited Relations Demo ===")
-  const alice = await db.collections.users.find((u) => u.name === "Alice Johnson")
-
-  // Load user with only first 2 posts
-  const userWithLimitedPosts = await db.collections.users.find(alice.id, {
+  const userWithLimitedPosts = await db.collections.users.find((u) => u.name === "Alice Johnson", {
     with: {
       userPosts: {
         limit: 2,
       },
     },
   })
-  console.log("User with limited posts (2):", userWithLimitedPosts)
+  assert(userWithLimitedPosts?.userPosts.length === 2, "should find 2 limited posts")
 
   // Load user with only first 3 todos
-  const userWithLimitedTodos = await db.collections.users.find(alice.id, {
+  const userWithLimitedTodos = await db.collections.users.find((u) => u.name === "Alice Johnson", {
     with: {
       userTodos: {
         limit: 3,
       },
     },
   })
-  console.log("User with limited todos (3):", userWithLimitedTodos)
+  assert(userWithLimitedTodos?.userTodos.length === 3, "should find 3 limited todos")
 }
 
 async function demonstrateComplexRelations() {
-  console.log("\n=== 4. Complex Relations Demo ===")
-
-  // Combine filtering and limiting
-  const alice = await db.collections.users.find((u) => u.name === "Alice Johnson")
-  const userWithFilteredLimitedPosts = await db.collections.users.find(alice.id, {
-    with: {
-      userPosts: {
-        where: (post) => post.content.includes("Post"),
-        limit: 3,
+  const userWithFilteredLimitedPosts = await db.collections.users.find(
+    (u) => u.name === "Alice Johnson",
+    {
+      with: {
+        userPosts: {
+          where: (post) => post.content.includes("Post"),
+          limit: 3,
+        },
       },
-    },
-  })
-  console.log("User with filtered and limited posts:", userWithFilteredLimitedPosts)
+    }
+  )
+  assert(
+    userWithFilteredLimitedPosts?.userPosts.length === 3,
+    "should find 3 filtered limited posts"
+  )
 
   // Load multiple relation types
-  const userWithMultipleRelations = await db.collections.users.find(alice.id, {
-    with: {
-      userPosts: { limit: 2 },
-      userTodos: { limit: 2 },
-      userComments: true,
-    },
-  })
-  console.log("User with multiple relations:", userWithMultipleRelations)
-}
-
-async function demonstrateReverseRelations() {
-  console.log("\n=== 5. Reverse Relations Demo ===")
-
-  // Load comment with its post and author
-  const comments = await db.collections.postComments.all()
-  if (comments.length > 0) {
-    const commentWithRelations = await db.collections.postComments.find(comments[0].id, {
+  const userWithMultipleRelations = await db.collections.users.find(
+    (u) => u.name === "Alice Johnson",
+    {
       with: {
-        post: true,
-        author: true,
+        userPosts: { limit: 2 },
+        userTodos: { limit: 2 },
+        userComments: true,
       },
-    })
-    console.log("Comment with post and author:", commentWithRelations)
-  }
-
-  // Load post with its comments
-  const posts = await db.collections.posts.all()
-  if (posts.length > 0) {
-    const postWithComments = await db.collections.posts.find(posts[0].id, {
-      with: {
-        postComments: true,
-        author: true,
-      },
-    })
-    console.log("Post with comments and author:", postWithComments)
-  }
+    }
+  )
+  assert(
+    userWithMultipleRelations?.userPosts.length === 2 &&
+      userWithMultipleRelations?.userTodos.length === 2 &&
+      userWithMultipleRelations?.userComments.length > 0,
+    "should find 2 posts, 2 todos and at least 1 comment"
+  )
 }
 
 export async function runCompleteDemo() {
@@ -220,10 +163,8 @@ export async function runCompleteDemo() {
   try {
     await setupTestData()
     await demonstrateBasicRelations()
-    await demonstrateFilteredRelations()
     await demonstrateLimitedRelations()
     await demonstrateComplexRelations()
-    await demonstrateReverseRelations()
 
     // cleanup - have to delete todos before users because of foreign key constraint
     const todos = await db.collections.todos.all()
