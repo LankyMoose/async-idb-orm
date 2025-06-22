@@ -1,5 +1,5 @@
-import { assert, assertThrows } from "./assert"
-import { db, Post, Todo } from "./db"
+import { assert, assertThrows } from "../assert"
+import { db, Post, Todo } from "../db"
 
 /**
  * Comprehensive Relations API Demo
@@ -157,7 +157,7 @@ async function demonstrateComplexRelations() {
   )
 }
 
-export async function runCompleteDemo() {
+export async function runRelationsTest() {
   console.log("🚀 Starting Complete Relations API Demo")
 
   try {
@@ -183,4 +183,4 @@ export async function runCompleteDemo() {
 }
 
 // Export for use in main app
-export { runCompleteDemo as default }
+export { runRelationsTest as default }
