@@ -337,13 +337,30 @@ export class AsyncIDBStore<
 
   /**
    * Gets all records in the store
+   * @param {FindManyOptions<_R, string>} [options] - Options for finding with relations
    * @returns {Promise<CollectionRecord<T>[]>}
    */
-  all() {
-    return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
+  all<Options extends FindManyOptions<_R, T>>(
+    options?: Options
+  ): Promise<RelationResult<T, _R, Options>[]> {
+    return this.queueTask<RelationResult<T, _R, Options>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.getAll()
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result.map(this.#deserialize))
+      request.onsuccess = () => {
+        const deserialized = request.result.map(this.#deserialize) as RelationResult<
+          T,
+          _R,
+          Options
+        >[]
+        if (options?.with) {
+          return resolve(
+            Promise.all(
+              deserialized.map((item) => this.resolveRelations(item, options.with!))
+            ) as any as RelationResult<T, _R, Options>[]
+          )
+        }
+        resolve(deserialized)
+      }
     })
   }
 

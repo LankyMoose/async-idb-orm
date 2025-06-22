@@ -101,16 +101,13 @@ async function demonstrateBasicRelations() {
 
   console.log("User with posts:", userWithPosts)
 
-  // Load post with its author
-  const posts = await db.collections.posts.all()
-  if (posts.length > 0) {
-    const postWithAuthor = await db.collections.posts.find(posts[0].id, {
-      with: {
-        author: true,
-      },
-    })
-    console.log("Post with author:", postWithAuthor)
-  }
+  // Load posts with their authors
+  const postsWithAuthors = await db.collections.posts.all({
+    with: {
+      author: true,
+    },
+  })
+  console.log("All posts with authors:", postsWithAuthors)
 }
 
 async function demonstrateFilteredRelations() {

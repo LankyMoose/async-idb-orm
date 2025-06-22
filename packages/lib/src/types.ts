@@ -237,7 +237,7 @@ type FindRelationForName<R extends RelationsShema, RelationName extends string> 
     ? RelationName extends keyof RelMap
       ? RelMap[RelationName] extends { type: infer Type }
         ? Type extends "one-to-one"
-          ? CollectionRecord<To> | null
+          ? CollectionRecord<To>
           : Type extends "one-to-many"
           ? CollectionRecord<To>[]
           : never
@@ -248,11 +248,9 @@ type FindRelationForName<R extends RelationsShema, RelationName extends string> 
 
 // Map relation names in 'with' options to their types
 type MapRelationsToTypes<R extends RelationsShema, WithOptions extends Record<string, any>> = {
-  [K in keyof WithOptions]: K extends string
-    ? FindRelationForName<R, K> extends never
-      ? any // fallback for unknown relations
-      : FindRelationForName<R, K>
-    : never
+  [K in keyof WithOptions & string]: FindRelationForName<R, K> extends Array<infer T>
+    ? T[]
+    : FindRelationForName<R, K> | null
 }
 
 // Main result type with proper relation inference
