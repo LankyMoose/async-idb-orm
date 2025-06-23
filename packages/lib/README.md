@@ -8,7 +8,8 @@
 > - [Events](#events)
 > - [Active Records](#active-records)
 > - [Transactions](#transactions)
-> - [Relations & Foreign Keys](#relations--foreign-keys)
+> - [Relations](#relations)
+> - [Foreign Keys](#foreign-keys)
 > - [Async Iteration](#async-iteration)
 > - [Serialization](#serialization)
 > - [Migrations](#migrations)
@@ -204,7 +205,231 @@ async function transferFunds(
 
 ---
 
-### Relations & Foreign Keys
+### Relations
+
+Relations allow you to define and load related data across collections with a powerful, type-safe interface. It supports one-to-one and one-to-many relationships with filtering, limiting, and nested relation loading.
+
+#### Defining Relations
+
+Relations are defined separately from collections using the `Relations.create()` method:
+
+```ts
+import { Relations, Collection, idb } from "async-idb-orm"
+
+// Collections
+type User = { id: number; name: string; age: number }
+type Post = { id: string; content: string; userId: number }
+type Comment = { id: string; content: string; postId: string; userId: number }
+
+const users = Collection.create<User>().withKeyPath("id", { autoIncrement: true })
+const posts = Collection.create<Post>()
+const comments = Collection.create<Comment>()
+
+// Define relations
+const userPostRelations = Relations.create(users, posts).as({
+  userPosts: (userFields, postFields) => ({
+    type: "one-to-many",
+    from: userFields.id,
+    to: postFields.userId,
+  }),
+})
+
+const postUserRelations = Relations.create(posts, users).as({
+  author: (postFields, userFields) => ({
+    type: "one-to-one",
+    from: postFields.userId,
+    to: userFields.id,
+  }),
+})
+
+const postCommentRelations = Relations.create(posts, comments).as({
+  postComments: (postFields, commentFields) => ({
+    type: "one-to-many",
+    from: postFields.id,
+    to: commentFields.postId,
+  }),
+})
+
+// Setup database with relations
+const db = idb("my-app", {
+  schema: { users, posts, comments },
+  relations: {
+    userPostRelations,
+    postUserRelations,
+    postCommentRelations,
+  },
+  version: 1,
+})
+```
+
+#### Loading Relations
+
+Use the `with` option in query methods to load related data:
+
+```ts
+// Load user with all their posts
+const userWithPosts = await db.collections.users.find(1, {
+  with: {
+    userPosts: true,
+  },
+})
+// userWithPosts.userPosts: Post[]
+
+// Load posts with their authors
+const postsWithAuthors = await db.collections.posts.all({
+  with: {
+    author: true,
+  },
+})
+// Each post now has an `author` property: User
+
+// Load multiple relations
+const userWithPostsAndComments = await db.collections.users.find(1, {
+  with: {
+    userPosts: true,
+    userComments: true,
+  },
+})
+```
+
+#### Filtering Relations
+
+Apply filters to loaded relations using the `where` option:
+
+```ts
+// Load user with only important posts
+const userWithImportantPosts = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      where: (post) => post.content.includes("Important"),
+    },
+  },
+})
+
+// Load posts with comments by specific user
+const postsWithSpecificComments = await db.collections.posts.all({
+  with: {
+    postComments: {
+      where: (comment) => comment.userId === specificUserId,
+    },
+  },
+})
+```
+
+#### Limiting Relations
+
+Control the number of related records loaded using the `limit` option:
+
+```ts
+// Load user with only their 5 most recent posts
+const userWithRecentPosts = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      limit: 5,
+    },
+  },
+})
+
+// Combine filtering and limiting
+const userWithRecentImportantPosts = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      where: (post) => post.content.includes("Important"),
+      limit: 3,
+    },
+  },
+})
+```
+
+#### Nested Relations
+
+Load relations of relations for deep data fetching:
+
+```ts
+// Load user with posts and their comments
+const userWithPostsAndComments = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      limit: 10,
+      with: {
+        postComments: true,
+      },
+    },
+  },
+})
+// userWithPostsAndComments.userPosts[0].postComments: Comment[]
+
+// Complex nested example with filtering
+const userWithFilteredNestedData = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      where: (post) => post.content.includes("Tutorial"),
+      limit: 5,
+      with: {
+        postComments: {
+          where: (comment) => comment.content.length > 10,
+          limit: 3,
+        },
+      },
+    },
+  },
+})
+```
+
+#### Working with Multiple Query Methods
+
+The Relations API works with all collection query methods:
+
+```ts
+// find()
+const user = await db.collections.users.find(1, { with: { userPosts: true } })
+
+// findMany()
+const activeUsers = await db.collections.users.findMany((user) => user.age > 18, {
+  with: { userPosts: { limit: 5 } },
+})
+
+// all()
+const allUsersWithPosts = await db.collections.users.all({
+  with: { userPosts: true },
+})
+
+// Note: Relations are read-only, you cannot upgrade relational records to active records
+```
+
+#### Type Safety
+
+The Relations API is fully type-safe. TypeScript will enforce:
+
+- Only defined relation names can be used in `with` clauses
+- Relation types match the expected data structure
+- Nested relations are properly typed
+- Filter functions receive correctly typed parameters
+
+```ts
+// ✅ Valid - userPosts is defined in relations
+const user = await db.collections.users.find(1, {
+  with: { userPosts: true },
+})
+
+// ❌ TypeScript error - invalidRelation doesn't exist
+const user = await db.collections.users.find(1, {
+  with: { invalidRelation: true },
+})
+
+// ✅ Fully typed filter function
+const user = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      where: (post) => post.content.includes("test"), // post is typed as Post
+    },
+  },
+})
+```
+
+---
+
+### Foreign Keys
 
 IndexedDB does not implement foreign key constraints. **async-idb-orm** allows you to define pseudo-foreign-keys on collections that are simulated during query execution.
 
