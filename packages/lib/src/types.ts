@@ -1,12 +1,22 @@
 import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./collection"
+import type { Relations } from "./relations"
 
-export type AsyncIDBConfig<T extends CollectionSchema> = {
+type Prettify<T> = {
+  [K in keyof T]: T[K]
+} & {}
+
+export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsSchema> = {
   /**
    * Collection schema - `Record<string, Collection>`
    * @see {@link Collection}
    */
   schema: T
+  /**
+   * Relations schema - `Record<string, Relations>`
+   * @see {@link Relations}
+   */
+  relations?: R
   /**
    * Database version - increment this to trigger an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event
    */
@@ -23,7 +33,7 @@ export type AsyncIDBConfig<T extends CollectionSchema> = {
   /**
    * Provides a callback to migrate the database from one version to another
    */
-  onUpgrade?: OnDBUpgradeCallback<T>
+  onUpgrade?: OnDBUpgradeCallback<T, R>
 
   /**
    * Provides a callback to hande the outcome of a **block resolution**. Useful for doing a reload of the page in case the tab is too old.
@@ -60,22 +70,22 @@ export type TransactionOptions = IDBTransactionOptions & {
   durability?: IDBTransactionDurability
 }
 
-export type IDBTransactionCallback<T extends CollectionSchema> = (
-  ctx: AsyncIDBInstance<T>["collections"],
+export type IDBTransactionCallback<T extends CollectionSchema, R extends RelationsSchema> = (
+  ctx: AsyncIDBInstance<T, R>["collections"],
   tx: IDBTransaction
 ) => unknown
 
-export type IDBTransactionFunction<T extends CollectionSchema> = <
-  CB extends IDBTransactionCallback<T>
+export type IDBTransactionFunction<T extends CollectionSchema, R extends RelationsSchema> = <
+  CB extends IDBTransactionCallback<T, R>
 >(
   callback: CB,
   options?: TransactionOptions
 ) => Promise<ReturnType<CB>>
 
-export type OnDBUpgradeCallbackContext<T extends CollectionSchema> = {
+export type OnDBUpgradeCallbackContext<T extends CollectionSchema, R extends RelationsSchema> = {
   db: IDBDatabase
   collections: {
-    [key in keyof T]: AsyncIDBStore<T[key]>
+    [key in keyof T]: AsyncIDBStore<T[key], R>
   }
   /**
    * Deletes a store from IndexedDB
@@ -87,16 +97,16 @@ export type OnDBUpgradeCallbackContext<T extends CollectionSchema> = {
   createStore: (name: keyof T & string) => IDBObjectStore
 }
 
-export type OnDBUpgradeCallback<T extends CollectionSchema> = (
-  ctx: OnDBUpgradeCallbackContext<T>,
+export type OnDBUpgradeCallback<T extends CollectionSchema, R extends RelationsSchema> = (
+  ctx: OnDBUpgradeCallbackContext<T, R>,
   event: IDBVersionChangeEvent
 ) => Promise<void>
 
-export type AsyncIDBInstance<T extends CollectionSchema> = {
+export type AsyncIDBInstance<T extends CollectionSchema, R extends RelationsSchema> = {
   collections: {
-    [key in keyof T]: AsyncIDBStore<T[key]>
+    [key in keyof T]: AsyncIDBStore<T[key], R>
   }
-  transaction: IDBTransactionFunction<T>
+  transaction: IDBTransactionFunction<T, R>
   getInstance: () => Promise<IDBDatabase>
 }
 
@@ -104,8 +114,14 @@ export type DBInstanceCallback = (db: IDBDatabase) => any
 
 type NonEmptyArray = [any, ...any[]]
 
+export type RelationsSchema = {
+  [key: string]: Relations<any, any, any>
+}
+
+export type AnyCollection = Collection<any, any, any, any, any>
+
 export type CollectionSchema = {
-  [key: string]: Collection<any, any, any, any, any>
+  [key: string]: AnyCollection
 }
 
 export type ActiveRecord<T> = T & ActiveRecordMethods<T>
@@ -120,20 +136,16 @@ export type TransactionContext = {
   tx: IDBTransaction
 }
 export type CollectionEvent = "write" | "delete" | "write|delete" | "clear"
-export type CollectionEventCallback<
-  T extends Collection<any, any, any, any, any>,
-  U extends CollectionEvent
-> = (data: U extends "clear" ? null : CollectionRecord<T>) => void
+export type CollectionEventCallback<T extends AnyCollection, U extends CollectionEvent> = (
+  data: U extends "clear" ? null : CollectionRecord<T>
+) => void
 
-export type CollectionIndexName<T extends Collection<any, any, any, any, any>> =
-  T["indexes"][number]["name"]
-export type CollectionRecord<T extends Collection<any, any, any, any, any>> =
-  T[typeof $COLLECTION_INTERNAL]["record"]
-export type CollectionDTO<T extends Collection<any, any, any, any, any>> =
-  T[typeof $COLLECTION_INTERNAL]["dto"]
+export type CollectionIndexName<T extends AnyCollection> = T["indexes"][number]["name"]
+export type CollectionRecord<T extends AnyCollection> = T[typeof $COLLECTION_INTERNAL]["record"]
+export type CollectionDTO<T extends AnyCollection> = T[typeof $COLLECTION_INTERNAL]["dto"]
 
 export type CollectionKeyPathType<
-  T extends Collection<any, any, any, any, any>,
+  T extends AnyCollection,
   KeyPath = T["keyPath"]
 > = KeyPath extends keyof T[typeof $COLLECTION_INTERNAL]["record"]
   ? T[typeof $COLLECTION_INTERNAL]["record"][KeyPath]
@@ -153,3 +165,125 @@ export enum CollectionIDMode {
 export type RecordKeyPath<RecordType extends Record<string, any>> =
   | (keyof RecordType & string)
   | ((keyof RecordType & string)[] & NonEmptyArray)
+
+// Relations API types - improved version with recursive nested relations support
+
+// Extract the target collection for a specific relation name from a source collection
+type GetTargetCollectionForRelation<
+  R extends RelationsSchema,
+  SourceCollection extends AnyCollection,
+  RelationName extends string
+> = {
+  [K in keyof R]: R[K] extends Relations<infer From, infer To, infer RelMap>
+    ? From extends SourceCollection
+      ? RelationName extends keyof RelMap
+        ? To
+        : never
+      : never
+    : never
+}[keyof R]
+
+// Recursive relation options that are aware of the target collection
+type RelationWithOptionsForCollection<R extends RelationsSchema, T extends AnyCollection> = {
+  limit?: number
+  where?: (record: any) => boolean
+  with?: T extends AnyCollection
+    ? {
+        [K in ValidRelationNamesForCollection<R, T> & string]?:
+          | boolean
+          | RelationWithOptionsForCollection<R, GetTargetCollectionForRelation<R, T, K>>
+      }
+    : Record<string, boolean | RelationWithOptionsForCollection<R, any>>
+}
+
+// Main RelationWithOptions type (for backward compatibility)
+export type RelationWithOptions<R extends RelationsSchema> = RelationWithOptionsForCollection<
+  R,
+  any
+>
+
+// Extract valid relation names for a specific collection
+// Only include relations where the current collection is the 'From' collection
+type ValidRelationNamesForCollection<
+  R extends RelationsSchema,
+  CurrentCollection extends AnyCollection
+> = {
+  [K in keyof R]: R[K] extends Relations<infer From, any, infer RelMap>
+    ? From extends CurrentCollection
+      ? keyof RelMap
+      : never
+    : never
+}[keyof R]
+
+// Improved FindOptions that constrains relation names to valid ones for the collection
+export type FindOptions<R extends RelationsSchema = any, T extends AnyCollection = any> = {
+  with?: T extends AnyCollection
+    ? {
+        [K in ValidRelationNamesForCollection<R, T> & string]?:
+          | boolean
+          | RelationWithOptionsForCollection<R, GetTargetCollectionForRelation<R, T, K>>
+      }
+    : Record<string, boolean | RelationWithOptions<R>>
+}
+
+// Find the relation definition for a given relation name
+type FindRelationForName<R extends RelationsSchema, RelationName extends string> = {
+  [K in keyof R]: R[K] extends Relations<any, infer To, infer RelMap>
+    ? RelationName extends keyof RelMap
+      ? RelMap[RelationName] extends { type: infer Type }
+        ? Type extends "one-to-one"
+          ? CollectionRecord<To>
+          : Type extends "one-to-many"
+          ? CollectionRecord<To>[]
+          : never
+        : never
+      : never
+    : never
+}[keyof R]
+
+// Helper type to recursively process nested with options
+type ProcessNestedRelations<
+  R extends RelationsSchema,
+  WithOptions extends Record<string, any>,
+  RelationName extends string
+> = WithOptions[RelationName] extends { with: infer NestedWith }
+  ? NestedWith extends Record<string, any>
+    ? FindRelationForName<R, RelationName> extends Array<infer ArrayElement>
+      ? (ArrayElement & Prettify<MapRelationsToTypes<R, NestedWith>>)[]
+      : FindRelationForName<R, RelationName> extends infer SingleElement
+      ? SingleElement extends null | undefined
+        ? (SingleElement & Prettify<MapRelationsToTypes<R, NestedWith>>) | null
+        : SingleElement & Prettify<MapRelationsToTypes<R, NestedWith>>
+      : never
+    : FindRelationForName<R, RelationName>
+  : FindRelationForName<R, RelationName>
+
+// Enhanced MapRelationsToTypes that handles nested relations recursively
+type MapRelationsToTypes<R extends RelationsSchema, WithOptions extends Record<string, any>> = {
+  [K in keyof WithOptions & string]: ProcessNestedRelations<R, WithOptions, K> extends Array<
+    infer T
+  >
+    ? T[]
+    : ProcessNestedRelations<R, WithOptions, K> | null
+}
+
+// Main result type with proper relation inference
+export type RelationResult<
+  T extends AnyCollection,
+  R extends RelationsSchema,
+  Options extends FindOptions<R, T>
+> = Options extends { with: infer With }
+  ? With extends Record<string, any>
+    ? CollectionRecord<T> & Prettify<MapRelationsToTypes<R, With>>
+    : CollectionRecord<T>
+  : CollectionRecord<T>
+
+// Legacy types for backward compatibility
+export type RelationsWith<R extends RelationsSchema, _CollectionName extends string> = Record<
+  string,
+  boolean | RelationWithOptions<R>
+>
+export type RelationsWithOptions<
+  R extends RelationsSchema,
+  _CollectionName extends string
+> = RelationWithOptions<R>

@@ -4,7 +4,7 @@ export function assert(booleanish: unknown, msg: string): asserts booleanish is 
   }
   console.debug("passed: ", msg)
 }
-export async function assertThrows(cb: () => Promise<void>, msg: string) {
+export async function assertThrows(cb: () => void | Promise<void>, msg: string) {
   let didThrow = false
   try {
     await cb()

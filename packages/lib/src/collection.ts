@@ -1,6 +1,7 @@
-import { AsyncIDB } from "idb"
-import { AsyncIDBStore } from "./idbStore"
+import type { AsyncIDB } from "./idb"
 import { CollectionIDMode, CollectionIndex, SerializationConfig } from "./types"
+import { AsyncIDBStore } from "./idbStore.js"
+import { keyPassThroughProxy } from "./utils.js"
 
 const CollectionBuilderSentinel = Symbol()
 
@@ -56,8 +57,6 @@ type ForeignKeyConfigCallback<RecordType extends Record<string, any>> = (fields:
   [key in keyof RecordType & string]: key
 }) => CollectionForeignKeyConfig<RecordType>[]
 
-const keyPassThroughProxy = new Proxy({}, { get: (_: any, key: string) => key })
-
 /**
  * @description Collection builder
  * @see {@link Collection.create}
@@ -86,7 +85,7 @@ export class Collection<
     read: (data: any) => data,
   }
 
-  constructor(key: symbol) {
+  private constructor(key: symbol) {
     if (key !== CollectionBuilderSentinel)
       throw new Error("Cannot call CollectionBuilder directly - use Collection.create<T>()")
     this.keyPath = "id" as KeyPath
@@ -183,7 +182,7 @@ export class Collection<
   }
 
   static validate(
-    db: AsyncIDB<any>,
+    db: AsyncIDB<any, any>,
     collection: Collection<any, any, any, any>,
     logErr: (err: any) => void
   ) {
