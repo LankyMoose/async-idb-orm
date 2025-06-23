@@ -79,6 +79,7 @@ await db.collections.users.update({ ...user, age: 42 })
 await db.collections.users.find(user.id)
 await db.collections.users.find((user) => user.name === "Bob Smith")
 await db.collections.users.delete(user.id)
+await db.collections.users.deleteMany((user) => user.age < 25)
 await db.collections.users.all()
 await db.collections.users.findMany((user) => user.age > 25)
 
