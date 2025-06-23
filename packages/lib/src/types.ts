@@ -241,11 +241,30 @@ type FindRelationForName<R extends RelationsSchema, RelationName extends string>
     : never
 }[keyof R]
 
-// Map relation names in 'with' options to their types
+// Helper type to recursively process nested with options
+type ProcessNestedRelations<
+  R extends RelationsSchema,
+  WithOptions extends Record<string, any>,
+  RelationName extends string
+> = WithOptions[RelationName] extends { with: infer NestedWith }
+  ? NestedWith extends Record<string, any>
+    ? FindRelationForName<R, RelationName> extends Array<infer ArrayElement>
+      ? (ArrayElement & Prettify<MapRelationsToTypes<R, NestedWith>>)[]
+      : FindRelationForName<R, RelationName> extends infer SingleElement
+      ? SingleElement extends null | undefined
+        ? (SingleElement & Prettify<MapRelationsToTypes<R, NestedWith>>) | null
+        : SingleElement & Prettify<MapRelationsToTypes<R, NestedWith>>
+      : never
+    : FindRelationForName<R, RelationName>
+  : FindRelationForName<R, RelationName>
+
+// Enhanced MapRelationsToTypes that handles nested relations recursively
 type MapRelationsToTypes<R extends RelationsSchema, WithOptions extends Record<string, any>> = {
-  [K in keyof WithOptions & string]: FindRelationForName<R, K> extends Array<infer T>
+  [K in keyof WithOptions & string]: ProcessNestedRelations<R, WithOptions, K> extends Array<
+    infer T
+  >
     ? T[]
-    : FindRelationForName<R, K> | null
+    : ProcessNestedRelations<R, WithOptions, K> | null
 }
 
 // Main result type with proper relation inference
