@@ -613,7 +613,7 @@ export class AsyncIDBStore<
     })
   }
 
-  private createLazyIterator<T>(request: IDBRequest) {
+  private createLazyIterator<T>(request: IDBRequest<IDBCursorWithValue | null>) {
     let resolveQueueBlocker: (value: null) => void
     // create an infinite promise that we can resolve on command to yield the next result
     let queueBlocker = new Promise<null>((resolve) => {
