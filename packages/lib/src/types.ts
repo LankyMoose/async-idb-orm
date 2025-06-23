@@ -186,7 +186,7 @@ type GetTargetCollectionForRelation<
 // Recursive relation options that are aware of the target collection
 type RelationWithOptionsForCollection<R extends RelationsSchema, T extends AnyCollection> = {
   limit?: number
-  where?: (record: any) => boolean
+  where?: (record: CollectionRecord<T>) => boolean
   with?: T extends AnyCollection
     ? {
         [K in ValidRelationNamesForCollection<R, T> & string]?:
