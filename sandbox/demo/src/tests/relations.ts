@@ -174,11 +174,7 @@ export async function runRelationsTest() {
     await demonstrateComplexRelations()
 
     // cleanup - have to delete todos before users because of foreign key constraint
-    const todos = await db.collections.todos.all()
-    for (const todo of todos) {
-      await db.collections.todos.delete(todo.id)
-    }
-
+    await db.collections.todos.clear()
     const users = await db.collections.users.all()
     for (const user of users) {
       await db.collections.users.delete(user.id)

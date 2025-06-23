@@ -211,8 +211,9 @@ export class AsyncIDBStore<
   async delete(
     predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
   ) {
-    if (predicateOrKey instanceof Function) {
-      return this.deleteByPredicate(predicateOrKey)
+    if (typeof predicateOrKey === "function") {
+      const [deleted] = await this.deleteMany(predicateOrKey, 1)
+      return deleted ?? null
     }
 
     const data = await this.read(predicateOrKey)
@@ -225,7 +226,7 @@ export class AsyncIDBStore<
         await this.getPreDeletionForeignKeyErrors(key, ctx, fkErrs)
         if (fkErrs.length) return reject(fkErrs)
       }
-      const request = ctx.objectStore.delete(predicateOrKey as IDBValidKey)
+      const request = ctx.objectStore.delete(predicateOrKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         this.emit("delete", data)
@@ -528,17 +529,17 @@ export class AsyncIDBStore<
     })
   }
 
-  private deleteByPredicate(predicate: (item: CollectionRecord<T>) => boolean) {
-    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
+  deleteMany(predicate: (item: CollectionRecord<T>) => boolean, limit = Infinity) {
+    return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
       const request = ctx.objectStore.openCursor()
-
+      const results: CollectionRecord<T>[] = []
       request.onerror = (err) => reject(err)
       request.onsuccess = async () => {
         const cursor = request.result
-        if (!cursor) return resolve(null)
+        if (!cursor) return resolve(results)
 
-        const value = this.#deserialize(cursor.value)
-        if (!predicate(value)) return cursor.continue()
+        const record = this.#deserialize(cursor.value)
+        if (!predicate(record)) return cursor.continue()
 
         if (this.#onBeforeDelete.length) {
           const fkErrs: Error[] = []
@@ -551,9 +552,14 @@ export class AsyncIDBStore<
         }
 
         cursor.delete()
-        this.emit("delete", value)
-        this.emit("write|delete", value)
-        return resolve(value)
+        this.emit("delete", record)
+        this.emit("write|delete", record)
+        results.push(record)
+
+        if (--limit) {
+          return cursor.continue()
+        }
+        return resolve(results)
       }
     })
   }
@@ -973,9 +979,9 @@ class RelationalQueryContext {
       : basePredicate
 
     if (relationType === "one-to-one") {
-      return (await this.findByPredicate(other, predicate, options?.with, 1))[0] ?? null
+      return (await this.findByPredicate(other, predicate, options, 1))[0] ?? null
     } else if (relationType === "one-to-many") {
-      return this.findByPredicate(other, predicate, options?.with, options?.limit)
+      return this.findByPredicate(other, predicate, options, options?.limit)
     }
 
     return relationType === "one-to-many" ? [] : null

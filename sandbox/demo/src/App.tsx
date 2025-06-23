@@ -5,11 +5,21 @@ import { CreateUserForm } from "./components/CreateUserForm"
 import { UserPosts } from "./components/UserPosts"
 import { runRelationsTest } from "./tests/relations"
 import { runBasicTest } from "./tests/basic"
+import { db } from "./db"
 
 window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
 
 function Home() {
   return navigate("/users")
+}
+
+const reset = async () => {
+  db.getInstance().then((idb) => {
+    idb.close()
+    const req = indexedDB.deleteDatabase(idb.name)
+    req.onerror = (err) => console.error(err)
+    req.onsuccess = () => window.location.reload()
+  })
 }
 
 export function App() {
@@ -20,6 +30,7 @@ export function App() {
           <Link to="/users">Users</Link>
         </nav>
         <div style="display: flex; gap: 0.5rem;">
+          <button onclick={reset}>Reset</button>
           <button onclick={runBasicTest}>Basic Test</button>
           <button onclick={runRelationsTest}>Relations Test</button>
         </div>
