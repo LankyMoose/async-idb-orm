@@ -21,7 +21,7 @@
 
 ```ts
 // db.ts
-import { Collection } from "async-idb-orm"
+import { idb, Collection } from "async-idb-orm"
 
 type User = {
   id: string
@@ -152,7 +152,7 @@ async function setUserAge(userId: string, age: number) {
   await activeUser.save()
 
   // and we can 'downgrade' the active record back to a regular record via the `unwrap` method
-  return db.users.unwrap(activeUser)
+  return db.collections.users.unwrap(activeUser)
 }
 ```
 
@@ -214,7 +214,7 @@ Relations allow you to define and load related data across collections with a po
 Relations are defined separately from collections using the `Relations.create()` method:
 
 ```ts
-import { Relations, Collection, idb } from "async-idb-orm"
+import { idb, Relations, Collection } from "async-idb-orm"
 
 // Collections
 type User = { id: number; name: string; age: number }
@@ -448,7 +448,7 @@ Adding a foreign key to a collection enables two useful features:
 > _To keep this example brief, we'll omit setting up DTOs and transformers for our collections - pretend it's been done in the same way as previous examples._
 
 ```ts
-import { db, Collection } from "async-idb-orm"
+import { idb, Collection } from "async-idb-orm"
 
 type User = { userId: string; name: string }
 const users = Collection.create<User>()
