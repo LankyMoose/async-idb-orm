@@ -15,7 +15,6 @@ import type {
   FindOptions,
   RelationResult,
   AnyCollection,
-  FindManyOptions,
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
@@ -266,11 +265,11 @@ export class AsyncIDBStore<
         const queryCtx = new RelationalQueryContext(db, this.#tx)
         if (typeof predicateOrKey === "function") {
           queryCtx
-            .findByPredicate<T, R, typeof this, Options>(this, predicateOrKey, options, 1)
+            .findByPredicate<T, R, this, Options>(this, predicateOrKey, options, 1)
             .then((res) => resolve(res[0] ?? null), reject)
         } else {
           queryCtx
-            .findByKey<T, R, typeof this, Options>(this, predicateOrKey, options)
+            .findByKey<T, R, this, Options>(this, predicateOrKey, options)
             .then(resolve, reject)
         }
       })
@@ -290,36 +289,32 @@ export class AsyncIDBStore<
 
   /**
    * Finds many records based on keyPath or predicate
-   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicate
-   * @param {FindManyOptions<R, string>} [options] - Options for finding with relations
-   * @param limit The maximum number of records to return (defaults to `Infinity`)
-   * @returns {Promise<RelationResult<T, R, Options>[]>}
    */
-  async findMany<Options extends FindManyOptions<R, T>>(
+  async findMany<Options extends FindOptions<R, T>>(
     predicate: (item: CollectionRecord<T>) => boolean,
-    options?: Options
+    options?: Options & { limit?: number }
   ): Promise<RelationResult<T, R, Options>[]> {
+    const limit = options?.limit || Infinity
     return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
       this.db.getInstance((db) => {
         const queryCtx = new RelationalQueryContext(db, this.#tx)
         queryCtx
-          .findByPredicate<T, R, typeof this, Options>(this, predicate, options)
+          .findByPredicate<T, R, this, Options>(this, predicate, options, limit)
           .then(resolve, reject)
       })
     })
   }
 
   /**
-   * Finds many records based on keyPath or predicate, upgrading them to active records
-   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicate
-   * @param limit The maximum number of records to return (defaults to `Infinity`)
-   * @returns {Promise<CollectionRecord<T>[]>}
+   * Finds many records based on predicate, upgrading them to active records
    */
   async findManyActive(
     predicate: (item: CollectionRecord<T>) => boolean,
-    limit = Infinity
+    options?: {
+      limit?: number
+    }
   ): Promise<CollectionRecord<T>[]> {
-    return (await this.findMany(predicate, { limit })).map((item) => this.wrap(item))
+    return (await this.findMany(predicate, options)).map((item) => this.wrap(item))
   }
 
   /**
@@ -333,8 +328,8 @@ export class AsyncIDBStore<
     return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
       this.db.getInstance((db) => {
         new RelationalQueryContext(db, this.#tx)
-          .findAll<T, R, typeof this, Options>(this, options)
-          .then((r) => resolve(r as RelationResult<T, R, Options>[]), reject)
+          .findAll<T, R, this, Options>(this, options)
+          .then(resolve, reject)
       })
     })
   }
@@ -841,7 +836,7 @@ class RelationalQueryContext {
     R extends RelationsSchema,
     Store extends AsyncIDBStore<T, R>,
     Options extends FindOptions<R, T>
-  >(store: Store, options?: Options): Promise<RelationResult<T, R, FindOptions<R, T>>[]> {
+  >(store: Store, options?: Options): Promise<RelationResult<T, R, Options>[]> {
     const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig
     return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
       const objectStore = this.tx.objectStore(store.name)
@@ -854,7 +849,7 @@ class RelationalQueryContext {
             deserialized.map((item) =>
               this.resolveRelations<T, R, Store>(store, item, options.with!)
             )
-          ).then((results) => resolve(results as any as RelationResult<T, R, Options>[]), reject)
+          ).then(resolve, reject)
         }
 
         resolve(deserialized)

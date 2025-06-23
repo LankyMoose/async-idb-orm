@@ -226,14 +226,6 @@ export type FindOptions<R extends RelationsSchema = any, T extends AnyCollection
     : Record<string, boolean | RelationWithOptions<R>>
 }
 
-export type FindManyOptions<
-  R extends RelationsSchema = any,
-  T extends AnyCollection = any
-> = FindOptions<R, T> & {
-  /** The maximum number of records to return (defaults to `Infinity`) */
-  limit?: number
-}
-
 // Find the relation definition for a given relation name
 type FindRelationForName<R extends RelationsSchema, RelationName extends string> = {
   [K in keyof R]: R[K] extends Relations<any, infer To, infer RelMap>
