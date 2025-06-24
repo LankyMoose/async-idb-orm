@@ -7,7 +7,7 @@ import { runRelationsTest } from "./tests/relations"
 import { runBasicTest } from "./tests/basic"
 import { db } from "./db"
 
-window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
+// window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
 
 function Home() {
   return navigate("/users")

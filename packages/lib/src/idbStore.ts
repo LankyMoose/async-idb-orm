@@ -20,7 +20,6 @@ import type { AsyncIDB } from "./idb"
 import { Collection } from "./collection.js"
 import { BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
 import { RelationDefinition, Relations } from "./relations.js"
-import { abortTx } from "./utils.js"
 
 type StoreRelation = {
   other: AsyncIDBStore<any, any>
@@ -35,23 +34,17 @@ export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
   R extends RelationsSchema
 > {
-  #isRelaying = false
-  #onBeforeCreate: ((
-    data: CollectionRecord<T>,
-    ctx: TransactionContext,
-    errs: Error[]
-  ) => Promise<void>)[]
-  #onBeforeDelete: ((
-    key: CollectionKeyPathType<T>,
-    ctx: TransactionContext,
-    errs: Error[]
-  ) => Promise<void>)[]
+  #isRelaying: boolean
+  #relations: Record<string, StoreRelation>
+  #onBeforeCreate: ((data: CollectionRecord<T>, ctx: TransactionContext) => Promise<void[]>)[]
+  #onBeforeDelete: ((key: CollectionKeyPathType<T>, ctx: TransactionContext) => Promise<void>)[]
   #eventListeners: Record<CollectionEvent, CollectionEventCallback<T, CollectionEvent>[]>
   #tx?: IDBTransaction
   #serialize: (record: CollectionRecord<T>) => any
   #deserialize: (record: any) => CollectionRecord<T>
-  #relations: Record<string, StoreRelation> = {}
   constructor(private db: AsyncIDB<any, any>, private collection: T, public name: string) {
+    this.#isRelaying = false
+    this.#relations = {}
     this.#onBeforeDelete = []
     this.#onBeforeCreate = []
     this.#eventListeners = {
@@ -60,7 +53,7 @@ export class AsyncIDBStore<
       "write|delete": [],
       clear: [],
     }
-    const { read, write } = this.collection.serializationConfig
+    const { read, write } = collection.serializationConfig
     this.#serialize = write
     this.#deserialize = read
   }
@@ -132,9 +125,7 @@ export class AsyncIDBStore<
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
       const serialized = this.#serialize(data)
       if (this.#onBeforeCreate.length) {
-        const fkErrs: Error[] = []
-        await this.getPreCreationForeignKeyErrors(serialized, ctx, fkErrs)
-        if (fkErrs.length) return reject(fkErrs)
+        await this.getPreCreationForeignKeyErrors(serialized, ctx).catch(reject)
       }
 
       const request = ctx.objectStore.add(serialized)
@@ -279,9 +270,7 @@ export class AsyncIDBStore<
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
       if (this.#onBeforeCreate.length) {
-        const fkErrs: Error[] = []
-        await this.getPreCreationForeignKeyErrors(serialized, ctx, fkErrs)
-        if (fkErrs.length) return reject(fkErrs)
+        await this.getPreCreationForeignKeyErrors(serialized, ctx)
       }
 
       const request = ctx.objectStore.put(serialized)
@@ -323,9 +312,7 @@ export class AsyncIDBStore<
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
       if (this.#onBeforeDelete.length) {
         const key = this.getRecordKey(data)
-        const fkErrs: Error[] = []
-        await this.getPreDeletionForeignKeyErrors(key, ctx, fkErrs)
-        if (fkErrs.length) return reject(fkErrs)
+        await this.getPreDeletionForeignKeyErrors(key, ctx).catch(reject)
       }
       const request = ctx.objectStore.delete(predicateOrKey)
       request.onerror = (err) => reject(err)
@@ -358,13 +345,10 @@ export class AsyncIDBStore<
         if (!predicate(record)) return cursor.continue()
 
         if (this.#onBeforeDelete.length) {
-          const fkErrs: Error[] = []
           await this.getPreDeletionForeignKeyErrors(
             cursor.key as CollectionKeyPathType<T>,
-            ctx,
-            fkErrs
-          )
-          if (fkErrs.length) return reject(fkErrs)
+            ctx
+          ).catch(reject)
         }
 
         cursor.delete()
@@ -647,20 +631,18 @@ export class AsyncIDBStore<
     return resultQueue
   }
 
-  private async getPreDeletionForeignKeyErrors(
+  private getPreDeletionForeignKeyErrors(
     key: CollectionKeyPathType<T>,
-    ctx: TransactionContext,
-    errs: Error[]
-  ): Promise<void> {
-    await Promise.all(this.#onBeforeDelete.map((cb) => cb(key, ctx, errs)))
+    ctx: TransactionContext
+  ): Promise<void[]> {
+    return Promise.all(this.#onBeforeDelete.map((cb) => cb(key, ctx)))
   }
 
-  private async getPreCreationForeignKeyErrors(
+  private getPreCreationForeignKeyErrors(
     record: CollectionRecord<T>,
-    ctx: TransactionContext,
-    errs: Error[]
-  ): Promise<void> {
-    await Promise.all(this.#onBeforeCreate.map((cb) => cb(record, ctx, errs)))
+    ctx: TransactionContext
+  ): Promise<void[][]> {
+    return Promise.all(this.#onBeforeCreate.map((cb) => cb(record, ctx)))
   }
 
   private initForeignKeys() {
@@ -668,12 +650,12 @@ export class AsyncIDBStore<
       return
     }
 
-    this.#onBeforeCreate.push(async (record, { tx }, errs) => {
+    this.#onBeforeCreate.push(async (record, { tx }) => {
       // ensure all fkeys point to valid records
-      await Promise.all(
+      return Promise.all(
         this.collection.foreignKeys.map(
           ({ ref, collection }) =>
-            new Promise<void>((resolve) => {
+            new Promise<void>((resolve, reject) => {
               const [name] = Object.entries(this.db.stores).find(
                 ([, s]) => s.collection === collection
               )!
@@ -681,20 +663,20 @@ export class AsyncIDBStore<
               const key = record[ref]
               const request = objectStore.get(key)
               request.onerror = (e) => {
-                abortTx(tx)
-                const err = new Error(
-                  `[async-idb-orm]: An error occurred while applying FK ${this.name}:${ref} (${key})`
+                reject(
+                  new Error(
+                    `[async-idb-orm]: An error occurred while applying FK ${this.name}:${ref} (${key})`,
+                    { cause: e }
+                  )
                 )
-                err.cause = e
-                errs.push(err)
-                resolve()
               }
               request.onsuccess = () => {
                 if (!request.result) {
-                  const err = new Error(
-                    `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${ref} (${key})`
+                  reject(
+                    new Error(
+                      `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${ref} (${key})`
+                    )
                   )
-                  errs.push(err)
                 }
                 resolve()
               }
@@ -710,35 +692,28 @@ export class AsyncIDBStore<
 
       switch (onDelete) {
         case "cascade":
-          store.#onBeforeDelete.push((key, ctx, errs) => {
-            return new Promise<void>((resolve) => {
+          store.#onBeforeDelete.push((key, ctx) => {
+            return new Promise<void>((resolve, reject) => {
               const tx = ctx.tx
               const objectStore = tx.objectStore(this.name)
               const request = objectStore.openCursor()
               request.onerror = (err) => {
-                abortTx(tx)
-                const e = new Error(
-                  "[async-idb-orm]: An error occurred while applying FK -> cascade delete"
+                reject(
+                  new Error(
+                    "[async-idb-orm]: An error occurred while applying FK -> cascade delete",
+                    { cause: err }
+                  )
                 )
-                e.cause = err
-                errs.push(e)
-                resolve()
               }
               const cascadeDelete = async () => {
                 const cursor = request.result
                 if (!cursor) return resolve()
 
                 if (cursor.value[field] === key) {
-                  const dependentErrs: Error[] = []
                   await this.getPreDeletionForeignKeyErrors(
                     this.getRecordKey(cursor.value),
-                    ctx,
-                    dependentErrs
-                  )
-                  if (dependentErrs.length) {
-                    abortTx(tx)
-                    return resolve()
-                  }
+                    ctx
+                  ).catch(reject)
                   cursor.delete()
                 }
                 cursor.continue()
@@ -748,42 +723,29 @@ export class AsyncIDBStore<
           })
           break
         case "restrict":
-          store.#onBeforeDelete.push((key, ctx, errs) => {
-            return new Promise<void>((resolve) => {
+          store.#onBeforeDelete.push((key, ctx) => {
+            return new Promise<void>((resolve, reject) => {
               const tx = ctx.tx
               const objectStore = tx.objectStore(this.name)
               const request = objectStore.openCursor()
               request.onerror = (err) => {
-                abortTx(tx)
-                const e = new Error(
-                  "[async-idb-orm]: An error occurred while enforcing FK -> delete restriction"
+                reject(
+                  new Error(
+                    "[async-idb-orm]: An error occurred while enforcing FK -> delete restriction",
+                    { cause: err }
+                  )
                 )
-                e.cause = err
-                errs.push(e)
-                resolve()
               }
               const ensureNoReference = async () => {
                 const cursor = request.result
                 if (!cursor) return resolve()
 
                 if (cursor.value[field] === key) {
-                  abortTx(tx)
-                  errs.push(
+                  reject(
                     new Error(
                       `[async-idb-orm]: Failed to delete record in collection ${name} because it is referenced by another record in collection ${this.name}`
                     )
                   )
-                  return resolve()
-                }
-                const dependentErrs: Error[] = []
-                await this.getPreDeletionForeignKeyErrors(
-                  this.getRecordKey(cursor.value),
-                  ctx,
-                  dependentErrs
-                )
-                if (dependentErrs.length) {
-                  abortTx(tx)
-                  return resolve()
                 }
                 cursor.continue()
               }
@@ -792,15 +754,13 @@ export class AsyncIDBStore<
           })
           break
         case "set null":
-          store.#onBeforeDelete.push((key, ctx, errs) => {
-            return new Promise<void>((resolve) => {
+          store.#onBeforeDelete.push((key, ctx) => {
+            return new Promise<void>((resolve, reject) => {
               const tx = ctx.tx
               const objectStore = tx.objectStore(this.name)
               const request = objectStore.openCursor()
               request.onerror = (err) => {
-                abortTx(tx)
-                errs.push(new Error(err as any))
-                resolve()
+                reject(new Error(err as any))
               }
               const setNull = () => {
                 const cursor = request.result
@@ -810,9 +770,7 @@ export class AsyncIDBStore<
 
                 const updateReq = cursor.update(this.#serialize({ ...cursor.value, [field]: null }))
                 updateReq.onerror = (err) => {
-                  abortTx(tx)
-                  errs.push(new Error(err as any))
-                  resolve()
+                  reject(new Error(err as any))
                 }
                 updateReq.onsuccess = () => cursor.continue()
               }

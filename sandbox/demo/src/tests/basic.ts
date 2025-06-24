@@ -43,11 +43,11 @@ export const runBasicTest = async () => {
   assert((await db.collections.posts.count()) === 0, "Expected 0 posts")
   assert((await db.collections.postComments.count()) === 0, "Expected 0 post comments")
 
-  assertThrows(async () => {
+  await assertThrows(async () => {
     await db.collections.posts.create({ userId: john.id, content: "Hello world" })
   }, "Expected to throw when creating post that references invalid userId")
 
-  assertThrows(async () => {
+  await assertThrows(async () => {
     await db.transaction(async (c) => {
       await c.posts.create({ userId: john.id, content: "Hello world" })
     })
@@ -64,7 +64,7 @@ export const runBasicTest = async () => {
   const todo = await db.collections.todos.create({ userId: bob.id, content: "Buy milk" })
   assert(todo, "Expected to create todo")
   // todos have 'restrict' fk mode, so this should throw
-  assertThrows(async () => {
+  await assertThrows(async () => {
     await db.collections.users.delete(bob.id)
   }, "Expected to throw when deleting user has todo(s)")
 
@@ -95,4 +95,11 @@ export const runBasicTest = async () => {
   await db.collections.users.clear()
   const count = await db.collections.users.count()
   assert(count === 0, "Expected 0 users, got " + count)
+
+  const aaron = await db.collections.users.create({ name: "Aaron Smith", age: 30 })
+  await db.collections.notes.create({ userId: aaron.id, content: "Hello world" })
+  await db.collections.users.delete(aaron.id)
+  const note = await db.collections.notes.find((note) => note.content === "Hello world")
+  assert(note, "Expected to find note")
+  assert(note.userId === null, "Expected note userId to be null")
 }

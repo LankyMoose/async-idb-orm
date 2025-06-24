@@ -22,6 +22,17 @@ export type UserDTO = {
   age: number
 }
 
+export type Note = {
+  id: string
+  content: string
+  userId: number | null
+}
+
+export type NoteDTO = {
+  content: string
+  userId: number
+}
+
 export type Post = {
   id: string
   content: string

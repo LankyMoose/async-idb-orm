@@ -9,6 +9,8 @@ import {
   Todo,
   TodoDTO,
   TimeStamp,
+  Note,
+  NoteDTO,
 } from "./types.ts"
 
 export const users = Collection.create<User, UserDTO>()
@@ -36,6 +38,16 @@ export const users = Collection.create<User, UserDTO>()
       ...user,
       createdAt: new TimeStamp(user.createdAt),
       updatedAt: user.updatedAt ? new TimeStamp(user.updatedAt) : undefined,
+    }),
+  })
+
+export const notes = Collection.create<Note, NoteDTO>()
+  .withForeignKeys((notes) => [{ ref: notes.userId, collection: users, onDelete: "set null" }])
+  .withTransformers({
+    create: (dto) => ({
+      id: crypto.randomUUID(),
+      content: dto.content,
+      userId: dto.userId,
     }),
   })
 

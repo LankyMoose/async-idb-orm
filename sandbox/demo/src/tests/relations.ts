@@ -92,7 +92,7 @@ async function demonstrateBasicRelations() {
     "should find postComments as array"
   )
 
-  assertThrows(() => {
+  await assertThrows(() => {
     db.collections.users.wrap(userWithPosts)
   }, "should not be able to upgrade relational record -> active record")
 
