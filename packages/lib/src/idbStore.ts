@@ -26,6 +26,8 @@ type StoreRelation = {
   def: RelationDefinition<any, any>
 }
 
+const $UPSERT_SENTINEL = Symbol.for("upsert")
+
 /**
  * A utility instance that represents a collection in an IndexedDB database and provides methods for interacting with the collection.
  * @template {Collection} T
@@ -118,9 +120,8 @@ export class AsyncIDBStore<
    */
   create(data: CollectionDTO<T>): Promise<CollectionRecord<T>> {
     const { create: transformer } = this.collection.transformers
-
     data = this.unwrap(data)
-    if (transformer) data = transformer(data)
+    transformer && (data = transformer(data))
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
       const serialized = this.#serialize(data)
@@ -245,27 +246,20 @@ export class AsyncIDBStore<
    */
   async update(record: CollectionRecord<T>): Promise<CollectionRecord<T>> {
     this.assertNoRelations(record, "update")
-    record = this.unwrap(record)
+    const key = this.getRecordKey(record)
+
     const { create, update } = this.collection.transformers
 
-    const key = this.getRecordKey(record)
-    const existing = await this.read(key)
-
-    let transformer: undefined | ((record: CollectionRecord<T>) => CollectionRecord<T>)
-    if (existing === null) {
-      if (arguments[1] !== true) {
-        throw new Error(
-          `[async-idb-orm]: record in collection ${this.name} with key ${this.getRecordKey(
-            record
-          )} not found.`
-        )
-      }
-      transformer = create
-    } else {
-      transformer = update
+    const exists = key !== undefined && (await this.exists(key))
+    if (!exists && arguments[1] !== $UPSERT_SENTINEL) {
+      throw new Error(
+        `[async-idb-orm]: record in collection ${this.name} with key ${key} not found.`
+      )
     }
-    transformer && (record = transformer(record))
 
+    record = this.unwrap(record)
+    const transformer = exists ? update : create
+    transformer && (record = transformer(record))
     const serialized = this.#serialize(record)
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
@@ -287,11 +281,11 @@ export class AsyncIDBStore<
 
   /**
    * Upserts many records in the store
-   * @param {CollectionRecord<T>[]} data The records to upsert
+   * @param {(CollectionRecord<T> | CollectionDTO<T>)[]} data The records to upsert
    */
-  upsert(...data: CollectionRecord<T>[]) {
+  upsert(...data: (CollectionRecord<T> | CollectionDTO<T>)[]) {
     // @ts-expect-error we're passing an extra argument to `update` for the `upsert` flag
-    return Promise.all(data.map((item) => this.update(item, true)))
+    return Promise.all(data.map((item) => this.update(item, $UPSERT_SENTINEL)))
   }
 
   /**
@@ -546,14 +540,11 @@ export class AsyncIDBStore<
     })
   }
 
-  private read(id: CollectionKeyPathType<T>) {
-    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.get(id as IDBValidKey)
+  private exists(id: CollectionKeyPathType<T>) {
+    return this.queueTask<boolean>((ctx, resolve, reject) => {
+      const request = ctx.objectStore.getKey(id as IDBValidKey)
       request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        if (!request.result) return resolve(null)
-        resolve(this.#deserialize(request.result))
-      }
+      request.onsuccess = () => resolve(request.result === id)
     })
   }
 
