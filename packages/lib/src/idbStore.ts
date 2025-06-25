@@ -306,20 +306,26 @@ export class AsyncIDBStore<
       return deleted ?? null
     }
 
-    const data = await this.read(predicateOrKey)
-    if (data === null) return null
-
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
+      const record = await new Promise<CollectionRecord<T> | null>((resolve, reject) => {
+        const request = ctx.objectStore.get(predicateOrKey)
+        request.onerror = (err) => reject(err)
+        request.onsuccess = () => {
+          if (!request.result) return resolve(null)
+          resolve(this.#deserialize(request.result))
+        }
+      })
+      if (record === null) return resolve(null)
+
       if (this.#onBeforeDelete.length) {
-        const key = this.getRecordKey(data)
-        await this.getPreDeletionForeignKeyErrors(key, ctx).catch(reject)
+        await this.getPreDeletionForeignKeyErrors(predicateOrKey, ctx).catch(reject)
       }
       const request = ctx.objectStore.delete(predicateOrKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.emit("delete", data)
-        this.emit("write|delete", data)
-        resolve(data)
+        this.emit("delete", record)
+        this.emit("write|delete", record)
+        resolve(record)
       }
     })
   }
