@@ -246,10 +246,8 @@ export class AsyncIDBStore<
    */
   async update(record: CollectionRecord<T>): Promise<CollectionRecord<T>> {
     this.assertNoRelations(record, "update")
+
     const key = this.getRecordKey(record)
-
-    const { create, update } = this.collection.transformers
-
     const exists = key !== undefined && (await this.exists(key))
     if (!exists && arguments[1] !== $UPSERT_SENTINEL) {
       throw new Error(
@@ -258,6 +256,7 @@ export class AsyncIDBStore<
     }
 
     record = this.unwrap(record)
+    const { create, update } = this.collection.transformers
     const transformer = exists ? update : create
     transformer && (record = transformer(record))
     const serialized = this.#serialize(record)
