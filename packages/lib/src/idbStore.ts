@@ -531,7 +531,6 @@ export class AsyncIDBStore<
   ): Promise<CollectionRecord<T> | null> {
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.index(name).openCursor(null, direction)
-
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
@@ -541,7 +540,7 @@ export class AsyncIDBStore<
     })
   }
 
-  private async read(id: CollectionKeyPathType<T>) {
+  private read(id: CollectionKeyPathType<T>) {
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
       const request = ctx.objectStore.get(id as IDBValidKey)
       request.onerror = (err) => reject(err)
@@ -768,7 +767,7 @@ export class AsyncIDBStore<
 
                 if (cursor.value[field] !== key) return cursor.continue()
 
-                const updateReq = cursor.update(this.#serialize({ ...cursor.value, [field]: null }))
+                const updateReq = cursor.update({ ...cursor.value, [field]: null })
                 updateReq.onerror = (err) => {
                   reject(new Error(err as any))
                 }
