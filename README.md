@@ -2,6 +2,8 @@
 
 Development monorepo template for **async-idb-orm**.
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LankyMoose/async-idb-orm)
+
 ## Structure
 
 - `.github`

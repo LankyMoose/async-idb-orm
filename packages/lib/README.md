@@ -2,8 +2,6 @@
 
 **_Promise-based IndexedDB wrapper with an ORM-like API and support for Active Records, relations and migrations_**
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LankyMoose/async-idb-orm)
-
 ## Contents:
 
 > - [Getting Started](#getting-started)
