@@ -264,7 +264,7 @@ export class AsyncIDBStore<
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
       if (this.#onBeforeCreate.length) {
-        await this.getPreCreationForeignKeyErrors(serialized, ctx)
+        await this.getPreCreationForeignKeyErrors(serialized, ctx).catch(reject)
       }
 
       const request = ctx.objectStore.put(serialized)
