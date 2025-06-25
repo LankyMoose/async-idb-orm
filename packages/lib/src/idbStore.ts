@@ -255,9 +255,9 @@ export class AsyncIDBStore<
       )
     }
 
-    record = this.unwrap(record)
     const { create, update } = this.collection.transformers
     const transformer = exists ? update : create
+    record = this.unwrap(record)
     transformer && (record = transformer(record))
     const serialized = this.#serialize(record)
 
