@@ -8,21 +8,25 @@ import {
   type OnDBUpgradeCallbackContext,
   CollectionIDMode,
   RelationsSchema,
-  ViewSchema,
+  SelectorSchema,
   TaskContext,
 } from "./types"
 
 import { Collection } from "./builders/collection.js"
 import { AsyncIDBStore } from "./idbStore.js"
 import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
-import type { View } from "./builders/view"
-import { AsyncIDBView } from "./idbView"
+import type { Selector } from "./builders/selector"
+import { AsyncIDBSelector } from "./idbSelector"
 
 /**
  * @private
  * Internal usage only. Do not use directly.
  */
-export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V extends ViewSchema> {
+export class AsyncIDB<
+  T extends CollectionSchema,
+  R extends RelationsSchema,
+  S extends SelectorSchema
+> {
   #db: IDBDatabase | null
   #instanceCallbacks: DBInstanceCallback[]
   stores: {
@@ -35,12 +39,12 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
   version: number
   schema: T
   relations: R
-  views: {
-    [key in keyof V]: V[key] extends View<any, any, any>
-      ? AsyncIDBView<T, R, Awaited<ReturnType<V[key]["selector"]>>>
+  selectors: {
+    [key in keyof S]: S[key] extends Selector<any, any, any>
+      ? AsyncIDBSelector<T, R, Awaited<ReturnType<S[key]["selector"]>>>
       : never
   }
-  constructor(private name: string, private config: AsyncIDBConfig<T, R, V>) {
+  constructor(private name: string, private config: AsyncIDBConfig<T, R, S>) {
     this.#db = null
     this.#instanceCallbacks = []
     this.schema = config.schema
@@ -48,7 +52,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
     this.version = config.version
     this.stores = this.createStores()
     this.storeNames = Object.keys(this.schema)
-    this.views = this.createViews()
+    this.selectors = this.createSelectors()
     this.relayEnabled = config.relayEvents !== false
 
     let latest = this.version
@@ -90,7 +94,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
     instanceCallback(this.#db)
   }
 
-  async transaction(callback: IDBTransactionCallback<T, R, V>, options?: IDBTransactionOptions) {
+  async transaction(callback: IDBTransactionCallback<T, R, S>, options?: IDBTransactionOptions) {
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
     const tx = idbInstance.transaction(this.storeNames, "readwrite", options)
 
@@ -157,13 +161,13 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
     }
   }
 
-  private createViews() {
-    return Object.entries(this.config.views ?? {}).reduce(
-      (acc, [name, view]) => ({
+  private createSelectors() {
+    return Object.entries(this.config.selectors ?? {}).reduce(
+      (acc, [name, selector]) => ({
         ...acc,
-        [name]: new AsyncIDBView(this as any, view.selector as any),
+        [name]: new AsyncIDBSelector(this as any, selector.selector as any),
       }),
-      {} as AsyncIDBInstance<T, R, V>["views"]
+      {} as AsyncIDBInstance<T, R, S>["selectors"]
     )
   }
 
@@ -173,7 +177,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
         ...acc,
         [name]: new AsyncIDBStore(this, collection, name),
       }),
-      {} as AsyncIDBInstance<T, R, V>["collections"]
+      {} as AsyncIDBInstance<T, R, S>["collections"]
     )
   }
 
@@ -183,7 +187,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
         ...acc,
         [name]: AsyncIDBStore.cloneForTransaction(ctx, store),
       }
-    }, {} as AsyncIDBInstance<T, R, V>["collections"])
+    }, {} as AsyncIDBInstance<T, R, S>["collections"])
   }
 
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {

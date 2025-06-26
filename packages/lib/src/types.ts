@@ -1,8 +1,8 @@
 import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./builders/collection"
 import type { Relations } from "./builders/relations"
-import type { View } from "./builders/view"
-import type { AsyncIDBView } from "./idbView"
+import type { Selector } from "./builders/selector"
+import type { AsyncIDBSelector } from "./idbSelector"
 
 type Prettify<T> = {
   [K in keyof T]: T[K]
@@ -11,7 +11,7 @@ type Prettify<T> = {
 export type AsyncIDBConfig<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  V extends ViewSchema
+  S extends SelectorSchema
 > = {
   /**
    * Collection schema - `Record<string, Collection>`
@@ -28,7 +28,7 @@ export type AsyncIDBConfig<
    * Views schema - `Record<string, View>`
    * @see {@link View}
    */
-  views?: V
+  selectors?: S
   /**
    * Database version - increment this to trigger an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event
    */
@@ -85,14 +85,14 @@ export type TransactionOptions = IDBTransactionOptions & {
 export type IDBTransactionCallback<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  V extends ViewSchema
-> = (ctx: AsyncIDBInstance<T, R, V>["collections"], tx: IDBTransaction) => unknown
+  S extends SelectorSchema
+> = (ctx: AsyncIDBInstance<T, R, S>["collections"], tx: IDBTransaction) => unknown
 
 export type IDBTransactionFunction<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  V extends ViewSchema
-> = <CB extends IDBTransactionCallback<T, R, V>>(
+  S extends SelectorSchema
+> = <CB extends IDBTransactionCallback<T, R, S>>(
   callback: CB,
   options?: TransactionOptions
 ) => Promise<ReturnType<CB>>
@@ -120,15 +120,15 @@ export type OnDBUpgradeCallback<T extends CollectionSchema, R extends RelationsS
 export type AsyncIDBInstance<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  V extends ViewSchema
+  S extends SelectorSchema
 > = {
   collections: {
     [key in keyof T]: AsyncIDBStore<T[key], R>
   }
-  transaction: IDBTransactionFunction<T, R, V>
-  views: {
-    [key in keyof V]: V[key] extends View<any, any, any>
-      ? AsyncIDBView<T, R, Awaited<ReturnType<V[key]["selector"]>>>
+  transaction: IDBTransactionFunction<T, R, S>
+  selectors: {
+    [key in keyof S]: S[key] extends Selector<any, any, any>
+      ? AsyncIDBSelector<T, R, Awaited<ReturnType<S[key]["selector"]>>>
       : never
   }
   // views: {
@@ -158,8 +158,8 @@ export type CollectionSchema = {
   [key: string]: AnyCollection
 }
 
-export type ViewSchema = {
-  [key: string]: View<any, any>
+export type SelectorSchema = {
+  [key: string]: Selector<any, any>
 }
 
 export type ActiveRecord<T> = T & ActiveRecordMethods<T>

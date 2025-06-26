@@ -26,10 +26,9 @@ const reset = async () => {
 function useUserNames() {
   const userNames = useSignal<string[]>([])
   // const [state, setState] = useState<string[]>([])
-
   useEffect(
     () =>
-      db.views.allUserNames.subscribe((names) => {
+      db.selectors.allUserNames.subscribe((names) => {
         userNames.value = names
         console.log("names updated", names)
       }),

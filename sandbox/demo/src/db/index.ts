@@ -2,14 +2,14 @@ import { idb } from "async-idb-orm"
 import { Post } from "./types"
 import * as schema from "./schema"
 import * as relations from "./relations"
-import * as views from "./views"
+import * as selectors from "./selectors"
 export * from "./types"
 
 const VERSION = parseInt(localStorage.getItem("version") ?? "1")
 export const db = idb("demo", {
   schema,
   relations,
-  views,
+  selectors,
   version: VERSION,
   onError: console.error,
   onOpen: (db) => {

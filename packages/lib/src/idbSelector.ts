@@ -1,14 +1,18 @@
 import type { AsyncIDB } from "./idb"
 import type { AsyncIDBInstance, CollectionSchema, RelationsSchema } from "./types"
 
-export const viewStoreObservations = {
+export const selectorStoreObservations = {
   enabled: false,
   observed: new Set<string>(),
 }
 
 const $DATA_EMPTY = Symbol("DATA_EMPTY")
 
-export class AsyncIDBView<T extends CollectionSchema, R extends RelationsSchema, Data = unknown> {
+export class AsyncIDBSelector<
+  T extends CollectionSchema,
+  R extends RelationsSchema,
+  Data = unknown
+> {
   #subscribers: Set<(data: Data) => void>
   #data: Data | typeof $DATA_EMPTY
   #unsubs: (() => void)[]
@@ -49,7 +53,7 @@ export class AsyncIDBView<T extends CollectionSchema, R extends RelationsSchema,
 
     this.#refreshQueued = true
     queueMicrotask(() => {
-      viewStoreObservations.enabled = true
+      selectorStoreObservations.enabled = true
       this.selector(this.db.stores).then((data) => {
         this.#data = data
         this.updateStoreSubscriptions()
@@ -65,7 +69,7 @@ export class AsyncIDBView<T extends CollectionSchema, R extends RelationsSchema,
   private updateStoreSubscriptions() {
     while (this.#unsubs.length) this.#unsubs.pop()!()
 
-    viewStoreObservations.observed.forEach((name) => {
+    selectorStoreObservations.observed.forEach((name) => {
       const store = this.db.stores[name]
       store.addEventListener("write|delete", this.#storeUpdateListener)
       store.addEventListener("clear", this.#storeUpdateListener)
@@ -74,7 +78,7 @@ export class AsyncIDBView<T extends CollectionSchema, R extends RelationsSchema,
         store.removeEventListener("clear", this.#storeUpdateListener)
       })
     })
-    viewStoreObservations.enabled = false
-    viewStoreObservations.observed.clear()
+    selectorStoreObservations.enabled = false
+    selectorStoreObservations.observed.clear()
   }
 }

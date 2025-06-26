@@ -9,6 +9,7 @@
 > - [Active Records](#active-records)
 > - [Transactions](#transactions)
 > - [Relations](#relations)
+> - [Views](#views)
 > - [Foreign Keys](#foreign-keys)
 > - [Async Iteration](#async-iteration)
 > - [Serialization](#serialization)
@@ -21,7 +22,7 @@
 
 ```ts
 // db.ts
-import { idb, Collection } from "async-idb-orm"
+import { idb, Collection, View } from "async-idb-orm"
 
 type User = {
   id: string
@@ -61,8 +62,23 @@ const users = Collection.create<User, UserDTO>()
 type Post = { id: number; text: string; userId: string }
 const posts = Collection.create<Post>().withKeyPath("id", { autoIncrement: true })
 
+// Define views for derived/computed data
+const schema = { users, posts }
+const relations = {} // your relations here
+
+const userSummary = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+  const allUsers = await ctx.users.all()
+  return {
+    totalUsers: allUsers.length,
+    averageAge: allUsers.reduce((sum, user) => sum + user.age, 0) / allUsers.length || 0,
+    userNames: allUsers.map((user) => user.name),
+  }
+})
+
 export const db = idb("users", {
-  schema: { users, posts },
+  schema,
+  relations,
+  views: { userSummary },
   version: 1,
 })
 ```
@@ -92,6 +108,15 @@ const usersYoungerThan30 = await db.collections.users.getIndexRange(
   "idx_age",
   IDBKeyRange.bound(0, 30)
 )
+
+// Using views for computed data
+const summary = await db.views.userSummary.get()
+//    ^? { totalUsers: number; averageAge: number; userNames: string[] }
+
+// Subscribe to reactive view updates
+const unsubscribe = db.views.userSummary.subscribe((summary) => {
+  console.log(`Total users: ${summary.totalUsers}, Average age: ${summary.averageAge}`)
+})
 ```
 
 ---
@@ -425,6 +450,158 @@ const user = await db.collections.users.find(1, {
       where: (post) => post.content.includes("test"), // post is typed as Post
     },
   },
+})
+```
+
+---
+
+### Views
+
+Views provide a powerful way to create computed, reactive data derived from your collections. They automatically track dependencies and update when the underlying data changes, making them perfect for derived state management.
+
+#### Defining Views
+
+Views are defined separately from collections and relations using the `View.create()` method:
+
+```ts
+import { idb, Collection, View } from "async-idb-orm"
+
+// Collections
+type User = { id: string; name: string; age: number; isActive: boolean }
+type Post = { id: string; title: string; content: string; userId: string }
+
+const users = Collection.create<User>()
+const posts = Collection.create<Post>()
+
+// Define views
+export const allUserNames = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+  return (await ctx.users.all()).map((user) => user.name)
+})
+
+export const activeUserCount = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+  const activeUsers = await ctx.users.findMany((user) => user.isActive)
+  return activeUsers.length
+})
+
+export const userPostCounts = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+  const [users, posts] = await Promise.all([ctx.users.all(), ctx.posts.all()])
+
+  return users.map((user) => ({
+    userId: user.id,
+    name: user.name,
+    postCount: posts.filter((post) => post.userId === user.id).length,
+  }))
+})
+
+// Setup database with views
+const schema = { users, posts }
+const relations = {} // your relations here
+const views = { allUserNames, activeUserCount, userPostCounts }
+
+export const db = idb("my-app", {
+  schema,
+  relations,
+  views,
+  version: 1,
+})
+```
+
+#### Using Views
+
+Views provide two main methods for accessing data:
+
+**Reactive Subscriptions:**
+
+```ts
+// Subscribe to view updates - callback is called whenever dependent data changes
+const unsubscribe = db.views.allUserNames.subscribe((names) => {
+  console.log("User names updated:", names)
+})
+
+// Don't forget to unsubscribe when done
+unsubscribe()
+```
+
+**Promise-based Access:**
+
+```ts
+// Get current view data as a promise
+const userNames = await db.views.allUserNames.get()
+const activeCount = await db.views.activeUserCount.get()
+const postCounts = await db.views.userPostCounts.get()
+```
+
+#### Automatic Dependency Tracking
+
+Views automatically track which collections they access during execution. When any of those collections are modified (create, update, delete, or clear operations), the view will automatically refresh and notify all subscribers:
+
+```ts
+// This view will automatically track that it depends on the 'users' collection
+const youngUsers = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+  return ctx.users.findMany((user) => user.age < 30) // Accesses 'users' collection
+})
+
+// When you modify users, the view automatically updates
+await db.collections.users.create({ name: "Alice", age: 25, isActive: true })
+// ↑ This will trigger the youngUsers view to refresh
+```
+
+#### Integration with UI Frameworks
+
+Views work seamlessly with reactive UI frameworks. Here's an example with a React-like framework:
+
+```ts
+function useUserNames() {
+  const [userNames, setUserNames] = useState<string[]>([])
+
+  useEffect(() => {
+    // Subscribe to view updates
+    const unsubscribe = db.views.allUserNames.subscribe(setUserNames)
+    return unsubscribe // Cleanup subscription
+  }, [])
+
+  return userNames
+}
+
+function UserNamesList() {
+  const userNames = useUserNames()
+
+  return (
+    <ul>
+      {userNames.map((name) => (
+        <li key={name}>{name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+#### Performance Considerations
+
+- Views are **lazy** - they only compute data when first accessed or when dependencies change
+- Views are **cached** - subsequent `get()` calls return cached data until dependencies change
+- Views use **efficient change detection** - they only refresh when collections they actually accessed are modified
+- **Microtask batching** - multiple rapid changes are batched into a single view refresh
+
+#### Type Safety
+
+Views are fully type-safe with TypeScript:
+
+```ts
+// The view's return type is automatically inferred
+const typedView = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+  return {
+    userCount: (await ctx.users.all()).length,
+    avgAge:
+      (await ctx.users.all()).reduce((sum, u) => sum + u.age, 0) / (await ctx.users.all()).length,
+  }
+})
+// TypeScript knows this returns: { userCount: number; avgAge: number }
+
+// Subscribers receive correctly typed data
+db.views.typedView.subscribe((data) => {
+  console.log(data.userCount) // ✅ TypeScript knows this is a number
+  console.log(data.avgAge) // ✅ TypeScript knows this is a number
 })
 ```
 
