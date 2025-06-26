@@ -1,12 +1,18 @@
 import type { AsyncIDBStore } from "./idbStore"
-import type { Collection, $COLLECTION_INTERNAL } from "./collection"
-import type { Relations } from "./relations"
+import type { Collection, $COLLECTION_INTERNAL } from "./builders/collection"
+import type { Relations } from "./builders/relations"
+import type { View } from "./builders/view"
+import type { AsyncIDBView } from "./idbView"
 
 type Prettify<T> = {
   [K in keyof T]: T[K]
 } & {}
 
-export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsSchema> = {
+export type AsyncIDBConfig<
+  T extends CollectionSchema,
+  R extends RelationsSchema,
+  V extends ViewSchema
+> = {
   /**
    * Collection schema - `Record<string, Collection>`
    * @see {@link Collection}
@@ -17,6 +23,12 @@ export type AsyncIDBConfig<T extends CollectionSchema, R extends RelationsSchema
    * @see {@link Relations}
    */
   relations?: R
+
+  /**
+   * Views schema - `Record<string, View>`
+   * @see {@link View}
+   */
+  views?: V
   /**
    * Database version - increment this to trigger an [upgradeneeded](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) event
    */
@@ -70,14 +82,17 @@ export type TransactionOptions = IDBTransactionOptions & {
   durability?: IDBTransactionDurability
 }
 
-export type IDBTransactionCallback<T extends CollectionSchema, R extends RelationsSchema> = (
-  ctx: AsyncIDBInstance<T, R>["collections"],
-  tx: IDBTransaction
-) => unknown
+export type IDBTransactionCallback<
+  T extends CollectionSchema,
+  R extends RelationsSchema,
+  V extends ViewSchema
+> = (ctx: AsyncIDBInstance<T, R, V>["collections"], tx: IDBTransaction) => unknown
 
-export type IDBTransactionFunction<T extends CollectionSchema, R extends RelationsSchema> = <
-  CB extends IDBTransactionCallback<T, R>
->(
+export type IDBTransactionFunction<
+  T extends CollectionSchema,
+  R extends RelationsSchema,
+  V extends ViewSchema
+> = <CB extends IDBTransactionCallback<T, R, V>>(
   callback: CB,
   options?: TransactionOptions
 ) => Promise<ReturnType<CB>>
@@ -102,11 +117,30 @@ export type OnDBUpgradeCallback<T extends CollectionSchema, R extends RelationsS
   event: IDBVersionChangeEvent
 ) => Promise<void>
 
-export type AsyncIDBInstance<T extends CollectionSchema, R extends RelationsSchema> = {
+export type AsyncIDBInstance<
+  T extends CollectionSchema,
+  R extends RelationsSchema,
+  V extends ViewSchema
+> = {
   collections: {
     [key in keyof T]: AsyncIDBStore<T[key], R>
   }
-  transaction: IDBTransactionFunction<T, R>
+  transaction: IDBTransactionFunction<T, R, V>
+  views: {
+    [key in keyof V]: V[key] extends View<any, any, any>
+      ? AsyncIDBView<T, R, Awaited<ReturnType<V[key]["selector"]>>>
+      : never
+  }
+  // views: {
+  //   [key in keyof V]: V[key] extends View<any, any, any>
+  //     ? {
+  //         get: () => ReturnType<V[key]["selector"]>
+  //         subscribe: (
+  //           callback: (data: Awaited<ReturnType<V[key]["selector"]>>) => void
+  //         ) => () => void
+  //       }
+  //     : never
+  // }
   getInstance: () => Promise<IDBDatabase>
 }
 
@@ -122,6 +156,10 @@ export type AnyCollection = Collection<any, any, any, any, any>
 
 export type CollectionSchema = {
   [key: string]: AnyCollection
+}
+
+export type ViewSchema = {
+  [key: string]: View<any, any>
 }
 
 export type ActiveRecord<T> = T & ActiveRecordMethods<T>

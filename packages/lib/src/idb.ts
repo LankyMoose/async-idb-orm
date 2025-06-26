@@ -8,17 +8,20 @@ import {
   type OnDBUpgradeCallbackContext,
   CollectionIDMode,
   RelationsSchema,
+  ViewSchema,
 } from "./types"
 
-import { Collection } from "./collection.js"
+import { Collection } from "./builders/collection.js"
 import { AsyncIDBStore } from "./idbStore.js"
 import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
+import type { View } from "./builders/view"
+import { AsyncIDBView } from "./idbView"
 
 /**
  * @private
  * Internal usage only. Do not use directly.
  */
-export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
+export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V extends ViewSchema> {
   #db: IDBDatabase | null
   #instanceCallbacks: DBInstanceCallback[]
   stores: {
@@ -31,7 +34,12 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
   version: number
   schema: T
   relations: R
-  constructor(private name: string, private config: AsyncIDBConfig<T, R>) {
+  views: {
+    [key in keyof V]: V[key] extends View<any, any, any>
+      ? AsyncIDBView<T, R, Awaited<ReturnType<V[key]["selector"]>>>
+      : never
+  }
+  constructor(private name: string, private config: AsyncIDBConfig<T, R, V>) {
     this.#db = null
     this.#instanceCallbacks = []
     this.schema = config.schema
@@ -39,6 +47,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
     this.version = config.version
     this.stores = this.createStores()
     this.storeNames = Object.keys(this.schema)
+    this.views = this.createViews()
     this.relayEnabled = config.relayEvents !== false
 
     let latest = this.version
@@ -80,7 +89,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
     instanceCallback(this.#db)
   }
 
-  async transaction(callback: IDBTransactionCallback<T, R>, options?: IDBTransactionOptions) {
+  async transaction(callback: IDBTransactionCallback<T, R, V>, options?: IDBTransactionOptions) {
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
     const tx = idbInstance.transaction(this.storeNames, "readwrite", options)
 
@@ -147,13 +156,23 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
     }
   }
 
+  private createViews() {
+    return Object.entries(this.config.views ?? {}).reduce(
+      (acc, [name, view]) => ({
+        ...acc,
+        [name]: new AsyncIDBView(this as any, view.selector as any),
+      }),
+      {} as AsyncIDBInstance<T, R, V>["views"]
+    )
+  }
+
   private createStores() {
     return Object.entries(this.schema).reduce(
       (acc, [name, collection]) => ({
         ...acc,
         [name]: new AsyncIDBStore(this, collection, name),
       }),
-      {} as AsyncIDBInstance<T, R>["collections"]
+      {} as AsyncIDBInstance<T, R, V>["collections"]
     )
   }
 
@@ -163,7 +182,7 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema> {
         ...acc,
         [name]: AsyncIDBStore.cloneForTransaction(tx, store, eventQueue),
       }
-    }, {} as AsyncIDBInstance<T, R>["collections"])
+    }, {} as AsyncIDBInstance<T, R, V>["collections"])
   }
 
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {

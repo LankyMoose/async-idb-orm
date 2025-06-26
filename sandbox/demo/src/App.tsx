@@ -6,6 +6,7 @@ import { UserPosts } from "./components/UserPosts"
 import { runRelationsTest } from "./tests/relations"
 import { runBasicTest } from "./tests/basic"
 import { db } from "./db"
+import { For, memo, useEffect, useSignal, useState } from "kaioken"
 
 // window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
 
@@ -20,6 +21,22 @@ const reset = async () => {
     req.onerror = (err) => console.error(err)
     req.onsuccess = () => window.location.reload()
   })
+}
+
+function useUserNames() {
+  const userNames = useSignal<string[]>([])
+  // const [state, setState] = useState<string[]>([])
+
+  useEffect(
+    () =>
+      db.views.allUserNames.subscribe((names) => {
+        userNames.value = names
+        console.log("names updated", names)
+      }),
+    []
+  )
+
+  return userNames
 }
 
 export function App() {
@@ -42,6 +59,7 @@ export function App() {
           <button onclick={() => (selectedUser.value = null)}>Deselect</button>
         </div>
       </header>
+      <UserNameList />
       <Router>
         <Route path="/" element={<Home />} />
         <Route path="/users" element={<UsersPage />} fallthrough />
@@ -49,6 +67,18 @@ export function App() {
     </main>
   )
 }
+
+const UserNameList = memo(function UserNameList() {
+  const userNames = useUserNames()
+  return (
+    <div>
+      <h1>Usernames</h1>
+      <ul>
+        <For each={userNames}>{(name) => <li>{name}</li>}</For>
+      </ul>
+    </div>
+  )
+})
 
 function UsersPage() {
   return (

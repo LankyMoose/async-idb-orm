@@ -1,7 +1,7 @@
-import type { AsyncIDB } from "./idb"
-import { CollectionIDMode, CollectionIndex, SerializationConfig } from "./types"
-import { AsyncIDBStore } from "./idbStore.js"
-import { keyPassThroughProxy } from "./utils.js"
+import type { AsyncIDB } from "../idb"
+import { CollectionIDMode, CollectionIndex, SerializationConfig } from "../types"
+import { AsyncIDBStore } from "../idbStore.js"
+import { keyPassThroughProxy } from "../utils.js"
 
 const CollectionBuilderSentinel = Symbol()
 
@@ -68,7 +68,7 @@ export class Collection<
   Indexes extends CollectionIndex<RecordType>[] = never,
   IDMode extends CollectionIDMode = CollectionIDMode.UserAssigned
 > {
-  [$COLLECTION_INTERNAL]: {
+  [$COLLECTION_INTERNAL]!: {
     record: RecordType
     dto: DTO
   }
@@ -91,7 +91,6 @@ export class Collection<
     this.keyPath = "id" as KeyPath
     this.indexes = [] as any as Indexes
     this.foreignKeys = []
-    this[$COLLECTION_INTERNAL] = null!
     this.idMode = "userAssignedId" as IDMode
   }
   /**
@@ -182,7 +181,7 @@ export class Collection<
   }
 
   static validate(
-    db: AsyncIDB<any, any>,
+    db: AsyncIDB<any, any, any>,
     collection: Collection<any, any, any, any>,
     logErr: (err: any) => void
   ) {
