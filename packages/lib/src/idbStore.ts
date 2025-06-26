@@ -10,11 +10,11 @@ import type {
   ActiveRecord,
   ActiveRecordMethods,
   CollectionEventCallback,
-  TransactionContext,
   RelationsSchema,
   FindOptions,
   RelationResult,
   AnyCollection,
+  TaskContext,
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./builders/collection.js"
@@ -39,16 +39,13 @@ export class AsyncIDBStore<
 > {
   #isRelaying: boolean
   #relations: Record<string, StoreRelation>
-  #upstreamForeignKeyCallbacks: ((
-    data: CollectionRecord<T>,
-    ctx: TransactionContext
-  ) => Promise<void[]>)[]
+  #upstreamForeignKeyCallbacks: ((data: CollectionRecord<T>, ctx: TaskContext) => Promise<void[]>)[]
   #downstreamForeignKeyCallbacks: ((
     key: CollectionKeyPathType<T>,
-    ctx: TransactionContext
+    ctx: TaskContext
   ) => Promise<void>)[]
   #eventListeners: Record<CollectionEvent, CollectionEventCallback<T, CollectionEvent>[]>
-  #tx?: IDBTransaction
+  #taskContext?: TaskContext
   #serialize: (record: CollectionRecord<T>) => any
   #deserialize: (record: any) => CollectionRecord<T>
   constructor(private db: AsyncIDB<any, any, any>, private collection: T, public name: string) {
@@ -136,7 +133,7 @@ export class AsyncIDBStore<
         await this.checkUpstreamForeignKeys(serialized, ctx).catch(reject)
       }
 
-      const request = ctx.objectStore.add(serialized)
+      const request = ctx.tx.objectStore(this.name).add(serialized)
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -144,8 +141,10 @@ export class AsyncIDBStore<
         const res = !this.collection.idMode
           ? data
           : { ...data, [this.collection.keyPath]: request.result }
-        this.emit("write", res)
-        this.emit("write|delete", res)
+        ctx.events.push(() => {
+          this.emit("write", res)
+          this.emit("write|delete", res)
+        })
         resolve(res)
       }
     })
@@ -171,7 +170,7 @@ export class AsyncIDBStore<
   ): Promise<RelationResult<T, R, Options> | null> {
     return new Promise<RelationResult<T, R, Options> | null>((resolve, reject) => {
       this.db.getInstance((db) => {
-        const queryCtx = new RelationalQueryContext(db, this.#tx)
+        const queryCtx = new RelationalQueryContext(db, this.#taskContext?.tx)
         if (typeof predicateOrKey === "function") {
           queryCtx
             .findByPredicate<T, R, this, Options>(this, predicateOrKey, options, 1)
@@ -206,7 +205,7 @@ export class AsyncIDBStore<
     const limit = options?.limit || Infinity
     return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
       this.db.getInstance((db) => {
-        const queryCtx = new RelationalQueryContext(db, this.#tx)
+        const queryCtx = new RelationalQueryContext(db, this.#taskContext?.tx)
         queryCtx
           .findByPredicate<T, R, this, Options>(this, predicate, options, limit)
           .then(resolve, reject)
@@ -234,7 +233,7 @@ export class AsyncIDBStore<
   ): Promise<RelationResult<T, R, Options>[]> {
     return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
       this.db.getInstance((db) => {
-        new RelationalQueryContext(db, this.#tx)
+        new RelationalQueryContext(db, this.#taskContext?.tx)
           .findAll<T, R, this, Options>(this, options)
           .then(resolve, reject)
       })
@@ -272,14 +271,15 @@ export class AsyncIDBStore<
       if (this.#upstreamForeignKeyCallbacks.length) {
         await this.checkUpstreamForeignKeys(serialized, ctx).catch(reject)
       }
-
-      const request = ctx.objectStore.put(serialized)
+      const request = ctx.tx.objectStore(this.name).put(serialized)
 
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         if (!request.result) return reject(request.error)
-        this.emit("write", record)
-        this.emit("write|delete", record)
+        ctx.events.push(() => {
+          this.emit("write", record)
+          this.emit("write|delete", record)
+        })
         resolve(record)
       }
     })
@@ -307,8 +307,9 @@ export class AsyncIDBStore<
     }
 
     return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
+      const objectStore = ctx.tx.objectStore(this.name)
       const record = await new Promise<CollectionRecord<T> | null>((resolve, reject) => {
-        const request = ctx.objectStore.get(predicateOrKey)
+        const request = objectStore.get(predicateOrKey)
         request.onerror = (err) => reject(err)
         request.onsuccess = () => {
           if (!request.result) return resolve(null)
@@ -320,11 +321,13 @@ export class AsyncIDBStore<
       if (this.#downstreamForeignKeyCallbacks.length) {
         await this.checkDownstreamForeignKeys(predicateOrKey, ctx).catch(reject)
       }
-      const request = ctx.objectStore.delete(predicateOrKey)
+      const request = objectStore.delete(predicateOrKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.emit("delete", record)
-        this.emit("write|delete", record)
+        ctx.events.push(() => {
+          this.emit("delete", record)
+          this.emit("write|delete", record)
+        })
         resolve(record)
       }
     })
@@ -340,7 +343,7 @@ export class AsyncIDBStore<
     limit: number = Infinity
   ): Promise<CollectionRecord<T>[]> {
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.openCursor()
+      const request = ctx.tx.objectStore(this.name).openCursor()
       const results: CollectionRecord<T>[] = []
       request.onerror = (err) => reject(err)
       request.onsuccess = async () => {
@@ -359,8 +362,10 @@ export class AsyncIDBStore<
         const deleteRequest = cursor.delete()
         deleteRequest.onerror = (err) => reject(err)
         deleteRequest.onsuccess = () => {
-          this.emit("delete", record)
-          this.emit("write|delete", record)
+          ctx.events.push(() => {
+            this.emit("delete", record)
+            this.emit("write|delete", record)
+          })
           results.push(record)
           if (--limit) {
             return cursor.continue()
@@ -376,10 +381,10 @@ export class AsyncIDBStore<
    */
   clear(): Promise<void> {
     return this.queueTask<void>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.clear()
+      const request = ctx.tx.objectStore(this.name).clear()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
-        this.emit("clear", null)
+        ctx.events.push(() => this.emit("clear", null))
         resolve()
       }
     })
@@ -390,8 +395,8 @@ export class AsyncIDBStore<
    */
   async *[Symbol.asyncIterator]() {
     let objectStore: IDBObjectStore
-    if (this.#tx) {
-      objectStore = this.#tx.objectStore(this.name)
+    if (this.#taskContext) {
+      objectStore = this.#taskContext.tx.objectStore(this.name)
     } else {
       const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
       objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
@@ -409,7 +414,7 @@ export class AsyncIDBStore<
    */
   count(): Promise<number> {
     return this.queueTask<number>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.count()
+      const request = ctx.tx.objectStore(this.name).count()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result)
     })
@@ -457,7 +462,7 @@ export class AsyncIDBStore<
     keyRange: IDBKeyRange
   ): Promise<CollectionRecord<T>[]> {
     return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.index(name).openCursor(keyRange)
+      const request = ctx.tx.objectStore(this.name).index(name).openCursor(keyRange)
       const results: CollectionRecord<T>[] = []
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
@@ -489,15 +494,10 @@ export class AsyncIDBStore<
     return store.#relations
   }
 
-  static cloneForTransaction(
-    tx: IDBTransaction,
-    store: AsyncIDBStore<any, any>,
-    eventQueue: Function[]
-  ) {
+  static cloneForTransaction(ctx: TaskContext, store: AsyncIDBStore<any, any>) {
     const cloned = new AsyncIDBStore(store.db, store.collection, store.name)
-    cloned.#tx = tx
+    cloned.#taskContext = ctx
     cloned.#eventListeners = store.#eventListeners
-    cloned.emit = (event, data) => eventQueue.push(() => store.emit(event, data))
     cloned.#upstreamForeignKeyCallbacks = store.#upstreamForeignKeyCallbacks
     cloned.#downstreamForeignKeyCallbacks = store.#downstreamForeignKeyCallbacks
     cloned.#relations = store.#relations
@@ -537,7 +537,7 @@ export class AsyncIDBStore<
     direction: "next" | "prev"
   ): Promise<CollectionRecord<T> | null> {
     return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.index(name).openCursor(null, direction)
+      const request = ctx.tx.objectStore(this.name).index(name).openCursor(null, direction)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const cursor = request.result
@@ -549,7 +549,7 @@ export class AsyncIDBStore<
 
   private exists(id: CollectionKeyPathType<T>) {
     return this.queueTask<boolean>((ctx, resolve, reject) => {
-      const request = ctx.objectStore.getKey(id as IDBValidKey)
+      const request = ctx.tx.objectStore(this.name).getKey(id as IDBValidKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result === id)
     })
@@ -581,26 +581,25 @@ export class AsyncIDBStore<
     return record[keyPath as string]
   }
 
-  private queueTask<T>(
+  private queueTask<Result>(
     reqHandler: (
-      ctx: { db: IDBDatabase; objectStore: IDBObjectStore; tx: IDBTransaction },
-      resolve: (value: T) => void,
+      ctx: TaskContext,
+      resolve: (value: Result) => void,
       reject: (reason?: any) => void
     ) => void
-  ): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const tx = this.#tx
-      if (tx) {
-        return reqHandler(
-          { db: tx.db, objectStore: tx.objectStore(this.name), tx },
-          resolve,
-          reject
-        )
+  ): Promise<Result> {
+    return new Promise<Result>((_resolve, reject) => {
+      if (this.#taskContext) {
+        return reqHandler(this.#taskContext, _resolve, reject)
       }
       this.db.getInstance((db) => {
         const tx = db.transaction(this.db.storeNames, "readwrite")
-        const objectStore = tx.objectStore(this.name)
-        reqHandler({ db, objectStore, tx }, resolve, reject)
+        const ctx: TaskContext = { db, tx, events: [] }
+        const resolve = (result: Result) => {
+          _resolve(result)
+          ctx.events.forEach((cb) => cb())
+        }
+        reqHandler(ctx, resolve, reject)
       })
     })
   }
@@ -636,14 +635,14 @@ export class AsyncIDBStore<
 
   private checkDownstreamForeignKeys(
     key: CollectionKeyPathType<T>,
-    ctx: TransactionContext
+    ctx: TaskContext
   ): Promise<void[]> {
     return Promise.all(this.#downstreamForeignKeyCallbacks.map((cb) => cb(key, ctx)))
   }
 
   private checkUpstreamForeignKeys(
     record: CollectionRecord<T>,
-    ctx: TransactionContext
+    ctx: TaskContext
   ): Promise<void[][]> {
     return Promise.all(this.#upstreamForeignKeyCallbacks.map((cb) => cb(record, ctx)))
   }
@@ -697,9 +696,7 @@ export class AsyncIDBStore<
         case "cascade":
           store.#downstreamForeignKeyCallbacks.push((key, ctx) => {
             return new Promise<void>((resolve, reject) => {
-              const tx = ctx.tx
-              const objectStore = tx.objectStore(this.name)
-              const request = objectStore.openCursor()
+              const request = ctx.tx.objectStore(this.name).openCursor()
               request.onerror = (err) => {
                 reject(
                   new Error(
@@ -716,9 +713,20 @@ export class AsyncIDBStore<
                   await this.checkDownstreamForeignKeys(this.getRecordKey(cursor.value), ctx).catch(
                     reject
                   )
-                  cursor.delete()
+
+                  const deserialized = this.#deserialize(cursor.value)
+                  const deleteRequest = cursor.delete()
+                  deleteRequest.onerror = (err) => reject(err)
+                  deleteRequest.onsuccess = () => {
+                    ctx.events.push(() => {
+                      this.emit("delete", deserialized)
+                      this.emit("write|delete", deserialized)
+                    })
+                    cursor.continue()
+                  }
+                } else {
+                  cursor.continue()
                 }
-                cursor.continue()
               }
               request.onsuccess = cascadeDelete
             })
@@ -727,9 +735,7 @@ export class AsyncIDBStore<
         case "restrict":
           store.#downstreamForeignKeyCallbacks.push((key, ctx) => {
             return new Promise<void>((resolve, reject) => {
-              const tx = ctx.tx
-              const objectStore = tx.objectStore(this.name)
-              const request = objectStore.openCursor()
+              const request = ctx.tx.objectStore(this.name).openCursor()
               request.onerror = (err) => {
                 reject(
                   new Error(
@@ -758,9 +764,7 @@ export class AsyncIDBStore<
         case "set null":
           store.#downstreamForeignKeyCallbacks.push((key, ctx) => {
             return new Promise<void>((resolve, reject) => {
-              const tx = ctx.tx
-              const objectStore = tx.objectStore(this.name)
-              const request = objectStore.openCursor()
+              const request = ctx.tx.objectStore(this.name).openCursor()
               request.onerror = (err) => {
                 reject(new Error(err as any))
               }
@@ -769,12 +773,18 @@ export class AsyncIDBStore<
                 if (!cursor) return resolve()
 
                 if (cursor.value[field] !== key) return cursor.continue()
-
-                const updateReq = cursor.update({ ...cursor.value, [field]: null })
+                const record = { ...cursor.value, [field]: null }
+                const updateReq = cursor.update(record)
                 updateReq.onerror = (err) => {
                   reject(new Error(err as any))
                 }
-                updateReq.onsuccess = () => cursor.continue()
+                updateReq.onsuccess = () => {
+                  ctx.events.push(() => {
+                    this.emit("write", record)
+                    this.emit("write|delete", record)
+                  })
+                  cursor.continue()
+                }
               }
               request.onsuccess = setNull
             })
@@ -798,7 +808,7 @@ export class AsyncIDBStore<
 class RelationalQueryContext {
   tx: IDBTransaction
   constructor(public db: IDBDatabase, tx?: IDBTransaction) {
-    this.tx = tx ?? this.db.transaction(this.db.objectStoreNames, "readonly")
+    this.tx = tx ?? db.transaction(db.objectStoreNames, "readonly")
   }
 
   async findAll<
@@ -812,8 +822,7 @@ class RelationalQueryContext {
     const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig
 
     return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
-      const objectStore = this.tx.objectStore(store.name)
-      const request = objectStore.getAll()
+      const request = this.tx.objectStore(store.name).getAll()
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         const deserialized = request.result.map(deserialize) as RelationResult<T, R, Options>[]
@@ -843,8 +852,7 @@ class RelationalQueryContext {
     if (viewStoreObservations.enabled) viewStoreObservations.observed.add(store.name)
 
     return new Promise((resolve, reject) => {
-      const objectStore = this.tx.objectStore(store.name)
-      const request = objectStore.get(id)
+      const request = this.tx.objectStore(store.name).get(id)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => {
         if (!request.result) {
@@ -881,8 +889,7 @@ class RelationalQueryContext {
     const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig
 
     return new Promise<RelationResult<T, R, Options>[]>((_resolve, reject) => {
-      const objectStore = this.tx.objectStore(store.name)
-      const request = objectStore.openCursor()
+      const request = this.tx.objectStore(store.name).openCursor()
       const results: RelationResult<T, R, Options>[] = []
 
       const resolve = () => {

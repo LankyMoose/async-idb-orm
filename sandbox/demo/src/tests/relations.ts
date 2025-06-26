@@ -1,5 +1,6 @@
 import { assert, assertThrows } from "../assert"
 import { db, Post, Todo } from "../db"
+import { clearAllCollections } from "./utils"
 
 /**
  * Comprehensive Relations API Demo
@@ -13,11 +14,7 @@ import { db, Post, Todo } from "../db"
  */
 
 async function setupTestData() {
-  // Clear existing data
-  await db.collections.postComments.clear()
-  await db.collections.posts.clear()
-  await db.collections.todos.clear()
-  await db.collections.users.clear()
+  await clearAllCollections()
 
   // Create test users
   const user1 = await db.collections.users.create({

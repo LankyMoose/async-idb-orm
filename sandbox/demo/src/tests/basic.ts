@@ -2,12 +2,11 @@ import { assert, assertThrows } from "$/assert"
 import { db, TimeStamp } from "$/db"
 import { randomUserName } from "$/random"
 import { selectedUser } from "$/state/selectedUser"
+import { clearAllCollections } from "./utils"
 
 export const runBasicTest = async () => {
   selectedUser.value = null
-  await db.collections.postComments.clear()
-  await db.collections.posts.clear()
-  await db.collections.users.clear()
+  await clearAllCollections()
 
   let johnsCreationTime: TimeStamp | null = null
   await db.transaction(async (c) => {
@@ -76,10 +75,9 @@ export const runBasicTest = async () => {
   // key ranges
 
   await db.collections.users.upsert(
-    // @ts-ignore
     ...Array.from({ length: 100 }, (_, i) => ({
       age: i,
-      id: crypto.randomUUID(),
+      id: i + 1000,
       name: randomUserName(),
     }))
   )
@@ -102,4 +100,76 @@ export const runBasicTest = async () => {
   const note = await db.collections.notes.find((note) => note.content === "Hello world")
   assert(note, "Expected to find note")
   assert(note.userId === null, "Expected note userId to be null")
+
+  await clearAllCollections()
+  // ~~~~~~~ Event Batching
+
+  const eventTrackers = (["users", "posts", "postComments"] as const).map((collectionName) => {
+    const collection = db.collections[collectionName]
+    let debugEnabled = false
+    const events: any[] = []
+    const listener = (evt) => {
+      if (debugEnabled) console.log(collectionName, evt)
+      events.push(evt)
+    }
+    collection.addEventListener("write|delete", listener)
+    return {
+      events,
+      unTrack: () => collection.removeEventListener("write|delete", listener),
+      enableDebug: () => (debugEnabled = true),
+    }
+  })
+
+  const [userEvts, postEvts, postCommentEvts] = eventTrackers.map((t) => t.events)
+
+  await db.transaction(async (c) => {
+    const john = await c.users.create({ name: "John Doe", age: 30 })
+    const sarah = await c.users.create({ name: "Sarah Connor", age: 30 })
+    const post = await c.posts.create({ userId: john.id, content: "Hello world" })
+    await c.postComments.create({
+      postId: post.id,
+      content: "Great post!",
+      userId: sarah.id,
+    })
+    assert(userEvts.length === 0, "Expected 0 user events, got " + userEvts.length)
+    assert(postEvts.length === 0, "Expected 0 post events, got " + postEvts.length)
+    assert(
+      postCommentEvts.length === 0,
+      "Expected 0 post comment events, got " + postCommentEvts.length
+    )
+  })
+
+  assert(userEvts.length === 2, "Expected 2 user events, got " + userEvts.length)
+  assert(postEvts.length === 1, "Expected 1 post event, got " + postEvts.length)
+  assert(
+    postCommentEvts.length === 1,
+    "Expected 1 post comment event, got " + postCommentEvts.length
+  )
+
+  userEvts.length = 0
+  postEvts.length = 0
+  postCommentEvts.length = 0
+
+  await db.transaction(async (c) => {
+    const john = await c.users.find((u) => u.name === "John Doe")
+    assert(john, "Expected to find John Doe")
+    await c.users.delete(john.id)
+    assert(userEvts.length === 0, "Expected 0 user events, got " + userEvts.length)
+    assert(postEvts.length === 0, "Expected 0 post events, got " + postEvts.length)
+    assert(
+      postCommentEvts.length === 0,
+      "Expected 0 post comment events, got " + postCommentEvts.length
+    )
+    eventTrackers[0].enableDebug()
+  })
+
+  assert(userEvts.length === 1, "Expected 1 user events, got " + userEvts.length)
+  assert(postEvts.length === 1, "Expected 1 post event, got " + postEvts.length)
+  assert(
+    postCommentEvts.length === 1,
+    "Expected 1 post comment event, got " + postCommentEvts.length
+  )
+
+  eventTrackers.forEach((tracker) => tracker.unTrack())
+  await clearAllCollections()
 }

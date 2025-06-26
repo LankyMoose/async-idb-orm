@@ -9,6 +9,7 @@ import {
   CollectionIDMode,
   RelationsSchema,
   ViewSchema,
+  TaskContext,
 } from "./types"
 
 import { Collection } from "./builders/collection.js"
@@ -93,15 +94,15 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
     const tx = idbInstance.transaction(this.storeNames, "readwrite", options)
 
-    const eventQueue: Function[] = []
-    const txCollections = this.cloneStoresForTransaction(tx, eventQueue)
+    const taskCtx: TaskContext = { db: idbInstance, tx, events: [] }
+    const txCollections = this.cloneStoresForTransaction(taskCtx)
 
     let aborted = false
     tx.addEventListener("abort", () => (aborted = true))
 
     try {
       const res = (await callback(txCollections, tx)) as any
-      for (let i = 0; i < eventQueue.length; i++) eventQueue[i]()
+      taskCtx.events.forEach((cb) => cb())
       return res
     } catch (error) {
       if (!aborted) tx.abort()
@@ -176,11 +177,11 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
     )
   }
 
-  private cloneStoresForTransaction(tx: IDBTransaction, eventQueue: Function[]) {
+  private cloneStoresForTransaction(ctx: TaskContext) {
     return Object.entries(this.stores).reduce((acc, [name, store]) => {
       return {
         ...acc,
-        [name]: AsyncIDBStore.cloneForTransaction(tx, store, eventQueue),
+        [name]: AsyncIDBStore.cloneForTransaction(ctx, store),
       }
     }, {} as AsyncIDBInstance<T, R, V>["collections"])
   }
@@ -188,9 +189,10 @@ export class AsyncIDB<T extends CollectionSchema, R extends RelationsSchema, V e
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {
     const dbInstance = request.result
     if (this.onUpgrade) {
+      const taskCtx: TaskContext = { db: dbInstance, tx: request.transaction!, events: [] }
       const ctx: OnDBUpgradeCallbackContext<T, R> = {
         db: dbInstance,
-        collections: this.cloneStoresForTransaction(request.transaction!, []),
+        collections: this.cloneStoresForTransaction(taskCtx),
         deleteStore: (name) => dbInstance.deleteObjectStore(name),
         createStore: (name) => this.createStore(dbInstance, name),
       }

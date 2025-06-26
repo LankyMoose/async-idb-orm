@@ -325,3 +325,9 @@ export type RelationsWithOptions<
   R extends RelationsSchema,
   _CollectionName extends string
 > = RelationWithOptions<R>
+
+export type TaskContext = {
+  db: IDBDatabase
+  tx: IDBTransaction
+  events: (() => void)[]
+}
