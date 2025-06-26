@@ -9,7 +9,7 @@
 > - [Active Records](#active-records)
 > - [Transactions](#transactions)
 > - [Relations](#relations)
-> - [Views](#views)
+> - [Selectors](#selectors)
 > - [Foreign Keys](#foreign-keys)
 > - [Async Iteration](#async-iteration)
 > - [Serialization](#serialization)
@@ -22,7 +22,7 @@
 
 ```ts
 // db.ts
-import { idb, Collection, View } from "async-idb-orm"
+import { idb, Collection, Selector } from "async-idb-orm"
 
 type User = {
   id: string
@@ -62,11 +62,11 @@ const users = Collection.create<User, UserDTO>()
 type Post = { id: number; text: string; userId: string }
 const posts = Collection.create<Post>().withKeyPath("id", { autoIncrement: true })
 
-// Define views for derived/computed data
+// Define selectors for derived/computed data
 const schema = { users, posts }
 const relations = {} // your relations here
 
-const userSummary = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+const userSummary = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
   const allUsers = await ctx.users.all()
   return {
     totalUsers: allUsers.length,
@@ -78,7 +78,7 @@ const userSummary = View.create<typeof schema, typeof relations>().as(async (ctx
 export const db = idb("users", {
   schema,
   relations,
-  views: { userSummary },
+  selectors: { userSummary },
   version: 1,
 })
 ```
@@ -109,12 +109,12 @@ const usersYoungerThan30 = await db.collections.users.getIndexRange(
   IDBKeyRange.bound(0, 30)
 )
 
-// Using views for computed data
-const summary = await db.views.userSummary.get()
+// Using selectors for computed data
+const summary = await db.selectors.userSummary.get()
 //    ^? { totalUsers: number; averageAge: number; userNames: string[] }
 
-// Subscribe to reactive view updates
-const unsubscribe = db.views.userSummary.subscribe((summary) => {
+// Subscribe to reactive selector updates
+const unsubscribe = db.selectors.userSummary.subscribe((summary) => {
   console.log(`Total users: ${summary.totalUsers}, Average age: ${summary.averageAge}`)
 })
 ```
@@ -455,16 +455,16 @@ const user = await db.collections.users.find(1, {
 
 ---
 
-### Views
+### Selectors
 
-Views provide a powerful way to create computed, reactive data derived from your collections. They automatically track dependencies and update when the underlying data changes, making them perfect for derived state management.
+Selectors provide a powerful way to create computed, reactive data derived from your collections. They automatically track dependencies and update when the underlying data changes, making them perfect for derived state management.
 
-#### Defining Views
+#### Defining Selectors
 
-Views are defined separately from collections and relations using the `View.create()` method:
+Selectors are defined separately from collections and relations using the `Selector.create()` method:
 
 ```ts
-import { idb, Collection, View } from "async-idb-orm"
+import { idb, Collection, Selector } from "async-idb-orm"
 
 // Collections
 type User = { id: string; name: string; age: number; isActive: boolean }
@@ -473,17 +473,19 @@ type Post = { id: string; title: string; content: string; userId: string }
 const users = Collection.create<User>()
 const posts = Collection.create<Post>()
 
-// Define views
-export const allUserNames = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+// Define selectors
+export const allUserNames = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
   return (await ctx.users.all()).map((user) => user.name)
 })
 
-export const activeUserCount = View.create<typeof schema, typeof relations>().as(async (ctx) => {
-  const activeUsers = await ctx.users.findMany((user) => user.isActive)
-  return activeUsers.length
-})
+export const activeUserCount = Selector.create<typeof schema, typeof relations>().as(
+  async (ctx) => {
+    const activeUsers = await ctx.users.findMany((user) => user.isActive)
+    return activeUsers.length
+  }
+)
 
-export const userPostCounts = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+export const userPostCounts = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
   const [users, posts] = await Promise.all([ctx.users.all(), ctx.posts.all()])
 
   return users.map((user) => ({
@@ -493,28 +495,28 @@ export const userPostCounts = View.create<typeof schema, typeof relations>().as(
   }))
 })
 
-// Setup database with views
+// Setup database with selectors
 const schema = { users, posts }
 const relations = {} // your relations here
-const views = { allUserNames, activeUserCount, userPostCounts }
+const selectors = { allUserNames, activeUserCount, userPostCounts }
 
 export const db = idb("my-app", {
   schema,
   relations,
-  views,
+  selectors,
   version: 1,
 })
 ```
 
-#### Using Views
+#### Using Selectors
 
-Views provide two main methods for accessing data:
+Selectors provide two main methods for accessing data:
 
 **Reactive Subscriptions:**
 
 ```ts
-// Subscribe to view updates - callback is called whenever dependent data changes
-const unsubscribe = db.views.allUserNames.subscribe((names) => {
+// Subscribe to selector updates - callback is called whenever dependent data changes
+const unsubscribe = db.selectors.allUserNames.subscribe((names) => {
   console.log("User names updated:", names)
 })
 
@@ -525,38 +527,38 @@ unsubscribe()
 **Promise-based Access:**
 
 ```ts
-// Get current view data as a promise
-const userNames = await db.views.allUserNames.get()
-const activeCount = await db.views.activeUserCount.get()
-const postCounts = await db.views.userPostCounts.get()
+// Get current selector data as a promise
+const userNames = await db.selectors.allUserNames.get()
+const activeCount = await db.selectors.activeUserCount.get()
+const postCounts = await db.selectors.userPostCounts.get()
 ```
 
 #### Automatic Dependency Tracking
 
-Views automatically track which collections they access during execution. When any of those collections are modified (create, update, delete, or clear operations), the view will automatically refresh and notify all subscribers:
+Selectors automatically track which collections they access during execution. When any of those collections are modified (create, update, delete, or clear operations), the selector will automatically refresh and notify all subscribers:
 
 ```ts
-// This view will automatically track that it depends on the 'users' collection
-const youngUsers = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+// This selector will automatically track that it depends on the 'users' collection
+const youngUsers = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
   return ctx.users.findMany((user) => user.age < 30) // Accesses 'users' collection
 })
 
-// When you modify users, the view automatically updates
+// When you modify users, the selector automatically updates
 await db.collections.users.create({ name: "Alice", age: 25, isActive: true })
-// ↑ This will trigger the youngUsers view to refresh
+// ↑ This will trigger the youngUsers selector to refresh
 ```
 
 #### Integration with UI Frameworks
 
-Views work seamlessly with reactive UI frameworks. Here's an example with a React-like framework:
+Selectors work seamlessly with reactive UI frameworks. Here's an example with a React-like framework:
 
 ```ts
 function useUserNames() {
   const [userNames, setUserNames] = useState<string[]>([])
 
   useEffect(() => {
-    // Subscribe to view updates
-    const unsubscribe = db.views.allUserNames.subscribe(setUserNames)
+    // Subscribe to selector updates
+    const unsubscribe = db.selectors.allUserNames.subscribe(setUserNames)
     return unsubscribe // Cleanup subscription
   }, [])
 
@@ -578,18 +580,18 @@ function UserNamesList() {
 
 #### Performance Considerations
 
-- Views are **lazy** - they only compute data when first accessed or when dependencies change
-- Views are **cached** - subsequent `get()` calls return cached data until dependencies change
-- Views use **efficient change detection** - they only refresh when collections they actually accessed are modified
-- **Microtask batching** - multiple rapid changes are batched into a single view refresh
+- Selectors are **lazy** - they only compute data when first accessed or when dependencies change
+- Selectors are **cached** - subsequent `get()` calls return cached data until dependencies change
+- Selectors use **efficient change detection** - they only refresh when collections they actually accessed are modified
+- **Microtask batching** - multiple rapid changes are batched into a single selector refresh
 
 #### Type Safety
 
-Views are fully type-safe with TypeScript:
+Selectors are fully type-safe with TypeScript:
 
 ```ts
-// The view's return type is automatically inferred
-const typedView = View.create<typeof schema, typeof relations>().as(async (ctx) => {
+// The selector's return type is automatically inferred
+const typedSelector = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
   return {
     userCount: (await ctx.users.all()).length,
     avgAge:
@@ -599,7 +601,7 @@ const typedView = View.create<typeof schema, typeof relations>().as(async (ctx) 
 // TypeScript knows this returns: { userCount: number; avgAge: number }
 
 // Subscribers receive correctly typed data
-db.views.typedView.subscribe((data) => {
+db.selectors.typedSelector.subscribe((data) => {
   console.log(data.userCount) // ✅ TypeScript knows this is a number
   console.log(data.avgAge) // ✅ TypeScript knows this is a number
 })
