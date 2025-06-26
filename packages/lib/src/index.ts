@@ -13,6 +13,12 @@ import type {
   SelectorSchema,
 } from "./types"
 
+if (typeof indexedDB === "undefined") {
+  console.error(
+    "[async-idb-orm]: IndexedDB support was not detected. This module can only be used in an up-to-date browser environment."
+  )
+}
+
 /**
  * Creates a new AsyncIDB instance
  * @template {CollectionSchema} T
