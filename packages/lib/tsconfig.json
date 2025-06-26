@@ -12,6 +12,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "declaration": true,
+    "removeComments": false,
     //"noEmit": true,
 
     /* Linting */
