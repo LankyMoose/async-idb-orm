@@ -27,6 +27,21 @@ if (typeof indexedDB === "undefined") {
  * @param {string} name
  * @param {AsyncIDBConfig<T, R, S>} config
  * @returns {AsyncIDBInstance<T, R, S>}
+ *
+ * @example
+ * ```ts
+ * import { idb } from "async-idb-orm"
+ * import * as schema from "./schema"
+ * import * as relations from "./relations"
+ * import * as selectors from "./selectors"
+ *
+ * const db = idb("my-db", {
+ *   schema: schema,
+ *   relations: relations,
+ *   selectors: selectors,
+ *   version: 1,
+ * })
+ * ```
  */
 function idb<
   T extends CollectionSchema,

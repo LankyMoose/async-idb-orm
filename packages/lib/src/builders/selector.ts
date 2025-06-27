@@ -7,20 +7,35 @@ export class Selector<T extends CollectionSchema, R extends RelationsSchema, Dat
 
   private constructor(key: symbol) {
     if (key !== SelectorBuilderSentinel)
-      throw new Error("Cannot call ViewBuilder directly - use View.create()")
+      throw new Error("Cannot call SelectorBuilder directly - use Selector.create()")
   }
 
-  static create<const T extends CollectionSchema, const R extends RelationsSchema>(): Selector<
-    T,
-    R
-  > {
+  /**
+   * Creates a new Selector definition
+   * @example
+   * ```ts
+   * import { Selector } from "async-idb-orm"
+   * import * as schema from "./schema"
+   * import * as relations from "./relations"
+   *
+   * const recentPostsWithAuthors = Selector.create<typeof schema, typeof relations>()
+   *   .as((ctx) => ctx.posts.findMany((post) => isCreatedRecently(post)), {
+   *     with: { author: true },
+   *   })
+   *
+   * ```
+   */
+  static create<T extends CollectionSchema, R extends RelationsSchema = {}>(): Selector<T, R> {
     return new Selector<T, R>(SelectorBuilderSentinel)
   }
 
-  as<const Callback extends (ctx: AsyncIDBInstance<T, R, any>["collections"]) => Promise<unknown>>(
-    _callback: Callback
+  /**
+   * Sets the selector callback
+   */
+  as<Callback extends (ctx: AsyncIDBInstance<T, R, any>["collections"]) => Promise<unknown>>(
+    callback: Callback
   ) {
-    this.selector = _callback as any
+    this.selector = callback as any
     return this as Selector<T, R, Awaited<ReturnType<Callback>>>
   }
 }

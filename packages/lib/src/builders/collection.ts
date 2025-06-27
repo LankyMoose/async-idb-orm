@@ -150,7 +150,7 @@ export class Collection<
   }
 
   /**
-   * Creates a new collection
+   * Creates a new Collection definition
    * @example
    * ```ts
    * type Todo = { id: number; text: string; createdAt: number }
