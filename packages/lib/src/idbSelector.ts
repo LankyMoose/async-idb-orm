@@ -17,7 +17,7 @@ export class AsyncIDBSelector<Data> {
   #data: Data | typeof $DATA_EMPTY
   #storeUpdateListener: () => void
   #refreshQueued: boolean
-  #resolvers: ((data: Data) => void)[]
+  #getterPromises: [(data: Data) => void, (reason?: any) => void][]
   private static observed = new Map<IDBTransaction, Set<AnyStore>>()
 
   constructor(
@@ -31,7 +31,7 @@ export class AsyncIDBSelector<Data> {
     this.#data = $DATA_EMPTY
     this.#refreshQueued = false
     this.#storeUpdateListener = () => this.refresh()
-    this.#resolvers = []
+    this.#getterPromises = []
   }
 
   subscribe(callback: (data: Data) => void): () => void {
@@ -45,9 +45,9 @@ export class AsyncIDBSelector<Data> {
   }
 
   get(): Promise<Data> {
-    if (this.#data !== $DATA_EMPTY) return Promise.resolve(this.#data)
+    if (this.#data !== $DATA_EMPTY && !this.#refreshQueued) return Promise.resolve(this.#data)
     this.refresh()
-    return new Promise<Data>((res) => this.#resolvers.push(res))
+    return new Promise<Data>((res, rej) => this.#getterPromises.push([res, rej]))
   }
 
   private async refresh() {
@@ -62,32 +62,45 @@ export class AsyncIDBSelector<Data> {
         let data
         try {
           data = this.#data = await this.selector(ctx)
+          this.registerListeners(stores)
         } catch (e) {
+          while (this.#getterPromises.length) {
+            const [_, rej] = this.#getterPromises.shift()!
+            rej(e)
+          }
           throw e
         } finally {
+          this.#refreshQueued = false
           AsyncIDBSelector.observed.delete(tx)
         }
 
-        this.#subscriptions.forEach((unsub, store) => stores.has(store) || unsub())
-        stores.forEach((store) => {
-          if (this.#subscriptions.has(store)) return
-          store.addEventListener("write|delete", this.#storeUpdateListener)
-          store.addEventListener("clear", this.#storeUpdateListener)
-          this.#subscriptions.set(store, () => {
-            store.removeEventListener("write|delete", this.#storeUpdateListener)
-            store.removeEventListener("clear", this.#storeUpdateListener)
-          })
-        })
-
         this.#subscribers.forEach((cb) => cb(data))
-        while (this.#resolvers.length) this.#resolvers.shift()!(data)
-
-        this.#refreshQueued = false
+        while (this.#getterPromises.length) {
+          const [res] = this.#getterPromises.shift()!
+          res(data)
+        }
       })
     })
   }
 
   static observe(tx: IDBTransaction, store: AnyStore) {
     this.observed.get(tx)?.add(store)
+  }
+
+  private registerListeners(stores: Set<AnyStore>) {
+    this.#subscriptions.forEach((unsub, store) => {
+      if (!stores.has(store)) unsub()
+    })
+
+    stores.forEach((store) => {
+      if (this.#subscriptions.has(store)) return
+      const remove = () => {
+        store.removeEventListener("write|delete", this.#storeUpdateListener)
+        store.removeEventListener("clear", this.#storeUpdateListener)
+      }
+      store.addEventListener("write|delete", this.#storeUpdateListener)
+      store.addEventListener("clear", this.#storeUpdateListener)
+      this.#subscriptions.set(store, remove)
+    })
   }
 }
