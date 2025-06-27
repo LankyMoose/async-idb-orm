@@ -59,9 +59,13 @@ export class AsyncIDBSelector<Data> {
         const stores = new Set<AnyStore>()
         AsyncIDBSelector.observed.set(tx, stores)
 
-        let data
         try {
-          data = this.#data = await this.selector(ctx)
+          const data = (this.#data = await this.selector(ctx))
+          this.#subscribers.forEach((cb) => cb(data))
+          while (this.#getterPromises.length) {
+            const [res] = this.#getterPromises.shift()!
+            res(data)
+          }
           this.registerListeners(stores)
         } catch (e) {
           while (this.#getterPromises.length) {
@@ -72,12 +76,6 @@ export class AsyncIDBSelector<Data> {
         } finally {
           this.#refreshQueued = false
           AsyncIDBSelector.observed.delete(tx)
-        }
-
-        this.#subscribers.forEach((cb) => cb(data))
-        while (this.#getterPromises.length) {
-          const [res] = this.#getterPromises.shift()!
-          res(data)
         }
       })
     })
