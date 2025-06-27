@@ -55,30 +55,34 @@ export class AsyncIDBSelector<Data> {
 
     this.#refreshQueued = true
     queueMicrotask(() => {
-      this.db.transaction((ctx, tx) => {
+      this.db.transaction(async (ctx, tx) => {
         const stores = new Set<AnyStore>()
         AsyncIDBSelector.observed.set(tx, stores)
 
-        this.selector(ctx).then((data) => {
-          this.#data = data
+        let data
+        try {
+          data = this.#data = await this.selector(ctx)
+        } catch (e) {
+          throw e
+        } finally {
           AsyncIDBSelector.observed.delete(tx)
+        }
 
-          this.#subscriptions.forEach((unsub, store) => stores.has(store) || unsub())
-          stores.forEach((store) => {
-            if (this.#subscriptions.has(store)) return
-            store.addEventListener("write|delete", this.#storeUpdateListener)
-            store.addEventListener("clear", this.#storeUpdateListener)
-            this.#subscriptions.set(store, () => {
-              store.removeEventListener("write|delete", this.#storeUpdateListener)
-              store.removeEventListener("clear", this.#storeUpdateListener)
-            })
+        this.#subscriptions.forEach((unsub, store) => stores.has(store) || unsub())
+        stores.forEach((store) => {
+          if (this.#subscriptions.has(store)) return
+          store.addEventListener("write|delete", this.#storeUpdateListener)
+          store.addEventListener("clear", this.#storeUpdateListener)
+          this.#subscriptions.set(store, () => {
+            store.removeEventListener("write|delete", this.#storeUpdateListener)
+            store.removeEventListener("clear", this.#storeUpdateListener)
           })
-
-          this.#subscribers.forEach((cb) => cb(data))
-          while (this.#resolvers.length) this.#resolvers.shift()!(data)
-
-          this.#refreshQueued = false
         })
+
+        this.#subscribers.forEach((cb) => cb(data))
+        while (this.#resolvers.length) this.#resolvers.shift()!(data)
+
+        this.#refreshQueued = false
       })
     })
   }
