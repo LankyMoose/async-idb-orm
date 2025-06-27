@@ -1,4 +1,4 @@
-import { CollectionEvent } from "types"
+import { CollectionEvent } from "./types"
 
 export const MSG_TYPES = {
   CLOSE_FOR_UPGRADE: "[async-idb-orm]:close-for-upgrade",

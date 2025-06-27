@@ -15,8 +15,7 @@ import {
 import { Collection } from "./builders/collection.js"
 import { AsyncIDBStore } from "./idbStore.js"
 import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
-import type { Selector } from "./builders/selector"
-import { AsyncIDBSelector } from "./idbSelector"
+import { AsyncIDBSelector, InferSelectorReturn } from "./idbSelector.js"
 
 /**
  * @private
@@ -40,9 +39,7 @@ export class AsyncIDB<
   schema: T
   relations: R
   selectors: {
-    [key in keyof S]: S[key] extends Selector<any, any, any>
-      ? AsyncIDBSelector<T, R, Awaited<ReturnType<S[key]["selector"]>>>
-      : never
+    [key in keyof S]: AsyncIDBSelector<InferSelectorReturn<S[key]>>
   }
   constructor(private name: string, private config: AsyncIDBConfig<T, R, S>) {
     this.#db = null

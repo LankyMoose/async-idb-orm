@@ -2,7 +2,7 @@ import type { AsyncIDBStore } from "./idbStore"
 import type { Collection, $COLLECTION_INTERNAL } from "./builders/collection"
 import type { Relations } from "./builders/relations"
 import type { Selector } from "./builders/selector"
-import type { AsyncIDBSelector } from "./idbSelector"
+import type { AsyncIDBSelector, InferSelectorReturn } from "./idbSelector"
 
 type Prettify<T> = {
   [K in keyof T]: T[K]
@@ -125,22 +125,10 @@ export type AsyncIDBInstance<
   collections: {
     [key in keyof T]: AsyncIDBStore<T[key], R>
   }
-  transaction: IDBTransactionFunction<T, R, S>
   selectors: {
-    [key in keyof S]: S[key] extends Selector<any, any, any>
-      ? AsyncIDBSelector<T, R, Awaited<ReturnType<S[key]["selector"]>>>
-      : never
+    [key in keyof S]: AsyncIDBSelector<InferSelectorReturn<S[key]>>
   }
-  // views: {
-  //   [key in keyof V]: V[key] extends View<any, any, any>
-  //     ? {
-  //         get: () => ReturnType<V[key]["selector"]>
-  //         subscribe: (
-  //           callback: (data: Awaited<ReturnType<V[key]["selector"]>>) => void
-  //         ) => () => void
-  //       }
-  //     : never
-  // }
+  transaction: IDBTransactionFunction<T, R, S>
   getInstance: () => Promise<IDBDatabase>
 }
 
