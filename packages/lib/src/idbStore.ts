@@ -20,7 +20,7 @@ import type { AsyncIDB } from "./idb"
 import { Collection } from "./builders/collection.js"
 import { RelationDefinition, Relations } from "./builders/relations.js"
 import { BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
-import { selectorStoreObservations } from "./idbSelector.js"
+import { AsyncIDBSelector } from "./idbSelector.js"
 
 type StoreRelation = {
   other: AsyncIDBStore<any, any>
@@ -816,7 +816,7 @@ class RelationalQueryContext {
     Store extends AsyncIDBStore<T, R>,
     Options extends FindOptions<R, T>
   >(store: Store, options?: Options): Promise<RelationResult<T, R, Options>[]> {
-    if (selectorStoreObservations.enabled) selectorStoreObservations.observed.add(store.name)
+    AsyncIDBSelector.observe(this.tx, store)
 
     const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig
 
@@ -848,7 +848,7 @@ class RelationalQueryContext {
     id: CollectionKeyPathType<T>,
     options?: Options
   ): Promise<RelationResult<T, R, Options> | null> {
-    if (selectorStoreObservations.enabled) selectorStoreObservations.observed.add(store.name)
+    AsyncIDBSelector.observe(this.tx, store)
 
     return new Promise((resolve, reject) => {
       const request = this.tx.objectStore(store.name).get(id)
@@ -882,7 +882,7 @@ class RelationalQueryContext {
     options?: Options,
     limit?: number
   ): Promise<RelationResult<T, R, Options>[]> {
-    if (selectorStoreObservations.enabled) selectorStoreObservations.observed.add(store.name)
+    AsyncIDBSelector.observe(this.tx, store)
 
     limit ||= Infinity
     const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig

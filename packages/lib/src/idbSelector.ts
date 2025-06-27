@@ -1,11 +1,7 @@
 import { Selector } from "builders/selector"
 import type { AsyncIDB } from "./idb"
 import type { AsyncIDBInstance, CollectionSchema, RelationsSchema } from "./types"
-
-export const selectorStoreObservations = {
-  enabled: false,
-  observed: new Set<string>(),
-}
+import { AsyncIDBStore } from "idbStore"
 
 const $DATA_EMPTY = Symbol("DATA_EMPTY")
 
@@ -13,13 +9,16 @@ export type InferSelectorReturn<S extends Selector<CollectionSchema, RelationsSc
   ReturnType<S["selector"]>
 >
 
+type AnyStore = AsyncIDBStore<any, any>
+
 export class AsyncIDBSelector<Data> {
   #subscribers: Set<(data: Data) => void>
+  #subscriptions: Map<AnyStore, () => void>
   #data: Data | typeof $DATA_EMPTY
-  #unsubs: (() => void)[]
   #storeUpdateListener: () => void
   #refreshQueued: boolean
   #resolvers: ((data: Data) => void)[]
+  private static observed = new Map<IDBTransaction, Set<AnyStore>>()
 
   constructor(
     private db: AsyncIDB<CollectionSchema, RelationsSchema, any>,
@@ -28,8 +27,8 @@ export class AsyncIDBSelector<Data> {
     ) => Promise<Data>
   ) {
     this.#subscribers = new Set()
+    this.#subscriptions = new Map()
     this.#data = $DATA_EMPTY
-    this.#unsubs = []
     this.#refreshQueued = false
     this.#storeUpdateListener = () => this.refresh()
     this.#resolvers = []
@@ -56,32 +55,35 @@ export class AsyncIDBSelector<Data> {
 
     this.#refreshQueued = true
     queueMicrotask(() => {
-      selectorStoreObservations.enabled = true
-      this.selector(this.db.stores).then((data) => {
-        this.#data = data
-        this.updateStoreSubscriptions()
+      this.db.transaction((ctx, tx) => {
+        const stores = new Set<AnyStore>()
+        AsyncIDBSelector.observed.set(tx, stores)
 
-        this.#subscribers.forEach((cb) => cb(data))
-        while (this.#resolvers.length) this.#resolvers.shift()!(data)
+        this.selector(ctx).then((data) => {
+          this.#data = data
+          AsyncIDBSelector.observed.delete(tx)
 
-        this.#refreshQueued = false
+          this.#subscriptions.forEach((unsub, store) => stores.has(store) || unsub())
+          stores.forEach((store) => {
+            if (this.#subscriptions.has(store)) return
+            store.addEventListener("write|delete", this.#storeUpdateListener)
+            store.addEventListener("clear", this.#storeUpdateListener)
+            this.#subscriptions.set(store, () => {
+              store.removeEventListener("write|delete", this.#storeUpdateListener)
+              store.removeEventListener("clear", this.#storeUpdateListener)
+            })
+          })
+
+          this.#subscribers.forEach((cb) => cb(data))
+          while (this.#resolvers.length) this.#resolvers.shift()!(data)
+
+          this.#refreshQueued = false
+        })
       })
     })
   }
 
-  private updateStoreSubscriptions() {
-    while (this.#unsubs.length) this.#unsubs.pop()!()
-
-    selectorStoreObservations.observed.forEach((name) => {
-      const store = this.db.stores[name]
-      store.addEventListener("write|delete", this.#storeUpdateListener)
-      store.addEventListener("clear", this.#storeUpdateListener)
-      this.#unsubs.push(() => {
-        store.removeEventListener("write|delete", this.#storeUpdateListener)
-        store.removeEventListener("clear", this.#storeUpdateListener)
-      })
-    })
-    selectorStoreObservations.enabled = false
-    selectorStoreObservations.observed.clear()
+  static observe(tx: IDBTransaction, store: AnyStore) {
+    this.observed.get(tx)?.add(store)
   }
 }
