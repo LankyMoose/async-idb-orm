@@ -391,25 +391,6 @@ export class AsyncIDBStore<
   }
 
   /**
-   * Iterates over all records in the store
-   */
-  async *[Symbol.asyncIterator]() {
-    let objectStore: IDBObjectStore
-    if (this.#taskContext) {
-      objectStore = this.#taskContext.tx.objectStore(this.name)
-    } else {
-      const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
-      objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
-    }
-    const request = objectStore.openCursor()
-    const resultQueue = this.createLazyIterator<CollectionRecord<T>>(request)
-    for await (const item of resultQueue) {
-      if (item === null) continue
-      yield this.#deserialize(item)
-    }
-  }
-
-  /**
    * Counts the number of records in the store
    */
   count(): Promise<number> {
@@ -439,12 +420,24 @@ export class AsyncIDBStore<
   }
 
   /**
+   * Iterates over all records in the store
+   */
+  async *[Symbol.asyncIterator]() {
+    const objectStore = await this.getReadonlyObjectStore()
+    const request = objectStore.openCursor()
+    const resultQueue = this.createLazyIterator<CollectionRecord<T>>(request)
+    for await (const item of resultQueue) {
+      if (item === null) continue
+      yield this.#deserialize(item)
+    }
+  }
+
+  /**
    * Iterates over all records in an index
    * @generator
    */
   async *iterateIndex<U extends CollectionIndexName<T>>(name: U, keyRange?: IDBKeyRange) {
-    const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
-    const objectStore = db.transaction(this.name, "readonly").objectStore(this.name)
+    const objectStore = await this.getReadonlyObjectStore()
     const request = objectStore.index(name).openCursor(keyRange ?? null)
     const resultQueue = this.createLazyIterator<CollectionRecord<T>>(request)
 
@@ -506,10 +499,16 @@ export class AsyncIDBStore<
 
   static init(store: AsyncIDBStore<any, any>) {
     store.initForeignKeys()
-    store.cacheRelations()
+    store.createRelationsMap()
   }
 
-  private cacheRelations() {
+  private async getReadonlyObjectStore() {
+    if (this.#taskContext) return this.#taskContext.tx.objectStore(this.name)
+    const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
+    return db.transaction(this.name, "readonly").objectStore(this.name)
+  }
+
+  private createRelationsMap() {
     this.#relations = Object.entries(this.db.relations).reduce<Record<string, StoreRelation>>(
       (acc, [_, rels]) => {
         if (!(rels instanceof Relations)) return acc
