@@ -123,8 +123,10 @@ export class AsyncIDBStore<
    * @param {CollectionDTO<T>} data - The data to create a new record with. This will be transformed using the `create` transformer if provided.
    */
   create(data: CollectionDTO<T>): Promise<CollectionRecord<T>> {
-    const { create: transformer } = this.collection.transformers
+    this.assertNoRelations(data, "create")
     data = this.unwrap(data)
+
+    const { create: transformer } = this.collection.transformers
     transformer && (data = transformer(data))
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
@@ -252,46 +254,44 @@ export class AsyncIDBStore<
    */
   async update(record: CollectionRecord<T>): Promise<CollectionRecord<T>> {
     this.assertNoRelations(record, "update")
-
-    const key = this.getRecordKey(record)
-    const exists = key !== undefined && (await this.exists(key))
-    if (!exists && arguments[1] !== $UPSERT_SENTINEL) {
-      throw new Error(
-        `[async-idb-orm]: record in collection ${this.name} with key ${key} not found.`
-      )
-    }
-
-    const { create, update } = this.collection.transformers
-    const transformer = exists ? update : create
     record = this.unwrap(record)
-    transformer && (record = transformer(record))
-    const serialized = this.#serialize(record)
 
     return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
-      if (this.#upstreamForeignKeyCallbacks.length) {
-        await this.checkUpstreamForeignKeys(serialized, ctx).catch(reject)
+      const key = this.getRecordKey(record)
+      if (!(await this.exists(ctx, key))) {
+        throw new Error(
+          `[async-idb-orm]: record in collection ${this.name} with key ${key} not found.`
+        )
       }
-      const request = ctx.tx.objectStore(this.name).put(serialized)
 
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        if (!request.result) return reject(request.error)
-        ctx.events.push(() => {
-          this.emit("write", record)
-          this.emit("write|delete", record)
-        })
-        resolve(record)
-      }
+      const { update: transformer } = this.collection.transformers
+      transformer && (record = transformer(record))
+      this.put(ctx, record, resolve, reject)
     })
   }
 
   /**
-   * Upserts many records in the store
+   * Upserts many records in the store using a single transaction
    * @param {(CollectionRecord<T> | CollectionDTO<T>)[]} data The records to upsert
    */
-  upsert(...data: (CollectionRecord<T> | CollectionDTO<T>)[]) {
-    // @ts-expect-error we're passing an extra argument to `update` for the `upsert` flag
-    return Promise.all(data.map((item) => this.update(item, $UPSERT_SENTINEL)))
+  upsert(...data: (CollectionRecord<T> | CollectionDTO<T>)[]): Promise<CollectionRecord<T>[]> {
+    data.forEach((item) => this.assertNoRelations(item, "upsert"))
+    return this.queueTask<CollectionRecord<T>[]>(async (ctx, resolve, reject) => {
+      const results: CollectionRecord<T>[] = []
+      await Promise.all(
+        data.map(async (record) => {
+          record = this.unwrap(record)
+
+          const key = this.getRecordKey(record)
+          const { create, update } = this.collection.transformers
+          const transformer = (await this.exists(ctx, key)) ? update : create
+          transformer && (record = transformer(record))
+
+          await this.put(ctx, record, (record) => results.push(record), reject)
+        })
+      ).catch(reject)
+      resolve(results)
+    })
   }
 
   /**
@@ -531,6 +531,33 @@ export class AsyncIDBStore<
     )
   }
 
+  private async put(
+    ctx: TaskContext,
+    record: CollectionRecord<T>,
+    resolve: (record: CollectionRecord<T>) => void,
+    reject: (reason?: any) => void
+  ): Promise<void> {
+    const serialized = this.#serialize(record)
+    if (this.#upstreamForeignKeyCallbacks.length) {
+      await this.checkUpstreamForeignKeys(serialized, ctx).catch(reject)
+    }
+
+    await new Promise<void>((_r) => {
+      const request = ctx.tx.objectStore(this.name).put(serialized)
+
+      request.onerror = (err) => reject(err)
+      request.onsuccess = () => {
+        if (!request.result) return reject(request.error)
+        ctx.events.push(() => {
+          this.emit("write", record)
+          this.emit("write|delete", record)
+        })
+        resolve(record)
+        _r()
+      }
+    })
+  }
+
   private firstByKeyDirection<U extends CollectionIndexName<T>>(
     name: U,
     direction: "next" | "prev"
@@ -546,8 +573,8 @@ export class AsyncIDBStore<
     })
   }
 
-  private exists(id: CollectionKeyPathType<T>) {
-    return this.queueTask<boolean>((ctx, resolve, reject) => {
+  private exists(ctx: TaskContext, id: CollectionKeyPathType<T>) {
+    return new Promise<boolean>((resolve, reject) => {
       const request = ctx.tx.objectStore(this.name).getKey(id as IDBValidKey)
       request.onerror = (err) => reject(err)
       request.onsuccess = () => resolve(request.result === id)
