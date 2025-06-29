@@ -84,6 +84,7 @@ async function demonstrateBasicRelations() {
 
   assert(userWithPosts, "should find user with posts")
   assert(userWithPosts.userPosts.length === 1, "should find 1 important post")
+
   assert(
     userWithPosts.userPosts[0].postComments instanceof Array,
     "should find postComments as array"

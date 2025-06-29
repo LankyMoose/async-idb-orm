@@ -83,7 +83,7 @@ export const runBasicTest = async () => {
     }))
   )
 
-  assertThrows(async () => {
+  await assertThrows(async () => {
     await db.collections.notes.upsert(
       ...Array.from({ length: 5 }, (_, i) => ({
         content: randomUserName(),
@@ -99,7 +99,7 @@ export const runBasicTest = async () => {
     content: "Hello world",
     userId: 1100,
   })
-  assertThrows(async () => {
+  await assertThrows(async () => {
     await db.collections.users.delete(1100)
   }, "Expected to throw when deleting user with note(s)")
 
@@ -113,7 +113,7 @@ export const runBasicTest = async () => {
   assert(users.length === 100, "Expected 100 users, got " + users.length)
   assert(
     userEventsTracker.events.length === 102,
-    "Expected 100 events, got " + userEventsTracker.events.length
+    "Expected 102 events, got " + userEventsTracker.events.length
   )
   userEventsTracker.unTrack()
 

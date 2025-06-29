@@ -1,5 +1,3 @@
-//scan for multiple in range - https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getKey
-
 import type {
   CollectionIndex,
   CollectionEvent,
@@ -8,7 +6,6 @@ import type {
   CollectionKeyPathType,
   CollectionIndexName,
   ActiveRecord,
-  ActiveRecordMethods,
   CollectionEventCallback,
   RelationsSchema,
   FindOptions,
@@ -18,469 +15,477 @@ import type {
 } from "./types"
 import type { AsyncIDB } from "./idb"
 import { Collection } from "./builders/collection.js"
-import { RelationDefinition, Relations } from "./builders/relations.js"
-import { BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
-import { AsyncIDBSelector } from "./idbSelector.js"
-import { abortTx, createTaskContext } from "./utils.js"
-
-type StoreRelation = {
-  other: AsyncIDBStore<any, any>
-  def: RelationDefinition<any, any>
-}
+import { RequestHelper } from "./core/RequestHelper.js"
+import { TransactionManager } from "./core/TransactionManager.js"
+import { StoreEventEmitter } from "./core/EventEmitter.js"
+import { ForeignKeyManager } from "./core/ForeignKeyManager.js"
+import { ActiveRecordWrapper } from "./core/ActiveRecordWrapper.js"
+import { QueryExecutor } from "./core/QueryExecutor.js"
+import { CursorIterator } from "./core/CursorIterator.js"
+import { Relations } from "./builders/relations.js"
 
 /**
- * A utility instance that represents a collection in an IndexedDB database and provides methods for interacting with the collection.
+ * A refactored, more professional implementation of AsyncIDBStore
  * @template {Collection} T
+ * @template {RelationsSchema} R
  */
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
   R extends RelationsSchema
 > {
-  #isRelaying: boolean
-  #relations: Record<string, StoreRelation>
-  #upstreamForeignKeyCallbacks: ((ctx: TaskContext, data: CollectionRecord<T>) => Promise<void[]>)[]
-  #downstreamForeignKeyCallbacks: ((
-    ctx: TaskContext,
-    key: CollectionKeyPathType<T>
-  ) => Promise<void>)[]
-  #eventListeners: Record<CollectionEvent, CollectionEventCallback<T, CollectionEvent>[]>
-  #taskContext?: TaskContext
-  #serialize: (record: CollectionRecord<T>) => any
-  #deserialize: (record: any) => CollectionRecord<T>
+  private transactionManager: TransactionManager
+  private eventEmitter: StoreEventEmitter<T>
+  private foreignKeyManager: ForeignKeyManager<T>
+  private activeRecordWrapper: ActiveRecordWrapper<T>
+  private queryExecutor: QueryExecutor<T, R>
+  private relations: Record<string, any> = {}
+  private taskContext?: TaskContext
+  private serialize: (record: CollectionRecord<T>) => any
+  private deserialize: (record: any) => CollectionRecord<T>
+
   constructor(private db: AsyncIDB<any, any, any>, private collection: T, public name: string) {
-    this.#isRelaying = false
-    this.#relations = {}
-    this.#downstreamForeignKeyCallbacks = []
-    this.#upstreamForeignKeyCallbacks = []
-    this.#eventListeners = {
-      write: [],
-      delete: [],
-      "write|delete": [],
-      clear: [],
-    }
+    // Initialize serialization
     const { read, write } = collection.serializationConfig
-    this.#serialize = write
-    this.#deserialize = read
+    this.serialize = write
+    this.deserialize = read
+
+    // Initialize managers
+    this.transactionManager = new TransactionManager(
+      () => new Promise((resolve) => this.db.getInstance(resolve)),
+      this.db.storeNames
+    )
+
+    this.eventEmitter = new StoreEventEmitter<T>(this.name, this.db)
+
+    this.foreignKeyManager = new ForeignKeyManager<T>(
+      this.name,
+      this.getRecordKey.bind(this),
+      this.deserialize,
+      this.eventEmitter
+    )
+
+    this.activeRecordWrapper = new ActiveRecordWrapper<T>(
+      this.getRecordKey.bind(this),
+      this.update.bind(this),
+      this.deleteByKey.bind(this),
+      this.assertNoRelations.bind(this)
+    )
+
+    this.queryExecutor = new QueryExecutor<T, R>(
+      this,
+      this.deserialize,
+      () => this.relations,
+      this.taskContext?.tx
+    )
   }
 
-  /**
-   * @template {CollectionEvent} Evt
-   * @param {Evt} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
-   * @param {CollectionEventCallback<T, Evt>} listener The callback function that will be called when the event is triggered.
-   */
+  // =============================================================================
+  // Event Management
+  // =============================================================================
+
   addEventListener<Evt extends CollectionEvent>(
     event: Evt,
     listener: CollectionEventCallback<T, Evt>
   ): void {
-    this.#eventListeners[event].push(listener)
+    this.eventEmitter.addEventListener(event, listener)
   }
 
-  /**
-   * @template {CollectionEvent} Evt
-   * @param {Evt} event The event to listen to. Can be `write`, `delete`, or `write|delete`.
-   * @param {CollectionEventCallback<T, Evt>} listener The callback function registered with `addEventListener`.
-   */
   removeEventListener<Evt extends CollectionEvent>(
     event: Evt,
     listener: CollectionEventCallback<T, Evt>
   ): void {
-    this.#eventListeners[event] = this.#eventListeners[event].filter((l) => l !== listener)
+    this.eventEmitter.removeEventListener(event, listener)
   }
 
-  /**
-   * Wrap a record in an active record, enabling the use of the `save` and `delete` methods
-   * @param {CollectionRecord<T>} record
-   */
+  // =============================================================================
+  // Active Record Pattern
+  // =============================================================================
+
   wrap(record: CollectionRecord<T>): ActiveRecord<CollectionRecord<T>> {
-    this.assertNoRelations(record, "wrap")
-    return Object.assign<CollectionRecord<T>, ActiveRecordMethods<CollectionRecord<T>>>(record, {
-      save: async () => {
-        const res = await this.update(record)
-        if (res === null) throw new Error("[async-idb-orm]: record not found")
-        return this.wrap(res)
-      },
-      delete: async () => {
-        const key = this.getRecordKey(record)
-        await this.delete(key)
-      },
-    })
+    return this.activeRecordWrapper.wrap(record)
   }
 
-  /**
-   * Unwrap an active record, removing the `save` and `delete` methods
-   * @param {CollectionRecord<T> | ActiveRecord<CollectionRecord<T>>} activeRecord - The record to unwrap
-   */
   unwrap(
     activeRecord: CollectionRecord<T> | ActiveRecord<CollectionRecord<T>>
   ): CollectionRecord<T> {
-    const { save, delete: _del, ...rest } = activeRecord
-    return rest
+    return this.activeRecordWrapper.unwrap(activeRecord)
   }
 
-  /**
-   * Creates a new record in the store
-   * @param {CollectionDTO<T>} data - The data to create a new record with. This will be transformed using the `create` transformer if provided.
-   */
-  create(data: CollectionDTO<T>): Promise<CollectionRecord<T>> {
+  // =============================================================================
+  // CRUD Operations
+  // =============================================================================
+
+  async create(data: CollectionDTO<T>): Promise<CollectionRecord<T>> {
     this.assertNoRelations(data, "create")
     data = this.unwrap(data)
 
     const { create: transformer } = this.collection.transformers
-    transformer && (data = transformer(data))
-
-    return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
-      const serialized = this.#serialize(data)
-      if (this.#upstreamForeignKeyCallbacks.length) {
-        try {
-          await this.checkUpstreamForeignKeys(ctx, serialized)
-        } catch (error) {
-          return reject(error)
-        }
-      }
-
-      const request = ctx.tx.objectStore(this.name).add(serialized)
-
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        if (request.result === undefined) return reject(request.error)
-        const res = !this.collection.idMode
-          ? data
-          : { ...data, [this.collection.keyPath]: request.result }
-        ctx.onDidCommit.push(() => {
-          this.emit("write", res)
-          this.emit("write|delete", res)
-        })
-        resolve(res)
-      }
-    })
-  }
-
-  /**
-   * Creates a new record in the store, and upgrades it to an active record
-   * @param {CollectionDTO<T>} data The data to create a new record with. This will be transformed using the `create` transformer if provided.
-   */
-  async createActive(data: CollectionDTO<T>): Promise<ActiveRecord<CollectionRecord<T>>> {
-    const res = await this.create(data)
-    return this.wrap(res)
-  }
-
-  /**
-   * Finds a record based on keyPath or predicate
-   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey
-   * @param {FindOptions<R, string>} [options] - Options for finding with relations
-   */
-  find<Options extends FindOptions<R, T>>(
-    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean),
-    options?: Options
-  ): Promise<RelationResult<T, R, Options> | null> {
-    return new Promise<RelationResult<T, R, Options> | null>((resolve, reject) => {
-      this.db.getInstance((db) => {
-        const queryCtx = new RelationalQueryContext(db, this.#taskContext?.tx)
-        if (typeof predicateOrKey === "function") {
-          queryCtx
-            .findByPredicate<T, R, this, Options>(this, predicateOrKey, options, 1)
-            .then((res) => resolve(res[0] ?? null), reject)
-        } else {
-          queryCtx
-            .findByKey<T, R, this, Options>(this, predicateOrKey, options)
-            .then(resolve, reject)
-        }
-      })
-    })
-  }
-
-  /**
-   * Finds a record based on keyPath or predicate and upgrades it to an active record.
-   */
-  async findActive(
-    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean) // asdasd
-  ): Promise<ActiveRecord<CollectionRecord<T>> | null> {
-    const res = await this.find(predicateOrKey)
-    if (res === null) return null
-    return this.wrap(res)
-  }
-
-  /**
-   * Finds many records based on keyPath or predicate
-   */
-  async findMany<Options extends FindOptions<R, T>>(
-    predicate: (item: CollectionRecord<T>) => boolean,
-    options?: Options & { limit?: number }
-  ): Promise<RelationResult<T, R, Options>[]> {
-    const limit = options?.limit || Infinity
-    return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
-      this.db.getInstance((db) => {
-        const queryCtx = new RelationalQueryContext(db, this.#taskContext?.tx)
-        queryCtx
-          .findByPredicate<T, R, this, Options>(this, predicate, options, limit)
-          .then(resolve, reject)
-      })
-    })
-  }
-
-  /**
-   * Finds many records based on predicate, upgrading them to active records
-   */
-  async findManyActive(
-    predicate: (item: CollectionRecord<T>) => boolean,
-    options?: {
-      limit?: number
+    if (transformer) {
+      data = transformer(data)
     }
-  ): Promise<CollectionRecord<T>[]> {
-    return (await this.findMany(predicate, options)).map((item) => this.wrap(item))
+
+    return this.transactionManager.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
+      try {
+        // Validate foreign key constraints BEFORE serialization
+        if (this.foreignKeyManager) {
+          await this.foreignKeyManager.validateUpstreamConstraints(ctx, data)
+        }
+
+        const serialized = this.serialize(data)
+        const objectStore = ctx.tx.objectStore(this.name)
+        const key = await RequestHelper.add(objectStore, serialized)
+
+        const result = !this.collection.idMode ? data : { ...data, [this.collection.keyPath]: key }
+
+        ctx.onDidCommit.push(() => {
+          this.eventEmitter.emit("write", result)
+          this.eventEmitter.emit("write|delete", result)
+        })
+
+        resolve(result)
+      } catch (error) {
+        reject(error)
+      }
+    }, this.taskContext)
   }
 
-  /**
-   * Gets all records in the store
-   */
-  all<Options extends FindOptions<R, T>>(
-    options?: Options
-  ): Promise<RelationResult<T, R, Options>[]> {
-    return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
-      this.db.getInstance((db) => {
-        new RelationalQueryContext(db, this.#taskContext?.tx)
-          .findAll<T, R, this, Options>(this, options)
-          .then(resolve, reject)
-      })
-    })
+  async createActive(data: CollectionDTO<T>): Promise<ActiveRecord<CollectionRecord<T>>> {
+    const result = await this.create(data)
+    return this.wrap(result)
   }
 
-  /**
-   * Gets all records in the store, upgrading them to active records
-   */
-  async allActive(): Promise<ActiveRecord<CollectionRecord<T>>[]> {
-    return (await this.all()).map((item) => this.wrap(item))
-  }
-
-  /**
-   * Updates a record
-   */
   async update(record: CollectionRecord<T>): Promise<CollectionRecord<T>> {
     this.assertNoRelations(record, "update")
     record = this.unwrap(record)
 
-    return this.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
-      const key = this.getRecordKey(record)
-      if (!(await this.exists(ctx, key))) {
-        throw new Error(
-          `[async-idb-orm]: record in collection ${this.name} with key ${key} not found.`
-        )
-      }
+    return this.transactionManager.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
+      try {
+        const key = this.getRecordKey(record)
+        const objectStore = ctx.tx.objectStore(this.name)
 
-      const { update: transformer } = this.collection.transformers
-      transformer && (record = transformer(record))
-      this.put(ctx, record, resolve, reject)
-    })
-  }
+        const exists = await RequestHelper.exists(objectStore, key as IDBValidKey)
+        if (!exists) {
+          throw new Error(
+            `[async-idb-orm]: record in collection ${this.name} with key ${key} not found.`
+          )
+        }
 
-  /**
-   * Upserts many records in the store using a single transaction
-   * @param {(CollectionRecord<T> | CollectionDTO<T>)[]} data The records to upsert
-   */
-  upsert(...data: (CollectionRecord<T> | CollectionDTO<T>)[]): Promise<CollectionRecord<T>[]> {
-    data.forEach((item) => this.assertNoRelations(item, "upsert"))
-    return this.queueTask<CollectionRecord<T>[]>(async (ctx, resolve, reject) => {
-      const results: CollectionRecord<T>[] = []
-      await Promise.all(
-        data.map(async (record) => {
-          record = this.unwrap(record)
+        const { update: transformer } = this.collection.transformers
+        if (transformer) {
+          record = transformer(record)
+        }
 
-          const key = this.getRecordKey(record)
-          const { create, update } = this.collection.transformers
-          const transformer = (await this.exists(ctx, key)) ? update : create
-          transformer && (record = transformer(record))
+        // Validate foreign key constraints BEFORE serialization
+        if (this.foreignKeyManager) {
+          await this.foreignKeyManager.validateUpstreamConstraints(ctx, record)
+        }
 
-          await this.put(ctx, record, (record) => results.push(record), reject)
+        const serialized = this.serialize(record)
+        await RequestHelper.put(objectStore, serialized)
+
+        ctx.onDidCommit.push(() => {
+          this.eventEmitter.emit("write", record)
+          this.eventEmitter.emit("write|delete", record)
         })
-      ).catch(reject)
-      resolve(results)
-    })
+
+        resolve(record)
+      } catch (error) {
+        reject(error)
+      }
+    }, this.taskContext)
   }
 
-  /**
-   * Deletes a record based on keyPath or predicate function
-   * @param {CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)} predicateOrKey The keyPath or predicate function
-   */
+  async upsert(
+    ...data: (CollectionRecord<T> | CollectionDTO<T>)[]
+  ): Promise<CollectionRecord<T>[]> {
+    data.forEach((item) => this.assertNoRelations(item, "upsert"))
+
+    return this.transactionManager.queueTask<CollectionRecord<T>[]>(
+      async (ctx, resolve, reject) => {
+        try {
+          const results: CollectionRecord<T>[] = []
+          const objectStore = ctx.tx.objectStore(this.name)
+
+          for (let record of data) {
+            record = this.unwrap(record)
+            const key = this.getRecordKey(record)
+
+            const exists = await RequestHelper.exists(objectStore, key as IDBValidKey)
+            const { create, update } = this.collection.transformers
+            const transformer = exists ? update : create
+
+            if (transformer) {
+              record = transformer(record)
+            }
+
+            // Validate foreign key constraints BEFORE serialization
+            if (this.foreignKeyManager) {
+              await this.foreignKeyManager.validateUpstreamConstraints(ctx, record)
+            }
+
+            const serialized = this.serialize(record)
+            await RequestHelper.put(objectStore, serialized)
+            results.push(record)
+          }
+
+          ctx.onDidCommit.push(() => {
+            results.forEach((record) => {
+              this.eventEmitter.emit("write", record)
+              this.eventEmitter.emit("write|delete", record)
+            })
+          })
+          resolve(results)
+        } catch (error) {
+          reject(error)
+        }
+      },
+      this.taskContext
+    )
+  }
+
   async delete(
     predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
-  ) {
+  ): Promise<CollectionRecord<T> | null> {
     if (typeof predicateOrKey === "function") {
       const [deleted] = await this.deleteMany(predicateOrKey, 1)
       return deleted ?? null
     }
 
-    return this.queueTask<CollectionRecord<T> | null>(async (ctx, resolve, reject) => {
-      const objectStore = ctx.tx.objectStore(this.name)
-      const record = await get(ctx.tx, this, predicateOrKey)
-      if (record === null) return resolve(null)
-
-      if (this.#downstreamForeignKeyCallbacks.length) {
-        try {
-          await this.checkDownstreamForeignKeys(ctx, predicateOrKey)
-        } catch (error) {
-          return reject(error)
-        }
-      }
-
-      const request = objectStore.delete(predicateOrKey)
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        const deserialized = this.#deserialize(record)
-        ctx.onDidCommit.push(() => {
-          this.emit("delete", deserialized)
-          this.emit("write|delete", deserialized)
-        })
-        resolve(deserialized)
-      }
-    })
+    return this.deleteByKey(predicateOrKey)
   }
 
-  /**
-   * Deletes many records based on predicate function
-   * @param {(item: CollectionRecord<T>) => boolean} predicate
-   * @param {number} [limit] The maximum number of records to delete (defaults to `Infinity`)
-   */
-  deleteMany(
+  private async deleteByKey(key: CollectionKeyPathType<T>): Promise<CollectionRecord<T> | null> {
+    return this.transactionManager.queueTask<CollectionRecord<T> | null>(
+      async (ctx, resolve, reject) => {
+        try {
+          const objectStore = ctx.tx.objectStore(this.name)
+          const record = await RequestHelper.get(objectStore, key as IDBValidKey)
+
+          if (!record) {
+            return resolve(null)
+          }
+
+          // Handle foreign key constraints
+          if (this.foreignKeyManager) {
+            await this.foreignKeyManager.handleDownstreamConstraints(ctx, key)
+          }
+
+          await RequestHelper.delete(objectStore, key as IDBValidKey)
+
+          const deserialized = this.deserialize(record)
+          ctx.onDidCommit.push(() => {
+            this.eventEmitter.emit("delete", deserialized)
+            this.eventEmitter.emit("write|delete", deserialized)
+          })
+
+          resolve(deserialized)
+        } catch (error) {
+          reject(error)
+        }
+      },
+      this.taskContext
+    )
+  }
+
+  async deleteMany(
     predicate: (item: CollectionRecord<T>) => boolean,
     limit: number = Infinity
   ): Promise<CollectionRecord<T>[]> {
-    return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
-      const request = ctx.tx.objectStore(this.name).openCursor()
-      const results: CollectionRecord<T>[] = []
-      request.onerror = (err) => reject(err)
-      request.onsuccess = async () => {
-        const cursor = request.result
-        if (!cursor) return resolve(results)
+    return this.transactionManager.queueTask<CollectionRecord<T>[]>(
+      async (ctx, resolve, reject) => {
+        try {
+          const objectStore = ctx.tx.objectStore(this.name)
 
-        const record = this.#deserialize(cursor.value)
-        if (!predicate(record)) return cursor.continue()
-
-        if (this.#downstreamForeignKeyCallbacks.length) {
-          try {
-            await this.checkDownstreamForeignKeys(ctx, cursor.key as CollectionKeyPathType<T>)
-          } catch (error) {
-            return reject(error)
-          }
-        }
-
-        const deleteRequest = cursor.delete()
-        deleteRequest.onerror = (err) => reject(err)
-        deleteRequest.onsuccess = () => {
-          ctx.onDidCommit.push(() => {
-            this.emit("delete", record)
-            this.emit("write|delete", record)
+          const results = await CursorIterator.deleteByPredicate(objectStore, predicate, {
+            limit,
+            deserialize: this.deserialize,
+            onBeforeDelete: async (record) => {
+              if (this.foreignKeyManager) {
+                await this.foreignKeyManager.handleDownstreamConstraints(
+                  ctx,
+                  this.getRecordKey(record)
+                )
+              }
+            },
+            onAfterDelete: (record) => {
+              ctx.onDidCommit.push(() => {
+                this.eventEmitter.emit("delete", record)
+                this.eventEmitter.emit("write|delete", record)
+              })
+            },
           })
-          results.push(record)
-          if (--limit) {
-            return cursor.continue()
-          }
-          return resolve(results)
+
+          resolve(results)
+        } catch (error) {
+          reject(error)
         }
-      }
-    })
+      },
+      this.taskContext
+    )
   }
 
-  /**
-   * Deletes all records in the store. Use with caution: **this method is not foreign key aware**
-   */
-  clear(): Promise<void> {
-    return this.queueTask<void>((ctx, resolve, reject) => {
-      const request = ctx.tx.objectStore(this.name).clear()
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        ctx.onDidCommit.push(() => this.emit("clear", null))
+  async clear(): Promise<void> {
+    return this.transactionManager.queueTask<void>(async (ctx, resolve, reject) => {
+      try {
+        const objectStore = ctx.tx.objectStore(this.name)
+        await RequestHelper.clear(objectStore)
+
+        ctx.onDidCommit.push(() => {
+          this.eventEmitter.emit("clear", null)
+        })
+
         resolve()
+      } catch (error) {
+        reject(error)
       }
-    })
+    }, this.taskContext)
   }
 
-  /**
-   * Counts the number of records in the store
-   */
-  count(): Promise<number> {
-    return this.queueTask<number>((ctx, resolve, reject) => {
-      const request = ctx.tx.objectStore(this.name).count()
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result)
-    })
-  }
+  // =============================================================================
+  // Query Operations
+  // =============================================================================
 
-  /**
-   * Gets the last record in an index
-   * @param {CollectionIndexName<T>} name The name of the index to query the record by
-   * @returns {Promise<CollectionRecord<T, U> | null>} The last record in the index, or null if the index is empty
-   */
-  max<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
-    return this.firstByKeyDirection(name, "prev")
-  }
-
-  /**
-   * Gets the first record in an index
-   * @param {CollectionIndexName<T>} name The name of the index to query the record by
-   * @returns {Promise<CollectionRecord<T> | null>} The first record in the index, or null if the index is empty
-   */
-  min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
-    return this.firstByKeyDirection(name, "next")
-  }
-
-  /**
-   * Iterates over all records in the store
-   */
-  async *[Symbol.asyncIterator]() {
-    const objectStore = await this.getReadonlyObjectStore()
-    const request = objectStore.openCursor()
-    const resultQueue = this.createLazyIterator<CollectionRecord<T>>(request)
-    for await (const item of resultQueue) {
-      if (item === null) continue
-      yield this.#deserialize(item)
+  async find<Options extends FindOptions<R, T>>(
+    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean),
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null> {
+    if (typeof predicateOrKey === "function") {
+      const [result] = await this.queryExecutor.findByPredicate(
+        predicateOrKey,
+        { ...options, limit: 1 },
+        () => new Promise((resolve) => this.db.getInstance(resolve)),
+        this.db.storeNames
+      )
+      return (result ?? null) as RelationResult<T, R, Options> | null
     }
+
+    return this.queryExecutor.findByKey(
+      predicateOrKey,
+      options,
+      () => new Promise((resolve) => this.db.getInstance(resolve)),
+      this.db.storeNames
+    )
   }
 
-  /**
-   * Iterates over all records in an index
-   * @generator
-   */
-  async *iterateIndex<U extends CollectionIndexName<T>>(name: U, keyRange?: IDBKeyRange) {
-    const objectStore = await this.getReadonlyObjectStore()
-    const request = objectStore.index(name).openCursor(keyRange ?? null)
-    const resultQueue = this.createLazyIterator<CollectionRecord<T>>(request)
-
-    for await (const item of resultQueue) {
-      if (item === null) continue
-      yield this.#deserialize(item)
-    }
+  async findActive(
+    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
+  ): Promise<ActiveRecord<CollectionRecord<T>> | null> {
+    const result = await this.find(predicateOrKey)
+    return result ? this.wrap(result) : null
   }
 
-  /**
-   * Gets a range of records from an index
-   */
+  async findMany<Options extends FindOptions<R, T>>(
+    predicate: (item: CollectionRecord<T>) => boolean,
+    options?: Options & { limit?: number }
+  ): Promise<RelationResult<T, R, Options>[]> {
+    return this.queryExecutor.findByPredicate(
+      predicate,
+      options,
+      () => new Promise((resolve) => this.db.getInstance(resolve)),
+      this.db.storeNames
+    )
+  }
+
+  async findManyActive(
+    predicate: (item: CollectionRecord<T>) => boolean,
+    options?: { limit?: number }
+  ): Promise<ActiveRecord<CollectionRecord<T>>[]> {
+    const results = await this.findMany(predicate, options)
+    return this.activeRecordWrapper.wrapMany(results)
+  }
+
+  async all<Options extends FindOptions<R, T>>(
+    options?: Options
+  ): Promise<RelationResult<T, R, Options>[]> {
+    return this.queryExecutor.findAll(
+      options,
+      () => new Promise((resolve) => this.db.getInstance(resolve)),
+      this.db.storeNames
+    )
+  }
+
+  async allActive(): Promise<ActiveRecord<CollectionRecord<T>>[]> {
+    const results = await this.all()
+    return this.activeRecordWrapper.wrapMany(results)
+  }
+
+  async count(): Promise<number> {
+    return this.transactionManager.queueReadTask<number>(async (tx, resolve, reject) => {
+      try {
+        const objectStore = tx.objectStore(this.name)
+        const count = await RequestHelper.count(objectStore)
+        resolve(count)
+      } catch (error) {
+        reject(error)
+      }
+    }, this.taskContext?.tx)
+  }
+
+  async max<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
+    return this.queryExecutor.findByDirection(
+      name,
+      "prev",
+      () => new Promise((resolve) => this.db.getInstance(resolve)),
+      this.db.storeNames
+    )
+  }
+
+  async min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
+    return this.queryExecutor.findByDirection(
+      name,
+      "next",
+      () => new Promise((resolve) => this.db.getInstance(resolve)),
+      this.db.storeNames
+    )
+  }
+
   async getIndexRange<U extends CollectionIndexName<T>>(
     name: U,
     keyRange: IDBKeyRange
   ): Promise<CollectionRecord<T>[]> {
-    return this.queueTask<CollectionRecord<T>[]>((ctx, resolve, reject) => {
-      const request = ctx.tx.objectStore(this.name).index(name).openCursor(keyRange)
-      const results: CollectionRecord<T>[] = []
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (!cursor) return resolve(results)
-
-        const value = this.#deserialize(cursor.value)
-        results.push(value)
-        cursor.continue()
-      }
-    })
+    return this.queryExecutor.findByIndex(
+      name,
+      keyRange,
+      undefined,
+      () => new Promise((resolve) => this.db.getInstance(resolve)),
+      this.db.storeNames
+    )
   }
+
+  // =============================================================================
+  // Iterator Support
+  // =============================================================================
+
+  async *[Symbol.asyncIterator]() {
+    const objectStore = await this.getReadonlyObjectStore()
+    const request = objectStore.openCursor()
+    const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
+
+    for await (const item of iterator) {
+      yield item
+    }
+  }
+
+  async *iterateIndex<U extends CollectionIndexName<T>>(name: U, keyRange?: IDBKeyRange) {
+    const objectStore = await this.getReadonlyObjectStore()
+    const request = objectStore.index(name).openCursor(keyRange ?? null)
+    const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
+
+    for await (const item of iterator) {
+      yield item
+    }
+  }
+
+  // =============================================================================
+  // Static Methods (for compatibility)
+  // =============================================================================
 
   static relay<U extends CollectionEvent>(
     store: AsyncIDBStore<any, any>,
     evtName: U,
     data: U extends "clear" ? null : CollectionRecord<any>
   ) {
-    store.#isRelaying = true
-    store.emit(evtName, data)
-    store.#isRelaying = false
+    store.eventEmitter.relay(evtName, data)
   }
 
   static getCollection(store: AsyncIDBStore<any, any>) {
@@ -488,42 +493,75 @@ export class AsyncIDBStore<
   }
 
   static getRelations(store: AsyncIDBStore<any, any>) {
-    return store.#relations
+    return store.relations
+  }
+
+  static getDeserialize(store: AsyncIDBStore<any, any>) {
+    return store.deserialize
+  }
+
+  static getQueryExecutor(store: AsyncIDBStore<any, any>) {
+    return store.queryExecutor
   }
 
   static cloneForTransaction(ctx: TaskContext, store: AsyncIDBStore<any, any>) {
     const cloned = new AsyncIDBStore(store.db, store.collection, store.name)
-    cloned.#taskContext = ctx
-    cloned.#eventListeners = store.#eventListeners
-    cloned.#upstreamForeignKeyCallbacks = store.#upstreamForeignKeyCallbacks
-    cloned.#downstreamForeignKeyCallbacks = store.#downstreamForeignKeyCallbacks
-    cloned.#relations = store.#relations
+    cloned.taskContext = ctx
+    cloned.relations = store.relations
+
+    // Use the original store's event emitter to avoid duplicate events
+    cloned.eventEmitter = store.eventEmitter
+
+    // Share the same ForeignKeyManager (which uses the original event emitter)
+    cloned.foreignKeyManager = store.foreignKeyManager
+
+    // Recreate QueryExecutor with the transaction context using the cloned store
+    cloned.queryExecutor = new QueryExecutor(
+      cloned,
+      cloned.deserialize,
+      () => cloned.relations,
+      ctx.tx
+    )
+
     return cloned
   }
 
-  static init(store: AsyncIDBStore<any, any>) {
-    store.initForeignKeys()
-    store.createRelationsMap()
+  static init(store: AsyncIDBStore<any, any>, allStores: Record<string, any>) {
+    store.initializeComponents(allStores)
   }
 
-  private async getReadonlyObjectStore() {
-    if (this.#taskContext) return this.#taskContext.tx.objectStore(this.name)
+  // =============================================================================
+  // Private Methods
+  // =============================================================================
+
+  private async getReadonlyObjectStore(): Promise<IDBObjectStore> {
+    if (this.taskContext) {
+      return this.taskContext.tx.objectStore(this.name)
+    }
+
     const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
     return db.transaction(this.name, "readonly").objectStore(this.name)
   }
 
-  private createRelationsMap() {
-    this.#relations = Object.entries(this.db.relations).reduce<Record<string, StoreRelation>>(
+  private initializeComponents(allStores: Record<string, any>) {
+    this.createRelationsMap(allStores)
+    this.initializeForeignKeys(allStores)
+  }
+
+  private createRelationsMap(allStores: Record<string, any>) {
+    this.relations = Object.entries(this.db.relations).reduce<Record<string, any>>(
       (acc, [_, rels]) => {
         if (!(rels instanceof Relations)) return acc
         if (rels.from !== this.collection) return acc
 
         for (const relationName in rels.relationsMap) {
           const tgtCollection: AnyCollection = rels.to
-          const tgtStore = Object.entries(this.db.stores).find(
+          const tgtStore = Object.entries(allStores).find(
             ([_, store]) => store.collection === tgtCollection
           )?.[1]
+
           if (!tgtStore) continue
+
           acc[relationName] = {
             other: tgtStore,
             def: rels.relationsMap[relationName],
@@ -535,76 +573,20 @@ export class AsyncIDBStore<
     )
   }
 
-  private async put(
-    ctx: TaskContext,
-    record: CollectionRecord<T>,
-    resolve: (record: CollectionRecord<T>) => void,
-    reject: (reason?: any) => void
-  ): Promise<void> {
-    const serialized = this.#serialize(record)
-    if (this.#upstreamForeignKeyCallbacks.length) {
-      try {
-        await this.checkUpstreamForeignKeys(ctx, serialized)
-      } catch (error) {
-        return reject(error)
-      }
-    }
+  private initializeForeignKeys(allStores: Record<string, any>) {
+    const storeInfo = Object.fromEntries(
+      Object.entries(allStores).map(([name, store]) => [
+        name,
+        {
+          collection: store.collection,
+          name: store.name,
+          addDownstreamHandler: (handler: any) =>
+            store.foreignKeyManager?.addDownstreamHandler(handler),
+        },
+      ])
+    )
 
-    await new Promise<void>((_r) => {
-      const request = ctx.tx.objectStore(this.name).put(serialized)
-
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        if (!request.result) return reject(request.error)
-        ctx.onDidCommit.push(() => {
-          this.emit("write", record)
-          this.emit("write|delete", record)
-        })
-        resolve(record)
-        _r()
-      }
-    })
-  }
-
-  private firstByKeyDirection<U extends CollectionIndexName<T>>(
-    name: U,
-    direction: "next" | "prev"
-  ): Promise<CollectionRecord<T> | null> {
-    return this.queueTask<CollectionRecord<T> | null>((ctx, resolve, reject) => {
-      const request = ctx.tx.objectStore(this.name).index(name).openCursor(null, direction)
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (!cursor) return resolve(null)
-        resolve(this.#deserialize(cursor.value))
-      }
-    })
-  }
-
-  private exists(ctx: TaskContext, id: CollectionKeyPathType<T>) {
-    return new Promise<boolean>((resolve, reject) => {
-      const request = ctx.tx.objectStore(this.name).getKey(id as IDBValidKey)
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => resolve(request.result === id)
-    })
-  }
-
-  private emit<U extends CollectionEvent>(
-    evtName: U,
-    data: U extends "clear" ? null : CollectionRecord<T>
-  ) {
-    const listeners = this.#eventListeners[evtName] ?? []
-    for (const listener of listeners) {
-      listener(data as any)
-    }
-    if (!this.#isRelaying && this.db.relayEnabled) {
-      this.db.bc.postMessage({
-        type: MSG_TYPES.RELAY,
-        name: this.name,
-        event: evtName,
-        data,
-      } satisfies BroadcastChannelMessage)
-    }
+    this.foreignKeyManager.initializeForeignKeys(this.collection.foreignKeys, storeInfo)
   }
 
   private getRecordKey(record: CollectionRecord<T>): CollectionKeyPathType<T> {
@@ -615,435 +597,11 @@ export class AsyncIDBStore<
     return record[keyPath as string]
   }
 
-  private queueTask<Result>(
-    reqHandler: (
-      ctx: TaskContext,
-      resolve: (value: Result) => void,
-      reject: (reason?: any) => void
-    ) => void
-  ): Promise<Result> {
-    return new Promise<Result>((_resolve, _reject) => {
-      if (this.#taskContext) {
-        return reqHandler(this.#taskContext, _resolve, _reject)
-      }
-      this.db.getInstance((db) => {
-        const taskCtx = createTaskContext(db, db.transaction(this.db.storeNames, "readwrite"))
-
-        const reject = (reason?: any) => {
-          abortTx(taskCtx.tx)
-          _reject(reason)
-        }
-
-        const resolve = async (result: Result) => {
-          Promise.all([
-            ...Array.from(taskCtx.onWillCommit.values()).map((cb) => cb()),
-            new Promise((res) => taskCtx.tx.addEventListener("complete", res, { once: true })),
-          ]).then(
-            () => _resolve(result),
-            (err) => reject(err)
-          )
-        }
-
-        reqHandler(taskCtx, resolve, reject)
-      })
-    })
-  }
-
-  private createLazyIterator<T>(request: IDBRequest<IDBCursorWithValue | null>) {
-    let resolveQueueBlocker: (value: null) => void
-    // create an infinite promise that we can resolve on command to yield the next result
-    let queueBlocker = new Promise<null>((resolve) => {
-      resolveQueueBlocker = resolve
-    })
-    const resultQueue: Promise<null | T>[] = [queueBlocker]
-
-    request.onerror = (e) => {
-      resolveQueueBlocker(null)
-      throw e
-    }
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (!cursor) return resolveQueueBlocker(null)
-      resultQueue.push(cursor.value)
-      resolveQueueBlocker(null) // unblock to allow resolving of this record
-
-      // reblock until next record
-      queueBlocker = new Promise((resolve) => {
-        resolveQueueBlocker = resolve
-      })
-      resultQueue.push(queueBlocker)
-      cursor.continue()
-    }
-
-    return resultQueue
-  }
-
-  private checkUpstreamForeignKeys(
-    ctx: TaskContext,
-    record: CollectionRecord<T>
-  ): Promise<void[][]> {
-    return Promise.all(this.#upstreamForeignKeyCallbacks.map((cb) => cb(ctx, record)))
-  }
-
-  private checkDownstreamForeignKeys(
-    ctx: TaskContext,
-    key: CollectionKeyPathType<T>
-  ): Promise<void[]> {
-    return Promise.all(this.#downstreamForeignKeyCallbacks.map((cb) => cb(ctx, key)))
-  }
-
-  private initForeignKeys() {
-    if (!this.collection.foreignKeys.length) {
-      return
-    }
-
-    this.#upstreamForeignKeyCallbacks.push(async (ctx, record) => {
-      // ensure all fkeys point to valid records
-      return Promise.all(
-        this.collection.foreignKeys.map(({ ref, collection, onDelete }) => {
-          return new Promise<void>((resolve, reject) => {
-            const key = record[ref]
-            if (key === null && onDelete === "set null") {
-              return resolve()
-            }
-
-            const [_, store] = Object.entries(this.db.stores).find(
-              ([, s]) => s.collection === collection
-            )!
-
-            get(ctx.tx, store, key).then((res) => {
-              if (res !== null) return resolve()
-              reject(
-                new Error(
-                  `[async-idb-orm]: Foreign key invalid: missing FK reference ${this.name}:${ref} (${key})`
-                )
-              )
-            }, reject)
-          })
-        })
-      )
-    })
-
-    for (const { ref: field, collection, onDelete } of this.collection.foreignKeys) {
-      const [name, store] = Object.entries(this.db.stores).find(
-        ([, s]) => s.collection === collection
-      )!
-
-      switch (onDelete) {
-        case "cascade":
-          store.#downstreamForeignKeyCallbacks.push((ctx, key) => {
-            return new Promise<void>((resolve, reject) => {
-              const request = ctx.tx.objectStore(this.name).openCursor()
-              request.onerror = (err) => {
-                reject(
-                  new Error(
-                    "[async-idb-orm]: An error occurred while applying FK -> cascade delete",
-                    { cause: err }
-                  )
-                )
-              }
-              const cascadeDelete = async () => {
-                const cursor = request.result
-                if (!cursor) return resolve()
-
-                if (cursor.value[field] !== key) {
-                  return cursor.continue()
-                }
-
-                if (this.#downstreamForeignKeyCallbacks.length) {
-                  try {
-                    await this.checkDownstreamForeignKeys(ctx, this.getRecordKey(cursor.value))
-                  } catch (error) {
-                    return reject(error)
-                  }
-                }
-
-                const deserialized = this.#deserialize(cursor.value)
-                const deleteRequest = cursor.delete()
-                deleteRequest.onerror = (err) => reject(err)
-                deleteRequest.onsuccess = () => {
-                  ctx.onDidCommit.push(() => {
-                    this.emit("delete", deserialized)
-                    this.emit("write|delete", deserialized)
-                  })
-                  cursor.continue()
-                }
-              }
-              request.onsuccess = cascadeDelete
-            })
-          })
-          break
-        case "restrict":
-          store.#downstreamForeignKeyCallbacks.push((ctx, key) => {
-            return new Promise<void>((resolve, reject) => {
-              const request = ctx.tx.objectStore(this.name).openCursor()
-              request.onerror = (err) => {
-                reject(
-                  new Error(
-                    "[async-idb-orm]: An error occurred while enforcing FK -> delete restriction",
-                    { cause: err }
-                  )
-                )
-              }
-              const ensureNoReference = async () => {
-                const cursor = request.result
-                if (!cursor) return resolve()
-
-                if (cursor.value[field] === key) {
-                  return reject(
-                    new Error(
-                      `[async-idb-orm]: Failed to delete record in collection ${name} because it is referenced by another record in collection ${this.name}`
-                    )
-                  )
-                }
-                cursor.continue()
-              }
-              request.onsuccess = ensureNoReference
-            })
-          })
-          break
-        case "set null":
-          store.#downstreamForeignKeyCallbacks.push((ctx, key) => {
-            return new Promise<void>((resolve, reject) => {
-              const request = ctx.tx.objectStore(this.name).openCursor()
-              request.onerror = (err) => {
-                reject(new Error(err as any))
-              }
-              const setNull = () => {
-                const cursor = request.result
-                if (!cursor) return resolve()
-
-                if (cursor.value[field] !== key) return cursor.continue()
-                const record = { ...cursor.value, [field]: null }
-                const updateReq = cursor.update(record)
-                updateReq.onerror = (err) => {
-                  reject(new Error(err as any))
-                }
-                updateReq.onsuccess = () => {
-                  ctx.onDidCommit.push(() => {
-                    this.emit("write", record)
-                    this.emit("write|delete", record)
-                  })
-                  cursor.continue()
-                }
-              }
-              request.onsuccess = setNull
-            })
-          })
-          break
-        case "no action":
-          store.#downstreamForeignKeyCallbacks.push((ctx, key) => {
-            return new Promise<void>((resolve, reject) => {
-              const request = ctx.tx.objectStore(this.name).openCursor()
-              request.onerror = (err) => {
-                reject(new Error(err as any))
-              }
-              request.onsuccess = () => {
-                const cursor = request.result
-                if (!cursor) return resolve()
-
-                if (cursor.value[field] !== key) return cursor.continue()
-                this.queuePreCommitUpstreamCheck(ctx, cursor.value)
-                cursor.continue()
-              }
-            })
-          })
-          break
-        default:
-          console.warn(
-            `[async-idb-orm]: Unknown onDelete option ${onDelete} for foreign key ${field} in collection ${this.name}`
-          )
-          break
-      }
-    }
-  }
-
-  private queuePreCommitUpstreamCheck(ctx: TaskContext, record: CollectionRecord<T>) {
-    const recordKey = this.getRecordKey(record)
-    const key = `${this.name}:${recordKey}`
-    if (ctx.onWillCommit.has(key)) return
-    ctx.onWillCommit.set(key, async () => {
-      const current = await get(ctx.tx, this, recordKey)
-      if (current === null) return
-      await this.checkUpstreamForeignKeys(ctx, current)
-    })
-  }
-
   private assertNoRelations(record: CollectionRecord<T>, action: string) {
-    for (const relationName in this.#relations) {
+    for (const relationName in this.relations) {
       if (relationName in record) {
         throw new Error(`[async-idb-orm]: unable to ${action} record with relation ${relationName}`)
       }
     }
-  }
-}
-
-function get<T extends AnyCollection, R extends RelationsSchema, Store extends AsyncIDBStore<T, R>>(
-  tx: IDBTransaction,
-  store: Store,
-  key: CollectionKeyPathType<T>
-): Promise<CollectionRecord<T> | null> {
-  return new Promise<CollectionRecord<T> | null>((resolve, reject) => {
-    const request = tx.objectStore(store.name).get(key)
-    request.onerror = (err) => reject(err)
-    request.onsuccess = () => {
-      if (!request.result) {
-        return resolve(null)
-      }
-      resolve(request.result)
-    }
-  })
-}
-
-class RelationalQueryContext {
-  tx: IDBTransaction
-  constructor(public db: IDBDatabase, tx?: IDBTransaction) {
-    this.tx = tx ?? db.transaction(db.objectStoreNames, "readonly")
-  }
-
-  async findAll<
-    T extends AnyCollection,
-    R extends RelationsSchema,
-    Store extends AsyncIDBStore<T, R>,
-    Options extends FindOptions<R, T>
-  >(store: Store, options?: Options): Promise<RelationResult<T, R, Options>[]> {
-    AsyncIDBSelector.observe(this.tx, store)
-
-    const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig
-
-    return new Promise<RelationResult<T, R, Options>[]>((resolve, reject) => {
-      const request = this.tx.objectStore(store.name).getAll()
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        const deserialized = request.result.map(deserialize) as RelationResult<T, R, Options>[]
-        if (options?.with) {
-          return Promise.all(
-            deserialized.map((item) =>
-              this.resolveRelations<T, R, Store>(store, item, options.with!)
-            )
-          ).then(resolve, reject)
-        }
-
-        resolve(deserialized)
-      }
-    })
-  }
-
-  async findByKey<
-    T extends AnyCollection,
-    R extends RelationsSchema,
-    Store extends AsyncIDBStore<T, R>,
-    Options extends FindOptions<R, T>
-  >(
-    store: Store,
-    id: CollectionKeyPathType<T>,
-    options?: Options
-  ): Promise<RelationResult<T, R, Options> | null> {
-    AsyncIDBSelector.observe(this.tx, store)
-
-    return new Promise(async (resolve, reject) => {
-      const record = await get(this.tx, store, id).then((r) =>
-        r ? AsyncIDBStore.getCollection(store).serializationConfig.read(r) : null
-      )
-      if (!record) return resolve(null)
-      if (options?.with) {
-        return this.resolveRelations<T, R, Store>(store, record, options.with).then(resolve, reject)
-      }
-      resolve(record)
-    })
-  }
-
-  async findByPredicate<
-    T extends AnyCollection,
-    R extends RelationsSchema,
-    Store extends AsyncIDBStore<T, R>,
-    Options extends FindOptions<R, T>
-  >(
-    store: Store,
-    predicate: (item: CollectionRecord<T>) => boolean,
-    options?: Options,
-    limit?: number
-  ): Promise<RelationResult<T, R, Options>[]> {
-    AsyncIDBSelector.observe(this.tx, store)
-
-    limit ||= Infinity
-    const { read: deserialize } = AsyncIDBStore.getCollection(store).serializationConfig
-
-    return new Promise<RelationResult<T, R, Options>[]>((_resolve, reject) => {
-      const request = this.tx.objectStore(store.name).openCursor()
-      const results: RelationResult<T, R, Options>[] = []
-
-      const resolve = () => {
-        if (options?.with) {
-          return Promise.all(
-            results.map((record) =>
-              this.resolveRelations<T, R, Store>(store, record, options.with!)
-            )
-          ).then(() => _resolve(results), reject)
-        }
-        _resolve(results)
-      }
-
-      request.onerror = (err) => reject(err)
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (!cursor) return resolve()
-
-        const value = deserialize(cursor.value)
-        if (predicate(value)) {
-          results.push(value)
-          if (results.length >= limit) return resolve()
-        }
-
-        cursor.continue()
-      }
-    })
-  }
-
-  private async resolveRelations<
-    T extends AnyCollection,
-    R extends RelationsSchema,
-    Store extends AsyncIDBStore<T, R>
-  >(
-    store: Store,
-    record: CollectionRecord<T>,
-    withOptions: Record<string, boolean | any>
-  ): Promise<any> {
-    const relations = AsyncIDBStore.getRelations(store)
-    await Promise.all(
-      Object.entries(withOptions).map(([relationName, options]) =>
-        this.fetchRelatedRecords(record, relations[relationName], options).then((result) => {
-          ;(record as any)[relationName] = result
-        })
-      )
-    )
-    return record
-  }
-
-  private async fetchRelatedRecords<T extends AnyCollection>(
-    record: CollectionRecord<T>,
-    relationDef: StoreRelation,
-    options?: {
-      limit?: number
-      where?: (item: CollectionRecord<T>) => boolean
-      with?: Record<string, boolean | any>
-    }
-  ) {
-    const { def, other } = relationDef
-    const { type: relationType, from: sourceField, to: targetField } = def
-    const sourceValue = record[sourceField]
-
-    const basePredicate = (item: any) => item[targetField] === sourceValue
-    const predicate = options?.where
-      ? (item: any) => basePredicate(item) && options.where!(item)
-      : basePredicate
-
-    if (relationType === "one-to-one") {
-      return (await this.findByPredicate(other, predicate, options, 1))[0] ?? null
-    } else if (relationType === "one-to-many") {
-      return this.findByPredicate(other, predicate, options, options?.limit)
-    }
-
-    return relationType === "one-to-many" ? [] : null
   }
 }

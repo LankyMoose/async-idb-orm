@@ -48,8 +48,8 @@ export class AsyncIDB<
     this.schema = config.schema
     this.relations = config.relations ?? ({} as R)
     this.version = config.version
-    this.stores = this.createStores()
     this.storeNames = Object.keys(this.schema)
+    this.stores = this.createStores()
     this.selectors = this.createSelectors()
     this.relayEnabled = config.relayEvents !== false
 
@@ -133,7 +133,7 @@ export class AsyncIDB<
     if (!schemaValid) return
 
     for (const store of Object.values(this.stores)) {
-      AsyncIDBStore.init(store)
+      AsyncIDBStore.init(store, this.stores)
     }
 
     const request = indexedDB.open(this.name, this.version)

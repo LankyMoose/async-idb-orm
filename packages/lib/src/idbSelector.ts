@@ -1,7 +1,7 @@
-import { Selector } from "builders/selector"
+import type { Selector } from "./builders/selector"
 import type { AsyncIDB } from "./idb"
 import type { AsyncIDBInstance, CollectionSchema, RelationsSchema } from "./types"
-import { AsyncIDBStore } from "idbStore"
+import type { AsyncIDBStore } from "./idbStore"
 
 const $DATA_EMPTY = Symbol("DATA_EMPTY")
 
