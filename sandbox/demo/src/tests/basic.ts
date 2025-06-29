@@ -76,16 +76,43 @@ export const runBasicTest = async () => {
 
   const [userEventsTracker] = createEventTrackers("users")
   await db.collections.users.upsert(
-    ...Array.from({ length: 100 }, (_, i) => ({
+    ...Array.from({ length: 101 }, (_, i) => ({
       age: i,
       id: i + 1000,
       name: randomUserName(),
     }))
   )
+
+  assertThrows(async () => {
+    await db.collections.notes.upsert(
+      ...Array.from({ length: 5 }, (_, i) => ({
+        content: randomUserName(),
+        id: i + 1000,
+        userId: i + 1105,
+      }))
+    )
+  }, "Expected to throw when creating note with invalid userId")
+
+  await db.collections.notes.clear()
+
+  await db.collections.noActionNotes.create({
+    content: "Hello world",
+    userId: 1100,
+  })
+  assertThrows(async () => {
+    await db.collections.users.delete(1100)
+  }, "Expected to throw when deleting user with note(s)")
+
+  await db.transaction(async (c) => {
+    await c.users.delete(1100)
+    const note = await c.noActionNotes.findActive((note) => note.userId === 1100)
+    await c.noActionNotes.update({ ...note!, userId: 1001 })
+  })
+
   const users = await db.collections.users.all()
   assert(users.length === 100, "Expected 100 users, got " + users.length)
   assert(
-    userEventsTracker.events.length === 100,
+    userEventsTracker.events.length === 102,
     "Expected 100 events, got " + userEventsTracker.events.length
   )
   userEventsTracker.unTrack()

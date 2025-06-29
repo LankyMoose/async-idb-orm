@@ -51,6 +51,16 @@ export const notes = Collection.create<Note, NoteDTO>()
     }),
   })
 
+export const noActionNotes = Collection.create<Note, NoteDTO>()
+  .withForeignKeys((notes) => [{ ref: notes.userId, collection: users, onDelete: "no action" }])
+  .withTransformers({
+    create: (dto) => ({
+      id: crypto.randomUUID(),
+      content: dto.content,
+      userId: dto.userId,
+    }),
+  })
+
 export const posts = Collection.create<Post, PostDTO>()
   .withForeignKeys((posts) => [{ ref: posts.userId, collection: users, onDelete: "cascade" }])
   .withTransformers({

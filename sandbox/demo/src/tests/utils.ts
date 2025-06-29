@@ -5,7 +5,7 @@ export async function clearAllCollections() {
   await db.collections.postComments.clear()
   await db.collections.posts.clear()
   await db.collections.users.clear()
-  await db.collections.todos.clear()
+  await db.collections.notes.clear()
 }
 
 export function createEventTrackers(...collectionNames: (keyof typeof db.collections)[]) {

@@ -618,10 +618,10 @@ Adding a foreign key to a collection enables two useful features:
 - When inserting/updating a record that refers to another, the parent record's existence is checked. If it does not exist, the transaction is aborted and an error is thrown.
 
 - When deleting a parent record, all children are acted on according to the `onDelete` option:
-  - `cascade`: deletes all children
-  - `restrict`: aborts the transaction & throws an error
-  - `no action`: does nothing
-  - `set null`: sets the foreign key to `null`
+  - `cascade`: deletes all children.
+  - `restrict`: aborts the transaction & throws an error.
+  - `no action`: does nothing immediately, but fails the operation if it would break a constraint at the end of the transaction.
+  - `set null`: sets the `ref` field value to `null`. Insert and update operations bypass the parent check if the value is `null`.
 
 <br />
 

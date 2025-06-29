@@ -16,6 +16,7 @@ import { Collection } from "./builders/collection.js"
 import { AsyncIDBStore } from "./idbStore.js"
 import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
 import { AsyncIDBSelector, InferSelectorReturn } from "./idbSelector.js"
+import { abortTx, createTaskContext } from "./utils.js"
 
 /**
  * @private
@@ -91,22 +92,25 @@ export class AsyncIDB<
     instanceCallback(this.#db)
   }
 
-  async transaction(callback: IDBTransactionCallback<T, R, S>, options?: IDBTransactionOptions) {
+  async transaction<CB extends IDBTransactionCallback<T, R, S>>(
+    callback: CB,
+    options?: IDBTransactionOptions
+  ): Promise<ReturnType<CB>> {
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
     const tx = idbInstance.transaction(this.storeNames, "readwrite", options)
 
-    const taskCtx: TaskContext = { db: idbInstance, tx, events: [] }
+    const taskCtx = createTaskContext(idbInstance, tx)
     const txCollections = this.cloneStoresForTransaction(taskCtx)
 
-    let aborted = false
-    tx.addEventListener("abort", () => (aborted = true))
-
     try {
-      const res = (await callback(txCollections, tx)) as any
-      taskCtx.events.forEach((cb) => cb())
+      const res = (await callback(txCollections, tx)) as ReturnType<CB>
+      await Promise.all([
+        ...Array.from(taskCtx.onWillCommit.values()).map((cb) => cb()),
+        new Promise((resolve) => tx.addEventListener("complete", resolve, { once: true })),
+      ])
       return res
     } catch (error) {
-      if (!aborted) tx.abort()
+      abortTx(tx)
       throw error
     }
   }
@@ -190,7 +194,7 @@ export class AsyncIDB<
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {
     const dbInstance = request.result
     if (this.onUpgrade) {
-      const taskCtx: TaskContext = { db: dbInstance, tx: request.transaction!, events: [] }
+      const taskCtx = createTaskContext(dbInstance, request.transaction!)
       const ctx: OnDBUpgradeCallbackContext<T, R> = {
         db: dbInstance,
         collections: this.cloneStoresForTransaction(taskCtx),

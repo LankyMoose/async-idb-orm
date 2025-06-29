@@ -317,5 +317,6 @@ export type RelationsWithOptions<
 export type TaskContext = {
   db: IDBDatabase
   tx: IDBTransaction
-  events: (() => void)[]
+  onDidCommit: (() => void)[]
+  onWillCommit: Map<string, () => Promise<any>>
 }
