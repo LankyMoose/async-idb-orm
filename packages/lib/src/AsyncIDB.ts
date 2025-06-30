@@ -4,18 +4,18 @@ import {
   type DBInstanceCallback,
   type AsyncIDBConfig,
   type IDBTransactionCallback,
-  type OnDBUpgradeCallback,
   type OnDBUpgradeCallbackContext,
   CollectionIDMode,
   RelationsSchema,
   SelectorSchema,
   TransactionOptions,
+  CollectionIndex,
 } from "./types"
 
 import { Collection } from "./builders/Collection.js"
 import { AsyncIDBStore } from "./AsyncIDBStore.js"
 import { AsyncIDBSelector, InferSelectorReturn } from "./AsyncIDBSelector.js"
-import { BROADCAST_MSG_TYPES, BroadcastChannelMessage } from "./utils.js"
+import { areIndexesEqual, BROADCAST_MSG_TYPES, BroadcastChannelMessage } from "./utils.js"
 import { TaskContext } from "./core/TaskContext.js"
 
 /**
@@ -33,7 +33,6 @@ export class AsyncIDB<
     [key in keyof T]: AsyncIDBStore<T[key], R>
   }
   storeNames: string[]
-  onUpgrade?: OnDBUpgradeCallback<T, R>
   bc: BroadcastChannel
   relayEnabled?: boolean
   version: number
@@ -186,35 +185,80 @@ export class AsyncIDB<
 
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {
     const dbInstance = request.result
-    if (this.onUpgrade) {
-      const taskCtx = new TaskContext(dbInstance, request.transaction!)
-      const ctx: OnDBUpgradeCallbackContext<T, R> = {
-        db: dbInstance,
-        collections: this.cloneStoresForTransaction(taskCtx),
-        deleteStore: (name) => dbInstance.deleteObjectStore(name),
-        createStore: (name) => this.createStore(dbInstance, name),
+    const tx = request.transaction!
+    const upsertStores = () => {
+      for (const storeName of Object.keys(this.stores)) {
+        this.createOrUpdateStore(dbInstance, tx, storeName)
       }
-      await taskCtx.run(() => this.onUpgrade!(ctx, event))
     }
-    for (const storeName of Object.keys(this.stores)) {
-      if (dbInstance.objectStoreNames.contains(storeName)) {
-        continue
+    if (!this.config.onUpgrade) return upsertStores()
+
+    const taskCtx = new TaskContext(dbInstance, tx)
+    const ctx: OnDBUpgradeCallbackContext<T, R> = {
+      db: dbInstance,
+      collections: this.cloneStoresForTransaction(taskCtx),
+      deleteStore: (name) => dbInstance.deleteObjectStore(name),
+      createStore: (name) => this.createOrUpdateStore(dbInstance, tx, name),
+    }
+    await taskCtx.run(async () => {
+      await this.config.onUpgrade!(ctx, event)
+      upsertStores()
+    })
+  }
+
+  private createOrUpdateStore(
+    db: IDBDatabase,
+    tx: IDBTransaction,
+    name: keyof T & string
+  ): IDBObjectStore {
+    const store = this.stores[name]
+    const { keyPath, indexes, idMode } = AsyncIDBStore.getCollection(store) as {
+      keyPath: string
+      indexes: CollectionIndex<any>[]
+      idMode: CollectionIDMode
+    }
+
+    if (db.objectStoreNames.contains(name)) {
+      // ensure all indexes are created
+      const objectStore = tx.objectStore(name)
+
+      // remove indexes that are not in the collection or have changed
+      for (const indexName of objectStore.indexNames) {
+        const idbIndex = objectStore.index(indexName)
+        if (indexes.some((collectionIndex) => areIndexesEqual(collectionIndex, idbIndex))) {
+          continue
+        }
+        objectStore.deleteIndex(indexName)
       }
-      this.createStore(dbInstance, storeName)
+
+      // create indexes that are not in the database or have changed
+      for (const collectionIndex of indexes) {
+        if (objectStore.indexNames.contains(collectionIndex.name)) {
+          const idbIndex = objectStore.index(collectionIndex.name)
+          if (areIndexesEqual(collectionIndex, idbIndex)) {
+            continue
+          }
+        }
+        objectStore.createIndex(collectionIndex.name, collectionIndex.key, collectionIndex.options)
+      }
+
+      return objectStore
+    } else {
+      const objectStore = db.createObjectStore(store.name, {
+        keyPath,
+        autoIncrement: idMode === CollectionIDMode.AutoIncrement,
+      })
+      for (const { name, key, options } of indexes) {
+        objectStore.createIndex(name, key, options)
+      }
+      return objectStore
     }
   }
 
-  private createStore(db: IDBDatabase, name: keyof T): IDBObjectStore {
-    const store = this.stores[name]
-    const { keyPath, indexes, idMode } = AsyncIDBStore.getCollection(store)
-    const objectStore = db.createObjectStore(store.name, {
-      keyPath,
-      autoIncrement: idMode === CollectionIDMode.AutoIncrement,
-    })
-
-    for (const { name, key, options } of indexes) {
-      objectStore.createIndex(name, key, options)
-    }
-    return objectStore
+  dispose() {
+    this.bc.close()
+    this.#instanceCallbacks = []
+    this.#db?.close()
+    this.#db = null
   }
 }

@@ -1,4 +1,4 @@
-import type { CollectionEvent } from "./types"
+import type { CollectionEvent, CollectionIndex } from "./types"
 
 export const keyPassThroughProxy = new Proxy({}, { get: (_: any, key: string) => key })
 
@@ -22,3 +22,13 @@ export type BroadcastChannelMessage =
       name: string
       data: null | Record<string, any>
     }
+
+export const areIndexesEqual = (fromCollection: CollectionIndex<any>, fromDB: IDBIndex) => {
+  return (
+    fromCollection.name === fromDB.name &&
+    typeof fromCollection.key === typeof fromDB.keyPath &&
+    indexedDB.cmp(fromCollection.key, fromDB.keyPath) === 0 &&
+    !!fromCollection.options?.unique === fromDB.unique &&
+    !!fromCollection.options?.multiEntry === fromDB.multiEntry
+  )
+}

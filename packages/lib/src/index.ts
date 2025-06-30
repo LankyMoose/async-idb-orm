@@ -61,6 +61,7 @@ function idb<
     collections: db.stores,
     transaction: db.transaction.bind(db),
     selectors: db.selectors,
+    dispose: db.dispose.bind(db),
     getInstance,
   }
 }

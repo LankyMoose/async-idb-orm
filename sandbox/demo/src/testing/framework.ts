@@ -77,18 +77,15 @@ export class TestRunner {
         this.stats.total++
 
         try {
-          // Run onBeforeEach hook
           if (suite.onBeforeEach) {
             await suite.onBeforeEach()
           }
+        } catch (error) {
+          console.error(`❌ Suite beforeEach failed: ${error}`)
+        }
 
-          // Run the test
+        try {
           await test.fn()
-
-          // Run onAfterEach hook
-          if (suite.onAfterEach) {
-            await suite.onAfterEach()
-          }
 
           console.log(`  ✅ ${test.name}`)
           this.stats.passed++
@@ -103,6 +100,14 @@ export class TestRunner {
             test: test.name,
             error,
           })
+        }
+
+        try {
+          if (suite.onAfterEach) {
+            await suite.onAfterEach()
+          }
+        } catch (error) {
+          console.error(`❌ Suite afterEach failed: ${error}`)
         }
       }
 

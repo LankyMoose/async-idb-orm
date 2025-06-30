@@ -127,6 +127,7 @@ export type AsyncIDBInstance<
   }
   transaction: IDBTransactionFunction<T, R, S>
   getInstance: () => Promise<IDBDatabase>
+  dispose: () => void
 }
 
 export type DBInstanceCallback = (db: IDBDatabase) => any
