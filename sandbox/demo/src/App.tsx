@@ -1,14 +1,11 @@
+import { For, memo, useEffect, useSignal } from "kaioken"
 import { Link, Router, Route, navigate } from "kaioken/router"
 import { selectedUser } from "./state/selectedUser"
 import { UsersList } from "./components/UserList"
 import { CreateUserForm } from "./components/CreateUserForm"
 import { UserPosts } from "./components/UserPosts"
-import { runRelationsTest } from "./tests/relations"
-import { runBasicTest } from "./tests/basic"
 import { db } from "./db"
-import { For, memo, useEffect, useSignal, useState } from "kaioken"
-
-// window.addEventListener("error", (e) => console.error(e.error.message, e.error.stack))
+import { testAll } from "./testing"
 
 function Home() {
   return navigate("/users")
@@ -25,15 +22,7 @@ const reset = async () => {
 
 function useUserNames() {
   const userNames = useSignal<string[]>([])
-  // const [state, setState] = useState<string[]>([])
-  useEffect(
-    () =>
-      db.selectors.allUserNames.subscribe((names) => {
-        userNames.value = names
-        console.log("names updated", names)
-      }),
-    []
-  )
+  useEffect(() => db.selectors.allUserNames.subscribe((names) => (userNames.value = names)), [])
 
   return userNames
 }
@@ -47,8 +36,7 @@ export function App() {
         </nav>
         <div style="display: flex; gap: 0.5rem;">
           <button onclick={reset}>Reset</button>
-          <button onclick={runBasicTest}>Basic Test</button>
-          <button onclick={runRelationsTest}>Relations Test</button>
+          <button onclick={testAll}>Run Tests</button>
         </div>
         <div style="display: flex; align-items: center; gap: 1rem;">
           Selected user:{" "}

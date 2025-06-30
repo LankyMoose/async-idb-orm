@@ -30,7 +30,7 @@ export type Note = {
 
 export type NoteDTO = {
   content: string
-  userId: number
+  userId: number | null
 }
 
 export type Post = {
