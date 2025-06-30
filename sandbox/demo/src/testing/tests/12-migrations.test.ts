@@ -1,5 +1,5 @@
 import { assert, assertExists } from "$/testing/assert"
-import { TestRunner } from "../framework"
+import { TestRunner } from "../testRunner"
 import { idb, Collection } from "async-idb-orm"
 
 // Define types for different schema versions

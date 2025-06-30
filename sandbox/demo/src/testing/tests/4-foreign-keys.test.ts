@@ -1,6 +1,6 @@
 import { assert, assertExists, assertThrows } from "$/testing/assert"
 import { db } from "$/db"
-import { TestRunner } from "../framework"
+import { TestRunner } from "../testRunner"
 import { clearAllCollections } from "../utils"
 
 export default (testRunner: TestRunner) => {

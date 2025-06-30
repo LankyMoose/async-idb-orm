@@ -1,4 +1,4 @@
-import { TestRunner } from "./framework"
+import { TestRunner } from "./testRunner"
 
 const tests = import.meta.glob("./tests/*.test.ts")
 
