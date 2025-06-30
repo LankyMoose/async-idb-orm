@@ -1,8 +1,9 @@
-import type { TaskContext, CollectionKeyPathType, CollectionRecord, AnyCollection } from "../types"
+import type { CollectionKeyPathType, CollectionRecord, AnyCollection } from "../types"
 // import type { CollectionForeignKeyConfig } from "../builders/collection.js"
 import { RequestHelper } from "./RequestHelper.js"
 import { CursorIterator } from "./CursorIterator.js"
 import { StoreEventEmitter } from "./EventEmitter.js"
+import { TaskContext } from "./TaskContext.js"
 
 /**
  * Manages foreign key constraints and validation
@@ -145,11 +146,7 @@ export class ForeignKeyManager<T extends AnyCollection> {
     validate: (record: CollectionRecord<T>) => Promise<void>
   ): void {
     const recordKey = this.getRecordKey(record)
-    const key = `${this.storeName}:${recordKey}`
-
-    if (ctx.onWillCommit.has(key)) return
-
-    ctx.onWillCommit.set(key, async () => {
+    ctx.onWillCommit(`${this.storeName}:${recordKey}`, async () => {
       const objectStore = ctx.tx.objectStore(this.storeName)
       const current = await RequestHelper.get(objectStore, recordKey as IDBValidKey)
       if (current) {
@@ -172,7 +169,7 @@ export class ForeignKeyManager<T extends AnyCollection> {
         },
         onAfterDelete: (record) => {
           // Event emission should be handled by the calling store
-          ctx.onDidCommit.push(() => {
+          ctx.onDidCommit(() => {
             this.eventEmitter.emit("delete", record)
             this.eventEmitter.emit("write|delete", record)
           })

@@ -1,11 +1,15 @@
 import { db } from "$/db"
 
 export async function clearAllCollections() {
-  await db.collections.todos.clear()
-  await db.collections.postComments.clear()
-  await db.collections.posts.clear()
-  await db.collections.users.clear()
-  await db.collections.notes.clear()
+  await db.transaction(async (ctx) => {
+    await Promise.all([ctx.todos.clear(), ctx.noActionNotes.clear()])
+    await Promise.all([
+      ctx.postComments.clear(),
+      ctx.posts.clear(),
+      ctx.users.clear(),
+      ctx.notes.clear(),
+    ])
+  })
 }
 
 export function createEventTrackers(...collectionNames: (keyof typeof db.collections)[]) {

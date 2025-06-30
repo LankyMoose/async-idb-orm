@@ -76,10 +76,7 @@ export type SerializationConfig<RecordType extends Record<string, any>, T> = {
 }
 
 export type TransactionOptions = IDBTransactionOptions & {
-  /**
-   * https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction/durability
-   */
-  durability?: IDBTransactionDurability
+  mode?: "readonly" | "readwrite"
 }
 
 export type IDBTransactionCallback<
@@ -313,10 +310,3 @@ export type RelationsWithOptions<
   R extends RelationsSchema,
   _CollectionName extends string
 > = RelationWithOptions<R>
-
-export type TaskContext = {
-  db: IDBDatabase
-  tx: IDBTransaction
-  onDidCommit: (() => void)[]
-  onWillCommit: Map<string, () => Promise<any>>
-}

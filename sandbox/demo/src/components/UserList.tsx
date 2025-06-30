@@ -8,8 +8,6 @@ import { Link } from "kaioken/router"
 export function UsersList() {
   const { data: users, loading, error } = useLiveCollection("users")
 
-  console.log("UsersList", users)
-
   const addRandom = useCallback(async () => {
     await db.collections.users.create({
       name: randomUserName(),

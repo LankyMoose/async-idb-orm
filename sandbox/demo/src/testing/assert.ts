@@ -29,20 +29,14 @@ export async function assertThrows(
   expectedErrorSubstring?: string
 ) {
   let didThrow = false
-  let actualError: unknown = null
 
   try {
     await cb()
   } catch (error) {
     didThrow = true
-    actualError = error
 
-    if (expectedErrorSubstring && error instanceof Error) {
-      if (!error.message.includes(expectedErrorSubstring)) {
-        throw new Error(
-          `${msg} - Expected error message to contain "${expectedErrorSubstring}", but got: "${error.message}"`
-        )
-      }
+    if (expectedErrorSubstring) {
+      assertErrorAndMessage(error, expectedErrorSubstring)
     }
   }
 
@@ -51,4 +45,9 @@ export async function assertThrows(
   }
 
   console.debug("passed: ", msg)
+}
+
+export function assertErrorAndMessage(value: unknown, expectedErrorSubstring: string) {
+  assertInstanceOf(value, Error, "Error should be an instance of Error")
+  assert(value.message.includes(expectedErrorSubstring), "Error message should be the expected one")
 }

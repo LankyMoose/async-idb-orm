@@ -9,18 +9,14 @@ import {
   CollectionIDMode,
   RelationsSchema,
   SelectorSchema,
-  TaskContext,
+  TransactionOptions,
 } from "./types"
 
 import { Collection } from "./builders/Collection.js"
 import { AsyncIDBStore } from "./AsyncIDBStore.js"
 import { AsyncIDBSelector, InferSelectorReturn } from "./AsyncIDBSelector.js"
-import {
-  abortTx,
-  BROADCAST_MSG_TYPES,
-  BroadcastChannelMessage,
-  createTaskContext,
-} from "./utils.js"
+import { BROADCAST_MSG_TYPES, BroadcastChannelMessage } from "./utils.js"
+import { TaskContext } from "./core/TaskContext.js"
 
 /**
  * @private
@@ -98,25 +94,18 @@ export class AsyncIDB<
 
   async transaction<CB extends IDBTransactionCallback<T, R, S>>(
     callback: CB,
-    options?: IDBTransactionOptions
+    options?: TransactionOptions
   ): Promise<ReturnType<CB>> {
+    const { durability, mode = "readwrite" } = options ?? {}
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
-    const tx = idbInstance.transaction(this.storeNames, "readwrite", options)
+    const tx = idbInstance.transaction(this.storeNames, mode, { durability })
 
-    const taskCtx = createTaskContext(idbInstance, tx)
+    const taskCtx = new TaskContext(idbInstance, tx)
     const txCollections = this.cloneStoresForTransaction(taskCtx)
 
-    try {
-      const res = (await callback(txCollections, tx)) as ReturnType<CB>
-      await Promise.all([
-        ...Array.from(taskCtx.onWillCommit.values()).map((cb) => cb()),
-        new Promise((resolve) => tx.addEventListener("complete", resolve, { once: true })),
-      ])
-      return res
-    } catch (error) {
-      abortTx(tx)
-      throw error
-    }
+    return taskCtx.run(async () => {
+      return (await callback(txCollections, tx)) as ReturnType<CB>
+    })
   }
 
   private init() {
@@ -198,14 +187,14 @@ export class AsyncIDB<
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {
     const dbInstance = request.result
     if (this.onUpgrade) {
-      const taskCtx = createTaskContext(dbInstance, request.transaction!)
+      const taskCtx = new TaskContext(dbInstance, request.transaction!)
       const ctx: OnDBUpgradeCallbackContext<T, R> = {
         db: dbInstance,
         collections: this.cloneStoresForTransaction(taskCtx),
         deleteStore: (name) => dbInstance.deleteObjectStore(name),
         createStore: (name) => this.createStore(dbInstance, name),
       }
-      await this.onUpgrade(ctx, event)
+      await taskCtx.run(() => this.onUpgrade!(ctx, event))
     }
     for (const storeName of Object.keys(this.stores)) {
       if (dbInstance.objectStoreNames.contains(storeName)) {

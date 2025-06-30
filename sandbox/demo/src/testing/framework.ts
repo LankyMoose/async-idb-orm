@@ -59,6 +59,7 @@ export class TestRunner {
 
     for (const suite of this.suites) {
       console.log(`📋 ${suite.name}`)
+      await new Promise((resolve) => setTimeout(resolve, 100))
 
       // Run onBefore hook
       if (suite.onBefore) {
@@ -92,6 +93,7 @@ export class TestRunner {
           console.log(`  ✅ ${test.name}`)
           this.stats.passed++
         } catch (error) {
+          debugger
           const message = error instanceof Error ? error.message : String(error)
           console.log(`  ❌ ${test.name}`)
           console.log(`     ${message}`)

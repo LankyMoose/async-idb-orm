@@ -11,7 +11,6 @@ import type {
   FindOptions,
   RelationResult,
   AnyCollection,
-  TaskContext,
 } from "./types"
 import type { AsyncIDB } from "./AsyncIDB"
 import { Collection } from "./builders/Collection.js"
@@ -23,6 +22,7 @@ import { ActiveRecordWrapper } from "./core/ActiveRecordWrapper.js"
 import { QueryExecutor } from "./core/QueryExecutor.js"
 import { CursorIterator } from "./core/CursorIterator.js"
 import { Relations } from "./builders/Relations.js"
+import { TaskContext } from "./core/TaskContext.js"
 
 /**
  * A refactored, more professional implementation of AsyncIDBStore
@@ -124,28 +124,24 @@ export class AsyncIDBStore<
       data = transformer(data)
     }
 
-    return this.transactionManager.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
-      try {
-        // Validate foreign key constraints BEFORE serialization
-        if (this.foreignKeyManager) {
-          await this.foreignKeyManager.validateUpstreamConstraints(ctx, data)
-        }
-
-        const serialized = this.serialize(data)
-        const objectStore = ctx.tx.objectStore(this.name)
-        const key = await RequestHelper.add(objectStore, serialized)
-
-        const result = !this.collection.idMode ? data : { ...data, [this.collection.keyPath]: key }
-
-        ctx.onDidCommit.push(() => {
-          this.eventEmitter.emit("write", result)
-          this.eventEmitter.emit("write|delete", result)
-        })
-
-        resolve(result)
-      } catch (error) {
-        reject(error)
+    return this.transactionManager.queueTask<CollectionRecord<T>>(async (ctx) => {
+      // Validate foreign key constraints BEFORE serialization
+      if (this.foreignKeyManager) {
+        await this.foreignKeyManager.validateUpstreamConstraints(ctx, data)
       }
+
+      const serialized = this.serialize(data)
+      const objectStore = ctx.tx.objectStore(this.name)
+      const key = await RequestHelper.add(objectStore, serialized)
+
+      const result = !this.collection.idMode ? data : { ...data, [this.collection.keyPath]: key }
+
+      ctx.onDidCommit(() => {
+        this.eventEmitter.emit("write", result)
+        this.eventEmitter.emit("write|delete", result)
+      })
+
+      return result
     }, this.taskContext)
   }
 
@@ -158,19 +154,56 @@ export class AsyncIDBStore<
     this.assertNoRelations(record, "update")
     record = this.unwrap(record)
 
-    return this.transactionManager.queueTask<CollectionRecord<T>>(async (ctx, resolve, reject) => {
-      try {
+    return this.transactionManager.queueTask<CollectionRecord<T>>(async (ctx) => {
+      const key = this.getRecordKey(record)
+      const objectStore = ctx.tx.objectStore(this.name)
+
+      const exists = await RequestHelper.exists(objectStore, key as IDBValidKey)
+      if (!exists) {
+        throw new Error(
+          `[async-idb-orm]: record in collection ${this.name} with key ${key} not found.`
+        )
+      }
+
+      const { update: transformer } = this.collection.transformers
+      if (transformer) {
+        record = transformer(record)
+      }
+
+      // Validate foreign key constraints BEFORE serialization
+      if (this.foreignKeyManager) {
+        await this.foreignKeyManager.validateUpstreamConstraints(ctx, record)
+      }
+
+      const serialized = this.serialize(record)
+      await RequestHelper.put(objectStore, serialized)
+
+      ctx.onDidCommit(() => {
+        this.eventEmitter.emit("write", record)
+        this.eventEmitter.emit("write|delete", record)
+      })
+
+      return record
+    }, this.taskContext)
+  }
+
+  async upsert(
+    ...data: (CollectionRecord<T> | CollectionDTO<T>)[]
+  ): Promise<CollectionRecord<T>[]> {
+    data.forEach((item) => this.assertNoRelations(item, "upsert"))
+
+    return this.transactionManager.queueTask<CollectionRecord<T>[]>(async (ctx) => {
+      const results: CollectionRecord<T>[] = []
+      const objectStore = ctx.tx.objectStore(this.name)
+
+      for (let record of data) {
+        record = this.unwrap(record)
         const key = this.getRecordKey(record)
-        const objectStore = ctx.tx.objectStore(this.name)
 
         const exists = await RequestHelper.exists(objectStore, key as IDBValidKey)
-        if (!exists) {
-          throw new Error(
-            `[async-idb-orm]: record in collection ${this.name} with key ${key} not found.`
-          )
-        }
+        const { create, update } = this.collection.transformers
+        const transformer = exists ? update : create
 
-        const { update: transformer } = this.collection.transformers
         if (transformer) {
           record = transformer(record)
         }
@@ -182,65 +215,18 @@ export class AsyncIDBStore<
 
         const serialized = this.serialize(record)
         await RequestHelper.put(objectStore, serialized)
+        results.push(record)
+      }
 
-        ctx.onDidCommit.push(() => {
+      ctx.onDidCommit(() => {
+        results.forEach((record) => {
           this.eventEmitter.emit("write", record)
           this.eventEmitter.emit("write|delete", record)
         })
+      })
 
-        resolve(record)
-      } catch (error) {
-        reject(error)
-      }
+      return results
     }, this.taskContext)
-  }
-
-  async upsert(
-    ...data: (CollectionRecord<T> | CollectionDTO<T>)[]
-  ): Promise<CollectionRecord<T>[]> {
-    data.forEach((item) => this.assertNoRelations(item, "upsert"))
-
-    return this.transactionManager.queueTask<CollectionRecord<T>[]>(
-      async (ctx, resolve, reject) => {
-        try {
-          const results: CollectionRecord<T>[] = []
-          const objectStore = ctx.tx.objectStore(this.name)
-
-          for (let record of data) {
-            record = this.unwrap(record)
-            const key = this.getRecordKey(record)
-
-            const exists = await RequestHelper.exists(objectStore, key as IDBValidKey)
-            const { create, update } = this.collection.transformers
-            const transformer = exists ? update : create
-
-            if (transformer) {
-              record = transformer(record)
-            }
-
-            // Validate foreign key constraints BEFORE serialization
-            if (this.foreignKeyManager) {
-              await this.foreignKeyManager.validateUpstreamConstraints(ctx, record)
-            }
-
-            const serialized = this.serialize(record)
-            await RequestHelper.put(objectStore, serialized)
-            results.push(record)
-          }
-
-          ctx.onDidCommit.push(() => {
-            results.forEach((record) => {
-              this.eventEmitter.emit("write", record)
-              this.eventEmitter.emit("write|delete", record)
-            })
-          })
-          resolve(results)
-        } catch (error) {
-          reject(error)
-        }
-      },
-      this.taskContext
-    )
   }
 
   async delete(
@@ -255,89 +241,68 @@ export class AsyncIDBStore<
   }
 
   private async deleteByKey(key: CollectionKeyPathType<T>): Promise<CollectionRecord<T> | null> {
-    return this.transactionManager.queueTask<CollectionRecord<T> | null>(
-      async (ctx, resolve, reject) => {
-        try {
-          const objectStore = ctx.tx.objectStore(this.name)
-          const record = await RequestHelper.get(objectStore, key as IDBValidKey)
+    return this.transactionManager.queueTask<CollectionRecord<T> | null>(async (ctx) => {
+      const objectStore = ctx.tx.objectStore(this.name)
+      const record = await RequestHelper.get(objectStore, key as IDBValidKey)
 
-          if (!record) {
-            return resolve(null)
-          }
+      if (!record) {
+        return null
+      }
 
-          // Handle foreign key constraints
-          if (this.foreignKeyManager) {
-            await this.foreignKeyManager.handleDownstreamConstraints(ctx, key)
-          }
+      // Handle foreign key constraints
+      if (this.foreignKeyManager) {
+        await this.foreignKeyManager.handleDownstreamConstraints(ctx, key)
+      }
 
-          await RequestHelper.delete(objectStore, key as IDBValidKey)
+      await RequestHelper.delete(objectStore, key as IDBValidKey)
 
-          const deserialized = this.deserialize(record)
-          ctx.onDidCommit.push(() => {
-            this.eventEmitter.emit("delete", deserialized)
-            this.eventEmitter.emit("write|delete", deserialized)
-          })
+      const deserialized = this.deserialize(record)
+      ctx.onDidCommit(() => {
+        this.eventEmitter.emit("delete", deserialized)
+        this.eventEmitter.emit("write|delete", deserialized)
+      })
 
-          resolve(deserialized)
-        } catch (error) {
-          reject(error)
-        }
-      },
-      this.taskContext
-    )
+      return deserialized
+    }, this.taskContext)
   }
 
   async deleteMany(
     predicate: (item: CollectionRecord<T>) => boolean,
     limit: number = Infinity
   ): Promise<CollectionRecord<T>[]> {
-    return this.transactionManager.queueTask<CollectionRecord<T>[]>(
-      async (ctx, resolve, reject) => {
-        try {
-          const objectStore = ctx.tx.objectStore(this.name)
+    return this.transactionManager.queueTask<CollectionRecord<T>[]>(async (ctx) => {
+      const objectStore = ctx.tx.objectStore(this.name)
 
-          const results = await CursorIterator.deleteByPredicate(objectStore, predicate, {
-            limit,
-            deserialize: this.deserialize,
-            onBeforeDelete: async (record) => {
-              if (this.foreignKeyManager) {
-                await this.foreignKeyManager.handleDownstreamConstraints(
-                  ctx,
-                  this.getRecordKey(record)
-                )
-              }
-            },
-            onAfterDelete: (record) => {
-              ctx.onDidCommit.push(() => {
-                this.eventEmitter.emit("delete", record)
-                this.eventEmitter.emit("write|delete", record)
-              })
-            },
+      const results = await CursorIterator.deleteByPredicate(objectStore, predicate, {
+        limit,
+        deserialize: this.deserialize,
+        onBeforeDelete: async (record) => {
+          if (this.foreignKeyManager) {
+            await this.foreignKeyManager.handleDownstreamConstraints(ctx, this.getRecordKey(record))
+          }
+        },
+        onAfterDelete: (record) => {
+          ctx.onDidCommit(() => {
+            this.eventEmitter.emit("delete", record)
+            this.eventEmitter.emit("write|delete", record)
           })
+        },
+      })
 
-          resolve(results)
-        } catch (error) {
-          reject(error)
-        }
-      },
-      this.taskContext
-    )
+      return results
+    }, this.taskContext)
   }
 
   async clear(): Promise<void> {
-    return this.transactionManager.queueTask<void>(async (ctx, resolve, reject) => {
-      try {
-        const objectStore = ctx.tx.objectStore(this.name)
-        await RequestHelper.clear(objectStore)
+    return this.transactionManager.queueTask<void>(async (ctx) => {
+      const objectStore = ctx.tx.objectStore(this.name)
+      await RequestHelper.clear(objectStore)
 
-        ctx.onDidCommit.push(() => {
-          this.eventEmitter.emit("clear", null)
-        })
+      ctx.onDidCommit(() => {
+        this.eventEmitter.emit("clear", null)
+      })
 
-        resolve()
-      } catch (error) {
-        reject(error)
-      }
+      return
     }, this.taskContext)
   }
 
