@@ -1,10 +1,11 @@
+import type { AsyncIDB } from "../AsyncIDB"
 import type {
   CollectionEvent,
   CollectionEventCallback,
   AnyCollection,
   CollectionRecord,
 } from "../types"
-import { type AsyncIDB, type BroadcastChannelMessage, MSG_TYPES } from "../AsyncIDB.js"
+import { BROADCAST_MSG_TYPES, type BroadcastChannelMessage } from "../utils.js"
 
 /**
  * Manages event emission and listening for store operations
@@ -61,7 +62,7 @@ export class StoreEventEmitter<T extends AnyCollection> {
     // Broadcast to other tabs/windows if not relaying and broadcast is enabled
     if (!this.isRelaying && this.db.relayEnabled && this.db.bc) {
       this.db.bc.postMessage({
-        type: MSG_TYPES.RELAY,
+        type: BROADCAST_MSG_TYPES.RELAY,
         name: this.storeName,
         event: eventName,
         data,

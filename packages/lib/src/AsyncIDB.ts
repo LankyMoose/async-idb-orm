@@ -16,28 +16,12 @@ import {
 import { Collection } from "./builders/Collection.js"
 import { AsyncIDBStore } from "./AsyncIDBStore.js"
 import { AsyncIDBSelector, InferSelectorReturn } from "./AsyncIDBSelector.js"
-import { abortTx, createTaskContext } from "./utils.js"
-
-export const MSG_TYPES = {
-  CLOSE_FOR_UPGRADE: "[async-idb-orm]:close-for-upgrade",
-  REINIT: "[async-idb-orm]:reinit",
-  RELAY: "[async-idb-orm]:relay",
-} as const
-
-export type BroadcastChannelMessage =
-  | {
-      type: typeof MSG_TYPES.CLOSE_FOR_UPGRADE
-      newVersion: number
-    }
-  | {
-      type: typeof MSG_TYPES.REINIT
-    }
-  | {
-      type: typeof MSG_TYPES.RELAY
-      event: CollectionEvent
-      name: string
-      data: null | Record<string, any>
-    }
+import {
+  abortTx,
+  BROADCAST_MSG_TYPES,
+  BroadcastChannelMessage,
+  createTaskContext,
+} from "./utils.js"
 
 /**
  * @private
@@ -82,19 +66,19 @@ export class AsyncIDB<
        * - Once the other tab initializes it replies with an "REINIT" message.
        */
       switch (e.data.type) {
-        case MSG_TYPES.CLOSE_FOR_UPGRADE:
+        case BROADCAST_MSG_TYPES.CLOSE_FOR_UPGRADE:
           if (this.version === e.data.newVersion) return
           this.#db?.close()
           latest = e.data.newVersion
           break
-        case MSG_TYPES.REINIT:
+        case BROADCAST_MSG_TYPES.REINIT:
           if (this.version === latest) return
           this.config.onBeforeReinit?.(this.version, latest)
           this.version = latest
           this.stores = this.createStores()
           this.init()
           break
-        case MSG_TYPES.RELAY:
+        case BROADCAST_MSG_TYPES.RELAY:
           const store = this.stores[e.data.name]
           if (!store) return
           AsyncIDBStore.relay(store, e.data.event, e.data.data)
@@ -164,7 +148,7 @@ export class AsyncIDB<
     request.onblocked = () => {
       wasBlocked = true
       // send a "blocking" message to the other tab, indicating that it should close the connection.
-      this.bc.postMessage({ type: MSG_TYPES.CLOSE_FOR_UPGRADE, newVersion: this.version })
+      this.bc.postMessage({ type: BROADCAST_MSG_TYPES.CLOSE_FOR_UPGRADE, newVersion: this.version })
     }
     request.onupgradeneeded = async (e) => {
       await this.initializeStores(request, e)
@@ -175,7 +159,7 @@ export class AsyncIDB<
       this.config.onOpen?.(this.#db)
       if (wasBlocked) {
         // if our initialization was blocked, we can now let the other tab know we're ready
-        this.bc.postMessage({ type: MSG_TYPES.REINIT })
+        this.bc.postMessage({ type: BROADCAST_MSG_TYPES.REINIT })
       }
       while (this.#instanceCallbacks.length) {
         this.#instanceCallbacks.shift()!(this.#db)
