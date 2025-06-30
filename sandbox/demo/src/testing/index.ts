@@ -2,8 +2,12 @@ import { TestRunner } from "./framework"
 
 const tests = import.meta.glob("./tests/*.test.ts")
 
+let isRunning = false
 export async function testAll() {
-  console.log("Running tests...")
+  if (isRunning) {
+    throw new Error("testAll is already running")
+  }
+  isRunning = true
   const sortedKeys = Object.keys(tests).sort((a, b) => {
     const aNumber = parseInt(a.split("/").pop()?.split(".")[0]!)
     const bNumber = parseInt(b.split("/").pop()?.split(".")[0]!)
@@ -16,5 +20,9 @@ export async function testAll() {
     const { default: suiteBuilder } = module as { default: (runner: TestRunner) => void }
     suiteBuilder(testRunner)
   }
-  await testRunner.run()
+  try {
+    await testRunner.run()
+  } finally {
+    isRunning = false
+  }
 }
