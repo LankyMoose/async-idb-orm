@@ -10,7 +10,6 @@ import {
   RelationsSchema,
   SelectorSchema,
   TaskContext,
-  CollectionEvent,
 } from "./types"
 
 import { Collection } from "./builders/Collection.js"
