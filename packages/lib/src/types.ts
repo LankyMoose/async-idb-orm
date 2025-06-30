@@ -1,8 +1,8 @@
-import type { AsyncIDBStore } from "./idbStore"
-import type { Collection, $COLLECTION_INTERNAL } from "./builders/collection"
-import type { Relations } from "./builders/relations"
-import type { Selector } from "./builders/selector"
-import type { AsyncIDBSelector, InferSelectorReturn } from "./idbSelector"
+import type { AsyncIDBStore } from "./AsyncIDBStore"
+import type { Collection, $COLLECTION_INTERNAL } from "./builders/Collection"
+import type { Relations } from "./builders/Relations"
+import type { Selector } from "./builders/Selector"
+import type { AsyncIDBSelector, InferSelectorReturn } from "./AsyncIDBSelector"
 
 type Prettify<T> = {
   [K in keyof T]: T[K]

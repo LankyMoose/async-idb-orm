@@ -1,6 +1,6 @@
-import type { AsyncIDB } from "../idb"
+import type { AsyncIDB } from "../AsyncIDB"
 import { CollectionIDMode, CollectionIndex, SerializationConfig } from "../types"
-import { AsyncIDBStore } from "../idbStore.js"
+import { AsyncIDBStore } from "../AsyncIDBStore.js"
 import { keyPassThroughProxy } from "../utils.js"
 
 const CollectionBuilderSentinel = Symbol()

@@ -1,10 +1,10 @@
 export { idb }
-export { Collection } from "./builders/collection.js"
-export { Relations } from "./builders/relations.js"
-export { Selector } from "./builders/selector.js"
+export { Collection } from "./builders/Collection.js"
+export { Relations } from "./builders/Relations.js"
+export { Selector } from "./builders/Selector.js"
 export type * from "./types"
 
-import { AsyncIDB } from "./idb.js"
+import { AsyncIDB } from "./AsyncIDB.js"
 import type {
   AsyncIDBInstance,
   CollectionSchema,

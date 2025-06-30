@@ -1,10 +1,4 @@
-import type {
-  CollectionRecord,
-  CollectionKeyPathType,
-  ActiveRecord,
-  ActiveRecordMethods,
-  AnyCollection,
-} from "../types"
+import type { CollectionRecord, CollectionKeyPathType, ActiveRecord, AnyCollection } from "../types"
 
 /**
  * Manages the active record pattern for collections

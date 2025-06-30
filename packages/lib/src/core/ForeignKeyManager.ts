@@ -2,7 +2,7 @@ import type { TaskContext, CollectionKeyPathType, CollectionRecord, AnyCollectio
 // import type { CollectionForeignKeyConfig } from "../builders/collection.js"
 import { RequestHelper } from "./RequestHelper.js"
 import { CursorIterator } from "./CursorIterator.js"
-import { StoreEventEmitter } from "./EventEmitter"
+import { StoreEventEmitter } from "./EventEmitter.js"
 
 /**
  * Manages foreign key constraints and validation

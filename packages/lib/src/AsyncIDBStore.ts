@@ -13,8 +13,8 @@ import type {
   AnyCollection,
   TaskContext,
 } from "./types"
-import type { AsyncIDB } from "./idb"
-import { Collection } from "./builders/collection.js"
+import type { AsyncIDB } from "./AsyncIDB"
+import { Collection } from "./builders/Collection.js"
 import { RequestHelper } from "./core/RequestHelper.js"
 import { TransactionManager } from "./core/TransactionManager.js"
 import { StoreEventEmitter } from "./core/EventEmitter.js"
@@ -22,7 +22,7 @@ import { ForeignKeyManager } from "./core/ForeignKeyManager.js"
 import { ActiveRecordWrapper } from "./core/ActiveRecordWrapper.js"
 import { QueryExecutor } from "./core/QueryExecutor.js"
 import { CursorIterator } from "./core/CursorIterator.js"
-import { Relations } from "./builders/relations.js"
+import { Relations } from "./builders/Relations.js"
 
 /**
  * A refactored, more professional implementation of AsyncIDBStore

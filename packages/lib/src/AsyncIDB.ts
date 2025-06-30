@@ -10,13 +10,34 @@ import {
   RelationsSchema,
   SelectorSchema,
   TaskContext,
+  CollectionEvent,
 } from "./types"
 
-import { Collection } from "./builders/collection.js"
-import { AsyncIDBStore } from "./idbStore.js"
-import { type BroadcastChannelMessage, MSG_TYPES } from "./broadcastChannel.js"
-import { AsyncIDBSelector, InferSelectorReturn } from "./idbSelector.js"
+import { Collection } from "./builders/Collection.js"
+import { AsyncIDBStore } from "./AsyncIDBStore.js"
+import { AsyncIDBSelector, InferSelectorReturn } from "./AsyncIDBSelector.js"
 import { abortTx, createTaskContext } from "./utils.js"
+
+export const MSG_TYPES = {
+  CLOSE_FOR_UPGRADE: "[async-idb-orm]:close-for-upgrade",
+  REINIT: "[async-idb-orm]:reinit",
+  RELAY: "[async-idb-orm]:relay",
+} as const
+
+export type BroadcastChannelMessage =
+  | {
+      type: typeof MSG_TYPES.CLOSE_FOR_UPGRADE
+      newVersion: number
+    }
+  | {
+      type: typeof MSG_TYPES.REINIT
+    }
+  | {
+      type: typeof MSG_TYPES.RELAY
+      event: CollectionEvent
+      name: string
+      data: null | Record<string, any>
+    }
 
 /**
  * @private

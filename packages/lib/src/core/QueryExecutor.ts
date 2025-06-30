@@ -5,12 +5,11 @@ import type {
   FindOptions,
   RelationResult,
   RelationsSchema,
-  TaskContext,
 } from "../types"
-import { AsyncIDBSelector } from "../idbSelector.js"
+import { AsyncIDBSelector } from "../AsyncIDBSelector.js"
 import { RequestHelper } from "./RequestHelper.js"
 import { CursorIterator } from "./CursorIterator.js"
-import { AsyncIDBStore } from "../idbStore.js"
+import { AsyncIDBStore } from "../AsyncIDBStore.js"
 
 /**
  * Handles query execution for collections with relation support

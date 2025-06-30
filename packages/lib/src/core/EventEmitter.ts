@@ -4,9 +4,7 @@ import type {
   AnyCollection,
   CollectionRecord,
 } from "../types"
-import type { BroadcastChannelMessage } from "../broadcastChannel.js"
-import { MSG_TYPES } from "../broadcastChannel.js"
-import type { AsyncIDB } from "../idb.js"
+import { type AsyncIDB, type BroadcastChannelMessage, MSG_TYPES } from "../AsyncIDB.js"
 
 /**
  * Manages event emission and listening for store operations
