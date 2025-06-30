@@ -34,6 +34,7 @@ export class RequestHelper {
    * Checks if a record exists by key
    */
   static async exists(objectStore: IDBObjectStore, key: IDBValidKey): Promise<boolean> {
+    if (key === undefined) return false
     const request = objectStore.getKey(key)
     const result = await this.promisify(request)
     return result === key

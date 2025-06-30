@@ -23,19 +23,21 @@ export class ActiveRecordWrapper<T extends AnyCollection> {
   wrap(record: CollectionRecord<T>): ActiveRecord<CollectionRecord<T>> {
     this.assertNoRelations(record, "wrap")
 
-    return Object.assign<CollectionRecord<T>, ActiveRecordMethods<CollectionRecord<T>>>(record, {
+    const activeRecord = Object.assign({}, record, {
       save: async () => {
-        const res = await this.updateRecord(record)
+        const res = await this.updateRecord(activeRecord)
         if (res === null) {
           throw new Error("[async-idb-orm]: record not found")
         }
         return this.wrap(res)
       },
       delete: async () => {
-        const key = this.getRecordKey(record)
+        const key = this.getRecordKey(activeRecord)
         await this.deleteRecord(key)
       },
     })
+
+    return activeRecord as ActiveRecord<CollectionRecord<T>>
   }
 
   /**
