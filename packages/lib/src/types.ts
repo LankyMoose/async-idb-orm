@@ -199,10 +199,8 @@ type GetTargetCollectionForRelation<
   RelationName extends string
 > = {
   [K in keyof R]: R[K] extends Relations<infer From, infer To, infer RelMap>
-    ? From extends SourceCollection
-      ? RelationName extends keyof RelMap
-        ? To
-        : never
+    ? [From, RelationName] extends [SourceCollection, keyof RelMap]
+      ? To
       : never
     : never
 }[keyof R]
