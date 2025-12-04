@@ -1,4 +1,4 @@
-import { AsyncIDBInstance, CollectionSchema, RelationsSchema } from "../types"
+import type { AsyncIDBInstance, CollectionSchema, RelationsSchema } from "../types"
 
 const SelectorBuilderSentinel = Symbol()
 

@@ -1,5 +1,5 @@
-import type { AnyCollection, CollectionRecord } from "../types"
 import { keyPassThroughProxy } from "../utils.js"
+import type { AnyCollection, CollectionRecord } from "../types"
 
 const RelationsBuilderSentinel = Symbol()
 

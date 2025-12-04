@@ -10,7 +10,7 @@ import {
   SelectorSchema,
   TransactionOptions,
   CollectionIndex,
-} from "./types"
+} from "./types.js"
 
 import { Collection } from "./builders/Collection.js"
 import { AsyncIDBStore } from "./AsyncIDBStore.js"
