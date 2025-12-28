@@ -98,6 +98,8 @@ await db.collections.users.delete(user.id)
 await db.collections.users.deleteMany((user) => user.age < 25)
 await db.collections.users.all()
 await db.collections.users.findMany((user) => user.age > 25)
+await db.collections.users.count()
+await db.collections.users.latest()
 
 const oldestUser = await db.collections.users.max("idx_age")
 //    ^? User, or null if there are no records
@@ -670,16 +672,23 @@ await db.collections.users.delete(bob.id)
 
 ### Async Iteration
 
-Collections implement `[Symbol.asyncIterator]`, allowing on-demand iteration.
+Collections implement several async iterators:
 
 ```ts
 for await (const user of db.collections.users) {
   console.log(user)
 }
 
-// You can also iterate over indexes, like so:
 const ageKeyRange = IDBKeyRange.bound(0, 30)
 for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
+  console.log(user)
+}
+
+for await (const user of db.collections.users.iterate()) {
+  console.log(user)
+}
+
+for await (const user of db.collections.users.iterateReversed()) {
   console.log(user)
 }
 ```
