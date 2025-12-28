@@ -135,7 +135,34 @@ export type DBInstanceCallback = (db: IDBDatabase) => any
 type NonEmptyArray = [any, ...any[]]
 
 export type RelationsSchema = {
-  [key: string]: Relations<any, any, any>
+  [key: string]: Relations<
+    AnyCollection,
+    AnyCollection,
+    RelationsDefinitionMap<AnyCollection, AnyCollection>
+  >
+}
+
+export type RelationType = "one-to-one" | "one-to-many"
+
+export type RelationDefinition<From extends AnyCollection, To extends AnyCollection> = {
+  type: RelationType
+  from: keyof CollectionRecord<From> & string
+  to: keyof CollectionRecord<To> & string
+}
+
+export type RelationsConfig<From extends AnyCollection, To extends AnyCollection> = {
+  [key: string]: (
+    fromFields: {
+      [key in keyof CollectionRecord<From> & string]: key
+    },
+    toFields: {
+      [key in keyof CollectionRecord<To> & string]: key
+    }
+  ) => RelationDefinition<From, To>
+}
+
+export type RelationsDefinitionMap<From extends AnyCollection, To extends AnyCollection> = {
+  [key: string]: RelationDefinition<From, To>
 }
 
 export type AnyCollection = Collection<any, any, any, any, any>
@@ -179,6 +206,14 @@ export type CollectionIndex<RecordType extends Record<string, any>> = {
   name: string
   key: RecordKeyPath<RecordType>
   options?: IDBIndexParameters
+}
+
+export type ForeignKeyOnDelete = "cascade" | "restrict" | "no action" | "set null"
+
+export type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
+  ref: keyof RecordType & string
+  collection: Collection<any, any, any, any, any>
+  onDelete: ForeignKeyOnDelete
 }
 
 export enum CollectionIDMode {

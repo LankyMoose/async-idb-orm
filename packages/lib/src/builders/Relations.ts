@@ -1,35 +1,12 @@
 import { keyPassThroughProxy } from "../utils.js"
-import type { AnyCollection, CollectionRecord } from "../types"
+import type { AnyCollection, RelationsConfig, RelationsDefinitionMap } from "../types"
 
 const RelationsBuilderSentinel = Symbol()
-
-export type RelationType = "one-to-one" | "one-to-many"
-
-export type RelationDefinition<From extends AnyCollection, To extends AnyCollection> = {
-  type: RelationType
-  from: keyof CollectionRecord<From> & string
-  to: keyof CollectionRecord<To> & string
-}
-
-type RelationsConfig<From extends AnyCollection, To extends AnyCollection> = {
-  [key: string]: (
-    fromFields: {
-      [key in keyof CollectionRecord<From> & string]: key
-    },
-    toFields: {
-      [key in keyof CollectionRecord<To> & string]: key
-    }
-  ) => RelationDefinition<From, To>
-}
-
-export type RelationsDefinitionMap<From extends AnyCollection, To extends AnyCollection> = {
-  [key: string]: RelationDefinition<From, To>
-}
 
 export class Relations<
   From extends AnyCollection,
   To extends AnyCollection,
-  RelationsMap extends RelationsDefinitionMap<From, To> = never
+  RelationsMap extends RelationsDefinitionMap<From, To> = RelationsDefinitionMap<From, To>
 > {
   relationsMap!: RelationsMap
   private constructor(key: symbol, public from: From, public to: To) {

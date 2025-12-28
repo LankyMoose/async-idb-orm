@@ -2,7 +2,7 @@ import { CollectionIDMode } from "../types.js"
 import { AsyncIDBStore } from "../AsyncIDBStore.js"
 import { keyPassThroughProxy } from "../utils.js"
 import type { AsyncIDB } from "../AsyncIDB"
-import type { CollectionIndex, SerializationConfig } from "../types"
+import type { CollectionForeignKeyConfig, CollectionIndex, SerializationConfig } from "../types"
 
 const CollectionBuilderSentinel = Symbol()
 
@@ -45,13 +45,6 @@ export type CollectionTransformers<
 
 type InvalidRecordKeyError = Error & {
   Brand: "InvalidRecordKeyError"
-}
-
-type ForeignKeyOnDelete = "cascade" | "restrict" | "no action" | "set null"
-type CollectionForeignKeyConfig<RecordType extends Record<string, any>> = {
-  ref: keyof RecordType & string
-  collection: Collection<any, any, any, any, any>
-  onDelete: ForeignKeyOnDelete
 }
 
 type ForeignKeyConfigCallback<RecordType extends Record<string, any>> = (fields: {

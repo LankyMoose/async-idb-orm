@@ -18,6 +18,7 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
   constructor(
     private store: AsyncIDBStore<T, R>,
     private deserialize: (value: any) => CollectionRecord<T>,
+    private getDb: () => Promise<IDBDatabase>,
     private getRelations: () => Record<string, any>,
     private currentTx?: IDBTransaction
   ) {}
@@ -27,15 +28,16 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
    */
   async executeInTransaction<TResult>(
     operation: (tx: IDBTransaction) => Promise<TResult>,
-    getDb: () => Promise<IDBDatabase>,
     storeNames: string[]
   ): Promise<TResult> {
     if (this.currentTx) {
+      AsyncIDBSelector.observe(this.currentTx, this.store)
       return operation(this.currentTx)
     }
 
-    const db = await getDb()
+    const db = await this.getDb()
     const tx = db.transaction(storeNames, "readonly")
+    AsyncIDBSelector.observe(tx, this.store)
     return operation(tx)
   }
 
@@ -45,29 +47,22 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
   async findByKey<Options extends FindOptions<R, T>>(
     key: CollectionKeyPathType<T>,
     options: Options | undefined,
-    getDb: () => Promise<IDBDatabase>,
     storeNames: string[]
   ): Promise<RelationResult<T, R, Options> | null> {
-    return this.executeInTransaction(
-      async (tx) => {
-        AsyncIDBSelector.observe(tx, this.store)
+    return this.executeInTransaction(async (tx) => {
+      const objectStore = tx.objectStore(this.store.name)
+      const rawRecord = await RequestHelper.get(objectStore, key as IDBValidKey)
 
-        const objectStore = tx.objectStore(this.store.name)
-        const rawRecord = await RequestHelper.get(objectStore, key as IDBValidKey)
+      if (!rawRecord) return null
 
-        if (!rawRecord) return null
+      const record = this.deserialize(rawRecord) as RelationResult<T, R, Options>
 
-        const record = this.deserialize(rawRecord) as RelationResult<T, R, Options>
+      if (options?.with) {
+        return this.resolveRelations(record, options.with, tx)
+      }
 
-        if (options?.with) {
-          return this.resolveRelations(record, options.with, tx)
-        }
-
-        return record
-      },
-      getDb,
-      storeNames
-    )
+      return record
+    }, storeNames)
   }
 
   /**
@@ -76,32 +71,25 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
   async findByPredicate<Options extends FindOptions<R, T>>(
     predicate: (item: CollectionRecord<T>) => boolean,
     options: (Options & { limit?: number }) | undefined,
-    getDb: () => Promise<IDBDatabase>,
     storeNames: string[]
   ): Promise<RelationResult<T, R, Options>[]> {
     const limit = options?.limit || Infinity
 
-    return this.executeInTransaction(
-      async (tx) => {
-        AsyncIDBSelector.observe(tx, this.store)
+    return this.executeInTransaction(async (tx) => {
+      const objectStore = tx.objectStore(this.store.name)
+      const records = (await CursorIterator.findByPredicate(objectStore, predicate, {
+        limit,
+        deserialize: this.deserialize,
+      })) as RelationResult<T, R, Options>[]
 
-        const objectStore = tx.objectStore(this.store.name)
-        const records = (await CursorIterator.findByPredicate(objectStore, predicate, {
-          limit,
-          deserialize: this.deserialize,
-        })) as RelationResult<T, R, Options>[]
+      if (options?.with) {
+        return Promise.all(
+          records.map((record) => this.resolveRelations(record, options.with!, tx))
+        )
+      }
 
-        if (options?.with) {
-          return Promise.all(
-            records.map((record) => this.resolveRelations(record, options.with!, tx))
-          )
-        }
-
-        return records
-      },
-      getDb,
-      storeNames
-    )
+      return records
+    }, storeNames)
   }
 
   /**
@@ -109,30 +97,23 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
    */
   async findAll<Options extends FindOptions<R, T>>(
     options: Options | undefined,
-    getDb: () => Promise<IDBDatabase>,
     storeNames: string[]
   ): Promise<RelationResult<T, R, Options>[]> {
-    return this.executeInTransaction(
-      async (tx) => {
-        AsyncIDBSelector.observe(tx, this.store)
+    return this.executeInTransaction(async (tx) => {
+      const objectStore = tx.objectStore(this.store.name)
+      const request = objectStore.getAll()
+      const result = await RequestHelper.promisify(request)
 
-        const objectStore = tx.objectStore(this.store.name)
-        const request = objectStore.getAll()
-        const result = await RequestHelper.promisify(request)
+      const records = result.map(this.deserialize) as RelationResult<T, R, Options>[]
 
-        const records = result.map(this.deserialize) as RelationResult<T, R, Options>[]
+      if (options?.with) {
+        return Promise.all(
+          records.map((record) => this.resolveRelations(record, options.with!, tx))
+        )
+      }
 
-        if (options?.with) {
-          return Promise.all(
-            records.map((record) => this.resolveRelations(record, options.with!, tx))
-          )
-        }
-
-        return records
-      },
-      getDb,
-      storeNames
-    )
+      return records
+    }, storeNames)
   }
 
   /**
@@ -142,33 +123,26 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
     indexName: string,
     keyRange: IDBKeyRange | undefined,
     options: Options | undefined,
-    getDb: () => Promise<IDBDatabase>,
     storeNames: string[]
   ): Promise<RelationResult<T, R, Options>[]> {
-    return this.executeInTransaction(
-      async (tx) => {
-        AsyncIDBSelector.observe(tx, this.store)
+    return this.executeInTransaction(async (tx) => {
+      const objectStore = tx.objectStore(this.store.name)
+      const index = objectStore.index(indexName)
 
-        const objectStore = tx.objectStore(this.store.name)
-        const index = objectStore.index(indexName)
+      const records = keyRange
+        ? await CursorIterator.getIndexRange(index, keyRange, this.deserialize)
+        : ((await RequestHelper.promisify(index.getAll()).then((results) =>
+            results.map(this.deserialize)
+          )) as RelationResult<T, R, Options>[])
 
-        const records = keyRange
-          ? await CursorIterator.getIndexRange(index, keyRange, this.deserialize)
-          : ((await RequestHelper.promisify(index.getAll()).then((results) =>
-              results.map(this.deserialize)
-            )) as RelationResult<T, R, Options>[])
+      if (options?.with) {
+        return Promise.all(
+          records.map((record) => this.resolveRelations(record, options.with!, tx))
+        )
+      }
 
-        if (options?.with) {
-          return Promise.all(
-            records.map((record) => this.resolveRelations(record, options.with!, tx))
-          )
-        }
-
-        return records
-      },
-      getDb,
-      storeNames
-    )
+      return records
+    }, storeNames)
   }
 
   /**
@@ -177,18 +151,34 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
   async findByDirection(
     indexName: string,
     direction: IDBCursorDirection,
-    getDb: () => Promise<IDBDatabase>,
     storeNames: string[]
   ): Promise<CollectionRecord<T> | null> {
-    return this.executeInTransaction(
-      async (tx) => {
-        const objectStore = tx.objectStore(this.store.name)
-        const index = objectStore.index(indexName)
-        return CursorIterator.getFirstByDirection(index, direction, this.deserialize)
-      },
-      getDb,
-      storeNames
-    )
+    return this.executeInTransaction(async (tx) => {
+      const objectStore = tx.objectStore(this.store.name)
+      const index = objectStore.index(indexName)
+      return CursorIterator.getFirstByDirection(index, direction, this.deserialize)
+    }, storeNames)
+  }
+
+  /**
+   * Finds the latest record with optional relations
+   */
+  async findLatest<Options extends FindOptions<R, T>>(
+    options: Options | undefined,
+    storeNames: string[]
+  ): Promise<RelationResult<T, R, Options> | null> {
+    return this.executeInTransaction(async (tx) => {
+      const objectStore = tx.objectStore(this.store.name)
+      const request = objectStore.openCursor(null, "prev")
+      const result = await RequestHelper.promisify(request)
+      if (result === null) return null
+
+      const record = this.deserialize(result.value)
+      if (options?.with) {
+        return this.resolveRelations(record, options.with!, tx)
+      }
+      return record
+    }, storeNames)
   }
 
   /**

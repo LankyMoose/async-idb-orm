@@ -52,6 +52,27 @@ export default (testRunner: TestRunner) => {
         const retrievedUser = await db.collections.users.find(user.id)
         assert(retrievedUser === null, "User should be deleted")
       })
+
+      test("should get the latest record", async () => {
+        await db.collections.users.create({ name: "John Doe", age: 30 })
+        await db.collections.users.create({ name: "Jane Doe", age: 25 })
+        const user = await db.collections.users.create({ name: "Bob Smith", age: 40 })
+        const latest = await db.collections.users.latest()
+        assert(latest && latest.id === user.id, "Latest record should be the latest record")
+      })
+
+      test("can read rows in reverse", async () => {
+        await db.collections.users.create({ name: "A", age: 30 })
+        await db.collections.users.create({ name: "B", age: 25 })
+        await db.collections.users.create({ name: "C", age: 40 })
+
+        const reversedUsers = await Array.fromAsync(db.collections.users.iterateReversed())
+
+        assert(reversedUsers.length === 3, "Should get all users in reverse order")
+        assert(reversedUsers[0].name === "C", "First user should be C")
+        assert(reversedUsers[1].name === "B", "Second user should be B")
+        assert(reversedUsers[2].name === "A", "Third user should be A")
+      })
     },
   })
 }

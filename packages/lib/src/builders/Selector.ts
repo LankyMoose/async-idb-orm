@@ -19,8 +19,10 @@ export class Selector<T extends CollectionSchema, R extends RelationsSchema, Dat
    * import * as relations from "./relations"
    *
    * const recentPostsWithAuthors = Selector.create<typeof schema, typeof relations>()
-   *   .as((ctx) => ctx.posts.findMany((post) => isCreatedRecently(post)), {
-   *     with: { author: true },
+   *   .as((ctx) => {
+   *     return ctx.posts.findMany((post) => isCreatedRecently(post), {
+   *       with: { author: true },
+   *     })
    *   })
    *
    * ```

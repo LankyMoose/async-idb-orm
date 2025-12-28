@@ -11,17 +11,22 @@ import type {
   FindOptions,
   RelationResult,
   AnyCollection,
+  CollectionSchema,
+  RelationDefinition,
 } from "./types"
 import type { AsyncIDB } from "./AsyncIDB"
 import { Collection } from "./builders/Collection.js"
 import { RequestHelper } from "./core/RequestHelper.js"
 import { TransactionManager } from "./core/TransactionManager.js"
 import { StoreEventEmitter } from "./core/EventEmitter.js"
-import { ForeignKeyManager } from "./core/ForeignKeyManager.js"
+import {
+  DownstreamHandlerCallback,
+  ForeignKeyManager,
+  ForeignKeysInit,
+} from "./core/ForeignKeyManager.js"
 import { ActiveRecordWrapper } from "./core/ActiveRecordWrapper.js"
 import { QueryExecutor } from "./core/QueryExecutor.js"
 import { CursorIterator } from "./core/CursorIterator.js"
-import { Relations } from "./builders/Relations.js"
 import { TaskContext } from "./core/TaskContext.js"
 
 /**
@@ -38,12 +43,19 @@ export class AsyncIDBStore<
   private foreignKeyManager: ForeignKeyManager<T>
   private activeRecordWrapper: ActiveRecordWrapper<T>
   private queryExecutor: QueryExecutor<T, R>
-  private relations: Record<string, any> = {}
+  private relations: Record<
+    string,
+    { other: AsyncIDBStore<any, any>; def: RelationDefinition<any, any> }
+  > = {}
   private taskContext?: TaskContext
   private serialize: (record: CollectionRecord<T>) => any
   private deserialize: (record: any) => CollectionRecord<T>
 
-  constructor(private db: AsyncIDB<any, any, any>, private collection: T, public name: string) {
+  constructor(
+    private db: AsyncIDB<CollectionSchema, RelationsSchema, any>,
+    private collection: T,
+    public name: string
+  ) {
     // Initialize serialization
     const { read, write } = collection.serializationConfig
     this.serialize = write
@@ -74,6 +86,7 @@ export class AsyncIDBStore<
     this.queryExecutor = new QueryExecutor<T, R>(
       this,
       this.deserialize,
+      () => new Promise((resolve) => this.db.getInstance(resolve)),
       () => this.relations,
       this.taskContext?.tx
     )
@@ -125,10 +138,7 @@ export class AsyncIDBStore<
     }
 
     return this.transactionManager.queueTask<CollectionRecord<T>>(async (ctx) => {
-      // Validate foreign key constraints BEFORE serialization
-      if (this.foreignKeyManager) {
-        await this.foreignKeyManager.validateUpstreamConstraints(ctx, data)
-      }
+      await this.foreignKeyManager.validateUpstreamConstraints(ctx, data)
 
       const serialized = this.serialize(data)
       const objectStore = ctx.tx.objectStore(this.name)
@@ -170,10 +180,7 @@ export class AsyncIDBStore<
         record = transformer(record)
       }
 
-      // Validate foreign key constraints BEFORE serialization
-      if (this.foreignKeyManager) {
-        await this.foreignKeyManager.validateUpstreamConstraints(ctx, record)
-      }
+      await this.foreignKeyManager.validateUpstreamConstraints(ctx, record)
 
       const serialized = this.serialize(record)
       await RequestHelper.put(objectStore, serialized)
@@ -318,18 +325,12 @@ export class AsyncIDBStore<
       const [result] = await this.queryExecutor.findByPredicate(
         predicateOrKey,
         { ...options, limit: 1 },
-        () => new Promise((resolve) => this.db.getInstance(resolve)),
         this.db.storeNames
       )
       return (result ?? null) as RelationResult<T, R, Options> | null
     }
 
-    return this.queryExecutor.findByKey(
-      predicateOrKey,
-      options,
-      () => new Promise((resolve) => this.db.getInstance(resolve)),
-      this.db.storeNames
-    )
+    return this.queryExecutor.findByKey(predicateOrKey, options, this.db.storeNames)
   }
 
   async findActive(
@@ -343,12 +344,7 @@ export class AsyncIDBStore<
     predicate: (item: CollectionRecord<T>) => boolean,
     options?: Options & { limit?: number }
   ): Promise<RelationResult<T, R, Options>[]> {
-    return this.queryExecutor.findByPredicate(
-      predicate,
-      options,
-      () => new Promise((resolve) => this.db.getInstance(resolve)),
-      this.db.storeNames
-    )
+    return this.queryExecutor.findByPredicate(predicate, options, this.db.storeNames)
   }
 
   async findManyActive(
@@ -362,11 +358,7 @@ export class AsyncIDBStore<
   async all<Options extends FindOptions<R, T>>(
     options?: Options
   ): Promise<RelationResult<T, R, Options>[]> {
-    return this.queryExecutor.findAll(
-      options,
-      () => new Promise((resolve) => this.db.getInstance(resolve)),
-      this.db.storeNames
-    )
+    return this.queryExecutor.findAll(options, this.db.storeNames)
   }
 
   async allActive(): Promise<ActiveRecord<CollectionRecord<T>>[]> {
@@ -386,35 +378,30 @@ export class AsyncIDBStore<
     }, this.taskContext?.tx)
   }
 
+  async latest<Options extends FindOptions<R, T>>(
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null> {
+    return this.queryExecutor.findLatest(options, this.db.storeNames)
+  }
+
+  async latestActive(): Promise<ActiveRecord<CollectionRecord<T>> | null> {
+    const result = await this.latest()
+    return result ? this.wrap(result) : null
+  }
+
   async max<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
-    return this.queryExecutor.findByDirection(
-      name,
-      "prev",
-      () => new Promise((resolve) => this.db.getInstance(resolve)),
-      this.db.storeNames
-    )
+    return this.queryExecutor.findByDirection(name, "prev", this.db.storeNames)
   }
 
   async min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
-    return this.queryExecutor.findByDirection(
-      name,
-      "next",
-      () => new Promise((resolve) => this.db.getInstance(resolve)),
-      this.db.storeNames
-    )
+    return this.queryExecutor.findByDirection(name, "next", this.db.storeNames)
   }
 
   async getIndexRange<U extends CollectionIndexName<T>>(
     name: U,
     keyRange: IDBKeyRange
   ): Promise<CollectionRecord<T>[]> {
-    return this.queryExecutor.findByIndex(
-      name,
-      keyRange,
-      undefined,
-      () => new Promise((resolve) => this.db.getInstance(resolve)),
-      this.db.storeNames
-    )
+    return this.queryExecutor.findByIndex(name, keyRange, undefined, this.db.storeNames)
   }
 
   // =============================================================================
@@ -431,7 +418,32 @@ export class AsyncIDBStore<
     }
   }
 
-  async *iterateIndex<U extends CollectionIndexName<T>>(name: U, keyRange?: IDBKeyRange) {
+  async *iterate(keyRange?: IDBKeyRange): AsyncGenerator<CollectionRecord<T>, void, unknown> {
+    const objectStore = await this.getReadonlyObjectStore()
+    const request = objectStore.openCursor(keyRange ?? null)
+    const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
+
+    for await (const item of iterator) {
+      yield item
+    }
+  }
+
+  async *iterateReversed(
+    keyRange?: IDBKeyRange
+  ): AsyncGenerator<CollectionRecord<T>, void, unknown> {
+    const objectStore = await this.getReadonlyObjectStore()
+    const request = objectStore.openCursor(keyRange ?? null, "prev")
+    const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
+
+    for await (const item of iterator) {
+      yield item
+    }
+  }
+
+  async *iterateIndex<U extends CollectionIndexName<T>>(
+    name: U,
+    keyRange?: IDBKeyRange
+  ): AsyncGenerator<CollectionRecord<T>, void, unknown> {
     const objectStore = await this.getReadonlyObjectStore()
     const request = objectStore.index(name).openCursor(keyRange ?? null)
     const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
@@ -484,6 +496,7 @@ export class AsyncIDBStore<
     cloned.queryExecutor = new QueryExecutor(
       cloned,
       cloned.deserialize,
+      () => new Promise((resolve) => cloned.db.getInstance(resolve)),
       () => cloned.relations,
       ctx.tx
     )
@@ -491,7 +504,7 @@ export class AsyncIDBStore<
     return cloned
   }
 
-  static init(store: AsyncIDBStore<any, any>, allStores: Record<string, any>) {
+  static init(store: AsyncIDBStore<any, any>, allStores: AsyncIDB<any, any, any>["stores"]) {
     store.initializeComponents(allStores)
   }
 
@@ -508,28 +521,25 @@ export class AsyncIDBStore<
     return db.transaction(this.name, "readonly").objectStore(this.name)
   }
 
-  private initializeComponents(allStores: Record<string, any>) {
+  private initializeComponents(allStores: AsyncIDB<any, any, any>["stores"]) {
     this.createRelationsMap(allStores)
     this.initializeForeignKeys(allStores)
   }
 
-  private createRelationsMap(allStores: Record<string, any>) {
-    this.relations = Object.entries(this.db.relations).reduce<Record<string, any>>(
+  private createRelationsMap(allStores: AsyncIDB<any, any, any>["stores"]) {
+    this.relations = Object.entries(this.db.relations).reduce<typeof this.relations>(
       (acc, [_, rels]) => {
-        if (!(rels instanceof Relations)) return acc
         if (rels.from !== this.collection) return acc
 
-        for (const relationName in rels.relationsMap) {
-          const tgtCollection: AnyCollection = rels.to
-          const tgtStore = Object.entries(allStores).find(
-            ([_, store]) => store.collection === tgtCollection
-          )?.[1]
+        const tgtCollection = rels.to
+        const tgtStore = Object.values(allStores).find((s) => s.collection === tgtCollection)
+        if (!tgtStore) return acc
 
-          if (!tgtStore) continue
-
+        const relMap = rels.relationsMap
+        for (const relationName in relMap) {
           acc[relationName] = {
             other: tgtStore,
-            def: rels.relationsMap[relationName],
+            def: relMap[relationName],
           }
         }
         return acc
@@ -538,20 +548,20 @@ export class AsyncIDBStore<
     )
   }
 
-  private initializeForeignKeys(allStores: Record<string, any>) {
-    const storeInfo = Object.fromEntries(
+  private initializeForeignKeys(allStores: AsyncIDB<any, any, any>["stores"]) {
+    const init: ForeignKeysInit<T> = Object.fromEntries(
       Object.entries(allStores).map(([name, store]) => [
         name,
         {
           collection: store.collection,
           name: store.name,
-          addDownstreamHandler: (handler: any) =>
-            store.foreignKeyManager?.addDownstreamHandler(handler),
+          addDownstreamHandler: (handler: DownstreamHandlerCallback<T>) =>
+            store.foreignKeyManager.addDownstreamHandler(handler),
         },
       ])
     )
 
-    this.foreignKeyManager.initializeForeignKeys(this.collection.foreignKeys, storeInfo)
+    this.foreignKeyManager.initializeForeignKeys(this.collection.foreignKeys, init)
   }
 
   private getRecordKey(record: CollectionRecord<T>): CollectionKeyPathType<T> {

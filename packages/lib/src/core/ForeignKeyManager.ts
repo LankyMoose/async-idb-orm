@@ -1,20 +1,39 @@
-import type { CollectionKeyPathType, CollectionRecord, AnyCollection } from "../types"
+import type {
+  CollectionKeyPathType,
+  CollectionRecord,
+  AnyCollection,
+  CollectionForeignKeyConfig,
+} from "../types"
 // import type { CollectionForeignKeyConfig } from "../builders/collection.js"
 import { RequestHelper } from "./RequestHelper.js"
 import { CursorIterator } from "./CursorIterator.js"
 import { StoreEventEmitter } from "./EventEmitter.js"
 import { TaskContext } from "./TaskContext.js"
 
+export type UpstreamValidatorCallback<T extends AnyCollection> = (
+  ctx: TaskContext,
+  record: CollectionRecord<T>
+) => Promise<void>
+
+export type DownstreamHandlerCallback<T extends AnyCollection> = (
+  ctx: TaskContext,
+  key: CollectionKeyPathType<T>
+) => Promise<void>
+
+export interface ForeignKeysInit<T extends AnyCollection> {
+  [key: string]: {
+    collection: AnyCollection
+    name: string
+    addDownstreamHandler: (handler: DownstreamHandlerCallback<T>) => void
+  }
+}
+
 /**
  * Manages foreign key constraints and validation
  */
 export class ForeignKeyManager<T extends AnyCollection> {
-  private upstreamValidators: ((ctx: TaskContext, record: CollectionRecord<T>) => Promise<void>)[] =
-    []
-  private downstreamHandlers: ((
-    ctx: TaskContext,
-    key: CollectionKeyPathType<T>
-  ) => Promise<void>)[] = []
+  private upstreamValidators: UpstreamValidatorCallback<T>[] = []
+  private downstreamHandlers: DownstreamHandlerCallback<T>[] = []
 
   constructor(
     private storeName: string,
@@ -27,15 +46,8 @@ export class ForeignKeyManager<T extends AnyCollection> {
    * Initializes foreign key constraints for a collection
    */
   initializeForeignKeys(
-    foreignKeys: Array<{ ref: string; collection: AnyCollection; onDelete: string }>,
-    stores: Record<
-      string,
-      {
-        collection: AnyCollection
-        name: string
-        addDownstreamHandler: (handler: (ctx: TaskContext, key: any) => Promise<void>) => void
-      }
-    >
+    foreignKeys: Array<CollectionForeignKeyConfig<{}>>,
+    stores: ForeignKeysInit<T>
   ): void {
     if (!foreignKeys.length) return
 
@@ -131,9 +143,7 @@ export class ForeignKeyManager<T extends AnyCollection> {
   /**
    * Adds a downstream constraint handler
    */
-  addDownstreamHandler(
-    handler: (ctx: TaskContext, key: CollectionKeyPathType<T>) => Promise<void>
-  ): void {
+  addDownstreamHandler(handler: DownstreamHandlerCallback<T>): void {
     this.downstreamHandlers.push(handler)
   }
 
