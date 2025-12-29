@@ -18,6 +18,7 @@ export class AsyncIDBSelector<Data> {
   #storeUpdateListener: () => void
   #refreshQueued: boolean
   #getterPromises: [(data: Data) => void, (reason?: any) => void][]
+  #disposed: boolean
   private static observed = new Map<IDBTransaction, Set<AnyStore>>()
 
   constructor(
@@ -32,9 +33,11 @@ export class AsyncIDBSelector<Data> {
     this.#refreshQueued = false
     this.#storeUpdateListener = () => this.refresh()
     this.#getterPromises = []
+    this.#disposed = false
   }
 
   subscribe(callback: (data: Data) => void): () => void {
+    this.assertNotDisposed()
     this.#subscribers.add(callback)
     if (this.#data !== $DATA_EMPTY) {
       callback(this.#data)
@@ -45,9 +48,14 @@ export class AsyncIDBSelector<Data> {
   }
 
   get(): Promise<Data> {
+    this.assertNotDisposed()
     if (this.#data !== $DATA_EMPTY && !this.#refreshQueued) return Promise.resolve(this.#data)
     this.refresh()
     return new Promise<Data>((res, rej) => this.#getterPromises.push([res, rej]))
+  }
+
+  private assertNotDisposed() {
+    if (this.#disposed) throw new Error("AsyncIDBSelector is disposed")
   }
 
   private async refresh() {
@@ -81,6 +89,13 @@ export class AsyncIDBSelector<Data> {
     })
   }
 
+  static dispose(selector: AsyncIDBSelector<any>) {
+    selector.#disposed = true
+    selector.#subscribers.clear()
+    selector.#subscriptions.forEach((cb) => cb())
+    selector.#subscriptions.clear()
+  }
+
   static observe(tx: IDBTransaction, store: AnyStore) {
     this.observed.get(tx)?.add(store)
   }
@@ -92,13 +107,13 @@ export class AsyncIDBSelector<Data> {
 
     stores.forEach((store) => {
       if (this.#subscriptions.has(store)) return
-      const remove = () => {
-        store.removeEventListener("write|delete", this.#storeUpdateListener)
-        store.removeEventListener("clear", this.#storeUpdateListener)
-      }
+
       store.addEventListener("write|delete", this.#storeUpdateListener)
       store.addEventListener("clear", this.#storeUpdateListener)
-      this.#subscriptions.set(store, remove)
+      this.#subscriptions.set(store, () => {
+        store.removeEventListener("write|delete", this.#storeUpdateListener)
+        store.removeEventListener("clear", this.#storeUpdateListener)
+      })
     })
   }
 }

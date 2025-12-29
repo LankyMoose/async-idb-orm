@@ -277,6 +277,32 @@ export default (testRunner: TestRunner) => {
 
         unsubscribe()
       })
+
+      test("should support selectors that are created on-the-fly", async () => {
+        let timesSelectorCalled = 0
+
+        const users = db.select((ctx) => {
+          timesSelectorCalled++
+          return ctx.users.all()
+        })
+
+        users.subscribe(() => {})
+
+        assert(timesSelectorCalled === 0, "Selector should not be called yet")
+
+        await db.collections.users.create({ name: "Alice", age: 25 })
+        await db.collections.users.create({ name: "Bob", age: 30 })
+        await db.collections.users.create({ name: "Charlie", age: 35 })
+
+        assert(timesSelectorCalled === 3, "Selector should be called once per consecutive call")
+
+        await Promise.all(
+          ["a", "b", "c"].map((name) => db.collections.users.create({ name, age: 40 }))
+        )
+        assert(timesSelectorCalled === 4, "Selector should have batched multiple calls")
+
+        users.dispose()
+      })
     },
   })
 }

@@ -45,13 +45,6 @@ export class ActiveRecordWrapper<T extends AnyCollection> {
   }
 
   /**
-   * Wraps multiple records as active records
-   */
-  wrapMany(records: CollectionRecord<T>[]): ActiveRecord<CollectionRecord<T>>[] {
-    return records.map((record) => this.wrap(record))
-  }
-
-  /**
    * Unwraps multiple active records
    */
   unwrapMany(

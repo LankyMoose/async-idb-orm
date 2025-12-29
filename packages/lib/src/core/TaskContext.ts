@@ -47,7 +47,7 @@ export class TaskContext {
     try {
       const result = await cb(this)
       await Promise.all([...Array.from(this.beforeCommitCallbacks.values()).map((cb) => cb())])
-      await this.complete()
+      await Promise.race([this.abortPromise, this.errorPromise, this.completePromise])
       const error = this.abortReason || this.error
       if (error) {
         throw error
@@ -65,10 +65,6 @@ export class TaskContext {
 
   onWillCommit(key: string, cb: () => Promise<any>) {
     this.beforeCommitCallbacks.set(key, cb)
-  }
-
-  complete() {
-    return Promise.race([this.abortPromise, this.errorPromise, this.completePromise])
   }
 
   private abort() {

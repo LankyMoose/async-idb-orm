@@ -463,31 +463,40 @@ Selectors provide a powerful way to create computed, reactive data derived from 
 
 #### Defining Selectors
 
-Selectors are defined separately from collections and relations using the `Selector.create()` method:
+Selectors are defined separately from collections and relations using the `Selector.create()` method or by using `db.select()`:
 
 ```ts
-import { idb, Collection, Selector } from "async-idb-orm"
+// schema.ts
+import { Collection } from "async-idb-orm"
 
-// Collections
 type User = { id: string; name: string; age: number; isActive: boolean }
 type Post = { id: string; title: string; content: string; userId: string }
 
 const users = Collection.create<User>()
 const posts = Collection.create<Post>()
 
-// Define selectors
+// selectors.ts
+import { Selector } from "async-idb-orm"
+import type * as schema from "./collections"
+import type * as relations from "./relations"
+
 export const allUserNames = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
   return (await ctx.users.all()).map((user) => user.name)
 })
 
-export const activeUserCount = Selector.create<typeof schema, typeof relations>().as(
-  async (ctx) => {
-    const activeUsers = await ctx.users.findMany((user) => user.isActive)
-    return activeUsers.length
-  }
-)
+// db.ts
+import * as schema from "./collections"
+import * as relations from "./relations"
+import * as selectors from "./selectors"
 
-export const userPostCounts = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
+export const db = idb("my-app", {
+  schema,
+  relations,
+  selectors,
+  version: 1,
+})
+
+export const userPostCounts = db.select(async (ctx) => {
   const [users, posts] = await Promise.all([ctx.users.all(), ctx.posts.all()])
 
   return users.map((user) => ({
@@ -495,18 +504,6 @@ export const userPostCounts = Selector.create<typeof schema, typeof relations>()
     name: user.name,
     postCount: posts.filter((post) => post.userId === user.id).length,
   }))
-})
-
-// Setup database with selectors
-const schema = { users, posts }
-const relations = {} // your relations here
-const selectors = { allUserNames, activeUserCount, userPostCounts }
-
-export const db = idb("my-app", {
-  schema,
-  relations,
-  selectors,
-  version: 1,
 })
 ```
 
@@ -531,8 +528,7 @@ unsubscribe()
 ```ts
 // Get current selector data as a promise
 const userNames = await db.selectors.allUserNames.get()
-const activeCount = await db.selectors.activeUserCount.get()
-const postCounts = await db.selectors.userPostCounts.get()
+const postCounts = await userPostCounts.get()
 ```
 
 #### Automatic Dependency Tracking
@@ -541,11 +537,11 @@ Selectors automatically track which collections they access during execution. Wh
 
 ```ts
 // This selector will automatically track that it depends on the 'users' collection
-const youngUsers = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
+const youngUsers = db.select((ctx) => {
   return ctx.users.findMany((user) => user.age < 30) // Accesses 'users' collection
 })
 
-// When you modify users, the selector automatically updates
+// When you modify users, the selector automatically updates if there are subscribers
 await db.collections.users.create({ name: "Alice", age: 25, isActive: true })
 // ↑ This will trigger the youngUsers selector to refresh
 ```
@@ -594,10 +590,10 @@ Selectors are fully type-safe with TypeScript:
 ```ts
 // The selector's return type is automatically inferred
 const typedSelector = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
+  const users = await ctx.users.all()
   return {
-    userCount: (await ctx.users.all()).length,
-    avgAge:
-      (await ctx.users.all()).reduce((sum, u) => sum + u.age, 0) / (await ctx.users.all()).length,
+    userCount: users.length,
+    avgAge: users.reduce((sum, u) => sum + u.age, 0) / users.length,
   }
 })
 // TypeScript knows this returns: { userCount: number; avgAge: number }

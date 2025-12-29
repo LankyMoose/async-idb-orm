@@ -4,15 +4,17 @@ import { TaskContext } from "./TaskContext.js"
  * Manages transaction queuing and execution
  */
 export class TransactionManager {
-  constructor(private getDb: () => Promise<IDBDatabase>, private storeNames: string[]) {}
+  constructor(
+    private getDb: () => Promise<IDBDatabase>,
+    private getTaskContext: () => TaskContext | undefined,
+    private storeNames: string[]
+  ) {}
 
   /**
    * Queues a task to be executed within a transaction
    */
-  async queueTask<TResult>(
-    taskHandler: (ctx: TaskContext) => Promise<TResult>,
-    currentContext?: TaskContext
-  ): Promise<TResult> {
+  async queueTask<TResult>(taskHandler: (ctx: TaskContext) => Promise<TResult>): Promise<TResult> {
+    const currentContext = this.getTaskContext()
     if (currentContext) {
       return taskHandler(currentContext)
     }
@@ -29,9 +31,9 @@ export class TransactionManager {
       tx: IDBTransaction,
       resolve: (value: TResult) => void,
       reject: (reason?: any) => void
-    ) => void,
-    currentTx?: IDBTransaction
+    ) => void
   ): Promise<TResult> {
+    const currentTx = this.getTaskContext()?.tx
     return new Promise<TResult>(async (resolve, reject) => {
       if (currentTx) {
         return taskHandler(currentTx, resolve, reject)

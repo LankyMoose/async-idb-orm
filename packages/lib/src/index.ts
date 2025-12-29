@@ -5,6 +5,7 @@ export { Selector } from "./builders/Selector.js"
 export type * from "./types"
 
 import { AsyncIDB } from "./AsyncIDB.js"
+import { AsyncIDBSelector } from "./AsyncIDBSelector.js"
 import type {
   AsyncIDBInstance,
   CollectionSchema,
@@ -57,11 +58,17 @@ function idb<
     return new Promise((res) => db.getInstance(res))
   }
 
+  const select: AsyncIDBInstance<T, R, S>["select"] = (cb) => {
+    const selector = new AsyncIDBSelector(db as any, cb as any)
+    return Object.assign(selector, { dispose: () => AsyncIDBSelector.dispose(selector) }) as any
+  }
+
   return {
     collections: db.stores,
     transaction: db.transaction.bind(db),
     selectors: db.selectors,
     dispose: db.dispose.bind(db),
     getInstance,
+    select,
   }
 }

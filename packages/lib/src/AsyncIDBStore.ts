@@ -64,6 +64,7 @@ export class AsyncIDBStore<
     // Initialize managers
     this.transactionManager = new TransactionManager(
       () => new Promise((resolve) => this.db.getInstance(resolve)),
+      () => this.taskContext,
       this.db.storeNames
     )
 
@@ -152,7 +153,7 @@ export class AsyncIDBStore<
       })
 
       return result
-    }, this.taskContext)
+    })
   }
 
   async createActive(data: CollectionDTO<T>): Promise<ActiveRecord<CollectionRecord<T>>> {
@@ -191,7 +192,7 @@ export class AsyncIDBStore<
       })
 
       return record
-    }, this.taskContext)
+    })
   }
 
   async upsert(
@@ -215,10 +216,7 @@ export class AsyncIDBStore<
           record = transformer(record)
         }
 
-        // Validate foreign key constraints BEFORE serialization
-        if (this.foreignKeyManager) {
-          await this.foreignKeyManager.validateUpstreamConstraints(ctx, record)
-        }
+        await this.foreignKeyManager.validateUpstreamConstraints(ctx, record)
 
         const serialized = this.serialize(record)
         await RequestHelper.put(objectStore, serialized)
@@ -233,7 +231,7 @@ export class AsyncIDBStore<
       })
 
       return results
-    }, this.taskContext)
+    })
   }
 
   async delete(
@@ -256,10 +254,7 @@ export class AsyncIDBStore<
         return null
       }
 
-      // Handle foreign key constraints
-      if (this.foreignKeyManager) {
-        await this.foreignKeyManager.handleDownstreamConstraints(ctx, key)
-      }
+      await this.foreignKeyManager.handleDownstreamConstraints(ctx, key)
 
       await RequestHelper.delete(objectStore, key as IDBValidKey)
 
@@ -270,7 +265,7 @@ export class AsyncIDBStore<
       })
 
       return deserialized
-    }, this.taskContext)
+    })
   }
 
   async deleteMany(
@@ -284,9 +279,7 @@ export class AsyncIDBStore<
         limit,
         deserialize: this.deserialize,
         onBeforeDelete: async (record) => {
-          if (this.foreignKeyManager) {
-            await this.foreignKeyManager.handleDownstreamConstraints(ctx, this.getRecordKey(record))
-          }
+          await this.foreignKeyManager.handleDownstreamConstraints(ctx, this.getRecordKey(record))
         },
         onAfterDelete: (record) => {
           ctx.onDidCommit(() => {
@@ -297,7 +290,7 @@ export class AsyncIDBStore<
       })
 
       return results
-    }, this.taskContext)
+    })
   }
 
   async clear(): Promise<void> {
@@ -310,7 +303,7 @@ export class AsyncIDBStore<
       })
 
       return
-    }, this.taskContext)
+    })
   }
 
   // =============================================================================
@@ -352,7 +345,7 @@ export class AsyncIDBStore<
     options?: { limit?: number }
   ): Promise<ActiveRecord<CollectionRecord<T>>[]> {
     const results = await this.findMany(predicate, options)
-    return this.activeRecordWrapper.wrapMany(results)
+    return results.map((result) => this.wrap(result))
   }
 
   async all<Options extends FindOptions<R, T>>(
@@ -363,7 +356,7 @@ export class AsyncIDBStore<
 
   async allActive(): Promise<ActiveRecord<CollectionRecord<T>>[]> {
     const results = await this.all()
-    return this.activeRecordWrapper.wrapMany(results)
+    return results.map((result) => this.wrap(result))
   }
 
   async count(): Promise<number> {
@@ -375,7 +368,7 @@ export class AsyncIDBStore<
       } catch (error) {
         reject(error)
       }
-    }, this.taskContext?.tx)
+    })
   }
 
   async latest<Options extends FindOptions<R, T>>(
