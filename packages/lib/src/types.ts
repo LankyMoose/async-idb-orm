@@ -147,6 +147,11 @@ export type RelationsSchema = {
 
 export type RelationType = "one-to-one" | "one-to-many"
 
+export type RelationDefinitionEntry<From extends AnyCollection, To extends AnyCollection> = {
+  other: AsyncIDBStore<From, any>
+  def: RelationDefinition<From, To>
+}
+
 export type RelationDefinition<From extends AnyCollection, To extends AnyCollection> = {
   type: RelationType
   from: keyof CollectionRecord<From> & string

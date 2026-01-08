@@ -12,7 +12,7 @@ import type {
   RelationResult,
   AnyCollection,
   CollectionSchema,
-  RelationDefinition,
+  RelationDefinitionEntry,
 } from "./types"
 import type { AsyncIDB } from "./AsyncIDB"
 import { Collection } from "./builders/Collection.js"
@@ -43,10 +43,7 @@ export class AsyncIDBStore<
   private foreignKeyManager: ForeignKeyManager<T>
   private activeRecordWrapper: ActiveRecordWrapper<T>
   private queryExecutor: QueryExecutor<T, R>
-  private relations: Record<
-    string,
-    { other: AsyncIDBStore<any, any>; def: RelationDefinition<any, any> }
-  > = {}
+  private relations: Record<string, RelationDefinitionEntry<T, AnyCollection>> = {}
   private taskContext?: TaskContext
   private serialize: (record: CollectionRecord<T>) => any
   private deserialize: (record: any) => CollectionRecord<T>

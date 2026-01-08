@@ -5,6 +5,7 @@ import type {
   FindOptions,
   RelationResult,
   RelationsSchema,
+  RelationDefinitionEntry,
 } from "../types"
 import { AsyncIDBSelector } from "../AsyncIDBSelector.js"
 import { RequestHelper } from "./RequestHelper.js"
@@ -19,7 +20,7 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
     private store: AsyncIDBStore<T, R>,
     private deserialize: (value: any) => CollectionRecord<T>,
     private getDb: () => Promise<IDBDatabase>,
-    private getRelations: () => Record<string, any>,
+    private getRelations: () => Record<string, RelationDefinitionEntry<T, AnyCollection>>,
     private currentTx?: IDBTransaction
   ) {}
 
@@ -208,7 +209,7 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
   private async fetchRelatedRecords(
     tx: IDBTransaction,
     record: CollectionRecord<T>,
-    relationDef: any,
+    relationDef: RelationDefinitionEntry<T, AnyCollection> | undefined,
     options?: {
       limit?: number
       where?: (item: any) => boolean
