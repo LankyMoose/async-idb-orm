@@ -157,6 +157,43 @@ export default (testRunner: TestRunner) => {
         })
       })
 
+      test("should use getIndexRange with FindOptions to load relations", async () => {
+        // Create users with different ages and posts
+        const user1 = await db.collections.users.create({ name: "User 1", age: 25 })
+        const user2 = await db.collections.users.create({ name: "User 2", age: 30 })
+        await db.collections.users.create({ name: "User 3", age: 40 })
+
+        // Create posts for users
+        await db.collections.posts.create({ content: "Post 1", userId: user1.id })
+        await db.collections.posts.create({ content: "Post 2", userId: user1.id })
+        await db.collections.posts.create({ content: "Post 3", userId: user2.id })
+
+        // Get users aged 25-35 with their posts loaded
+        const usersWithPosts = await db.collections.users.getIndexRange(
+          "idx_age",
+          IDBKeyRange.bound(25, 35),
+          {
+            with: {
+              userPosts: true,
+            },
+          }
+        )
+
+        assert(usersWithPosts.length === 2, "Should find 2 users in age range")
+
+        // Verify user1 has posts loaded
+        const foundUser1 = usersWithPosts.find((u) => u.id === user1.id)
+        assertExists(foundUser1, "Should find user1")
+        assert(Array.isArray(foundUser1.userPosts), "userPosts should be an array")
+        assert(foundUser1.userPosts.length === 2, "User1 should have 2 posts")
+
+        // Verify user2 has posts loaded
+        const foundUser2 = usersWithPosts.find((u) => u.id === user2.id)
+        assertExists(foundUser2, "Should find user2")
+        assert(Array.isArray(foundUser2.userPosts), "userPosts should be an array")
+        assert(foundUser2.userPosts.length === 1, "User2 should have 1 post")
+      })
+
       test("should handle batch upsert operations", async () => {
         // Create initial user
         const existingUser = await db.collections.users.create({ name: "Existing User", age: 30 })

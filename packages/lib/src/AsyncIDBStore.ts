@@ -387,11 +387,12 @@ export class AsyncIDBStore<
     return this.queryExecutor.findByDirection(name, "next", this.db.storeNames)
   }
 
-  async getIndexRange<U extends CollectionIndexName<T>>(
-    name: U,
-    keyRange: IDBKeyRange
-  ): Promise<CollectionRecord<T>[]> {
-    return this.queryExecutor.findByIndex(name, keyRange, undefined, this.db.storeNames)
+  async getIndexRange<Options extends FindOptions<R, T>>(
+    name: CollectionIndexName<T>,
+    keyRange: IDBKeyRange,
+    options?: Options
+  ): Promise<RelationResult<T, R, Options>[]> {
+    return this.queryExecutor.findByIndex(name, keyRange, options, this.db.storeNames)
   }
 
   // =============================================================================

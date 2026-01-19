@@ -422,6 +422,13 @@ const allUsersWithPosts = await db.collections.users.all({
   with: { userPosts: true },
 })
 
+// getIndexRange()
+const usersInRange = await db.collections.users.getIndexRange(
+  "idx_age",
+  IDBKeyRange.bound(20, 40),
+  { with: { userPosts: true } }
+)
+
 // Note: Relations are read-only, you cannot upgrade relational records to active records
 ```
 
