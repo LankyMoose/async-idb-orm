@@ -147,17 +147,25 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
   }
 
   /**
-   * Gets the first/last record from an index
+   * Gets the first/last record from an index with optional relations
    */
-  async findByDirection(
+  async findByDirection<Options extends FindOptions<R, T>>(
     indexName: string,
     direction: IDBCursorDirection,
+    options: Options | undefined,
     storeNames: string[]
-  ): Promise<CollectionRecord<T> | null> {
+  ): Promise<RelationResult<T, R, Options> | null> {
     return this.executeInTransaction(async (tx) => {
       const objectStore = tx.objectStore(this.store.name)
       const index = objectStore.index(indexName)
-      return CursorIterator.getFirstByDirection(index, direction, this.deserialize)
+      const record = await CursorIterator.getFirstByDirection(index, direction, this.deserialize)
+      
+      if (record === null) return null
+      
+      if (options?.with) {
+        return this.resolveRelations(record, options.with!, tx)
+      }
+      return record
     }, storeNames)
   }
 

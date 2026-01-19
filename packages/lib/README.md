@@ -106,6 +106,11 @@ const oldestUser = await db.collections.users.max("idx_age")
 const youngestUser = await db.collections.users.min("idx_age")
 //    ^? User, or null if there are no records
 
+// min() and max() also support FindOptions for loading relations
+const oldestUserWithPosts = await db.collections.users.max("idx_age", {
+  with: { userPosts: true },
+})
+
 const usersYoungerThan30 = await db.collections.users.getIndexRange(
   "idx_age",
   IDBKeyRange.bound(0, 30)
@@ -428,6 +433,14 @@ const usersInRange = await db.collections.users.getIndexRange(
   IDBKeyRange.bound(20, 40),
   { with: { userPosts: true } }
 )
+
+// min() and max()
+const youngestUserWithPosts = await db.collections.users.min("idx_age", {
+  with: { userPosts: true },
+})
+const oldestUserWithPosts = await db.collections.users.max("idx_age", {
+  with: { userPosts: true },
+})
 
 // Note: Relations are read-only, you cannot upgrade relational records to active records
 ```

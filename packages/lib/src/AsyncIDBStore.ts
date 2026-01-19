@@ -379,12 +379,18 @@ export class AsyncIDBStore<
     return result ? this.wrap(result) : null
   }
 
-  async max<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
-    return this.queryExecutor.findByDirection(name, "prev", this.db.storeNames)
+  async max<Options extends FindOptions<R, T>>(
+    name: CollectionIndexName<T>,
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null> {
+    return this.queryExecutor.findByDirection(name, "prev", options, this.db.storeNames)
   }
 
-  async min<U extends CollectionIndexName<T>>(name: U): Promise<CollectionRecord<T> | null> {
-    return this.queryExecutor.findByDirection(name, "next", this.db.storeNames)
+  async min<Options extends FindOptions<R, T>>(
+    name: CollectionIndexName<T>,
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null> {
+    return this.queryExecutor.findByDirection(name, "next", options, this.db.storeNames)
   }
 
   async getIndexRange<Options extends FindOptions<R, T>>(

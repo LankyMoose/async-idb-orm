@@ -60,6 +60,29 @@ export default (testRunner: TestRunner) => {
         assert(youngestUser.name === "Youngest User", "Should be the correct user")
       })
 
+      test("should use min() with FindOptions to load relations", async () => {
+        // Create users with different ages
+        const youngestUser = await db.collections.users.create({ name: "Youngest User", age: 18 })
+        await db.collections.users.create({ name: "Middle User", age: 30 })
+        await db.collections.users.create({ name: "Oldest User", age: 65 })
+
+        // Create posts for the youngest user
+        await db.collections.posts.create({ content: "Post 1", userId: youngestUser.id })
+        await db.collections.posts.create({ content: "Post 2", userId: youngestUser.id })
+
+        // Find youngest user with posts loaded
+        const youngestWithPosts = await db.collections.users.min("idx_age", {
+          with: {
+            userPosts: true,
+          },
+        })
+
+        assertExists(youngestWithPosts, "Should find youngest user")
+        assert(youngestWithPosts.age === 18, "Should have minimum age")
+        assert(Array.isArray(youngestWithPosts.userPosts), "userPosts should be an array")
+        assert(youngestWithPosts.userPosts.length === 2, "Should have 2 posts loaded")
+      })
+
       test("should use max() to find record with maximum value", async () => {
         // Create users with different ages
         await db.collections.users.create({ name: "Young User", age: 22 })
@@ -72,6 +95,30 @@ export default (testRunner: TestRunner) => {
         assertExists(oldestUser, "Should find oldest user")
         assert(oldestUser.age === 70, "Should have maximum age")
         assert(oldestUser.name === "Oldest User", "Should be the correct user")
+      })
+
+      test("should use max() with FindOptions to load relations", async () => {
+        // Create users with different ages
+        await db.collections.users.create({ name: "Young User", age: 22 })
+        await db.collections.users.create({ name: "Middle User", age: 40 })
+        const oldestUser = await db.collections.users.create({ name: "Oldest User", age: 70 })
+
+        // Create posts for the oldest user
+        await db.collections.posts.create({ content: "Post 1", userId: oldestUser.id })
+        await db.collections.posts.create({ content: "Post 2", userId: oldestUser.id })
+        await db.collections.posts.create({ content: "Post 3", userId: oldestUser.id })
+
+        // Find oldest user with posts loaded
+        const oldestWithPosts = await db.collections.users.max("idx_age", {
+          with: {
+            userPosts: true,
+          },
+        })
+
+        assertExists(oldestWithPosts, "Should find oldest user")
+        assert(oldestWithPosts.age === 70, "Should have maximum age")
+        assert(Array.isArray(oldestWithPosts.userPosts), "userPosts should be an array")
+        assert(oldestWithPosts.userPosts.length === 3, "Should have 3 posts loaded")
       })
 
       test("should return null for min/max on empty collection", async () => {
