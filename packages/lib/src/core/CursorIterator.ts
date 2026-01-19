@@ -146,37 +146,38 @@ export class CursorIterator {
     request: IDBRequest<IDBCursorWithValue | null>,
     deserialize: (value: any) => T = (v) => v
   ): AsyncIterableIterator<T> {
-    let resolveNext: (value: IteratorResult<T>) => void
-    let rejectNext: (error: any) => void
-    let nextPromise = new Promise<IteratorResult<T>>((resolve, reject) => {
-      resolveNext = resolve
-      rejectNext = reject
-    })
-
+    const queue: IteratorResult<T>[] = []
+    let resolveNext: ((value: IteratorResult<T>) => void) | null = null
     let finished = false
+    let error: DOMException | null = null
+
+    const enqueue = (result: IteratorResult<T>) => {
+      if (!resolveNext) {
+        // no one is waiting for the next value, so we'll buffer it
+        queue.push(result)
+        return
+      }
+
+      resolveNext(result)
+      resolveNext = null
+    }
 
     request.onerror = () => {
       finished = true
-      rejectNext(request.error)
+      error = request.error
+      enqueue({ done: true, value: undefined })
     }
 
     request.onsuccess = () => {
       const cursor = request.result
       if (!cursor) {
         finished = true
-        resolveNext({ done: true, value: undefined })
+        enqueue({ done: true, value: undefined })
         return
       }
 
       const value = deserialize(cursor.value)
-      resolveNext({ done: false, value })
-
-      // Prepare next promise
-      nextPromise = new Promise<IteratorResult<T>>((resolve, reject) => {
-        resolveNext = resolve
-        rejectNext = reject
-      })
-
+      enqueue({ done: false, value })
       cursor.continue()
     }
 
@@ -185,10 +186,21 @@ export class CursorIterator {
         return this
       },
       async next(): Promise<IteratorResult<T>> {
+        if (error) {
+          throw error
+        }
+
+        if (queue.length > 0) {
+          return queue.shift()!
+        }
+
         if (finished) {
           return { done: true, value: undefined }
         }
-        return nextPromise
+
+        return new Promise<IteratorResult<T>>((resolve) => {
+          resolveNext = resolve
+        })
       },
     }
   }
