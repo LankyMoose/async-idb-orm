@@ -246,10 +246,8 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
 
     if (relationType === "one-to-one") {
       return results[0] ?? null
-    } else if (relationType === "one-to-many") {
-      return results
     }
 
-    return relationType === "one-to-many" ? [] : null
+    return results
   }
 }
