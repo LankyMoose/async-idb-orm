@@ -75,6 +75,7 @@ export class TestRunner {
       // Run each test
       for (const test of suite.tests) {
         this.stats.total++
+        console.log(`     🧪 ${test.name}`)
 
         try {
           if (suite.onBeforeEach) {

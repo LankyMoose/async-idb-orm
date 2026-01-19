@@ -49,5 +49,10 @@ export async function assertThrows(
 
 export function assertErrorAndMessage(value: unknown, expectedErrorSubstring: string) {
   assertInstanceOf(value, Error, "Error should be an instance of Error")
-  assert(value.message.includes(expectedErrorSubstring), "Error message should be the expected one")
+  assert(
+    value.message.includes(expectedErrorSubstring),
+    `Error message should include ${JSON.stringify(expectedErrorSubstring)}, got "${JSON.stringify(
+      value.message
+    )}"`
+  )
 }

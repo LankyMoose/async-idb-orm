@@ -5,6 +5,7 @@
 ## Contents:
 
 > - [Getting Started](#getting-started)
+> - [Key Ranges](#key-ranges)
 > - [Events](#events)
 > - [Active Records](#active-records)
 > - [Transactions](#transactions)
@@ -111,10 +112,9 @@ const oldestUserWithPosts = await db.collections.users.max("idx_age", {
   with: { userPosts: true },
 })
 
-const usersYoungerThan30 = await db.collections.users.getIndexRange(
-  "idx_age",
-  IDBKeyRange.bound(0, 30)
-)
+import { range } from "async-idb-orm"
+
+const usersYoungerThan30 = await db.collections.users.getIndexRange("idx_age", range`< ${30}`)
 
 // Using selectors for computed data
 const summary = await db.selectors.userSummary.get()
@@ -125,6 +125,57 @@ const unsubscribe = db.selectors.userSummary.subscribe((summary) => {
   console.log(`Total users: ${summary.totalUsers}, Average age: ${summary.averageAge}`)
 })
 ```
+
+---
+
+### Key Ranges
+
+The `range` tagged template literal provides a convenient DSL for creating `IDBKeyRange` objects used in index queries and iteration.
+
+```ts
+import { range } from "async-idb-orm"
+
+// Inclusive range: values >= 20 && values <= 30
+const inclusiveRange = range`>= ${20} & <= ${30}`
+
+// Exclusive range: values > 20 && values < 30
+const exclusiveRange = range`> ${20} & < ${30}`
+
+// Mixed bounds: values >= 20 && values < 30
+const mixedRange = range`>= ${20} & < ${30}`
+
+// Single bound (lower): values >= 25
+const lowerBound = range`>= ${25}`
+
+// Single bound (upper): values < 100
+const upperBound = range`< ${100}`
+
+// Equality: values === 42
+const exactMatch = range`= ${42}`
+
+// Use with getIndexRange()
+const usersInRange = await db.collections.users.getIndexRange("idx_age", range`>= ${20} & <= ${40}`)
+
+// Use with iteration
+for await (const user of db.collections.users.iterateIndex("idx_age", range`>= ${30} & < ${40}`)) {
+  console.log(user)
+}
+```
+
+**Supported operators:**
+
+- `>=` - Greater than or equal (inclusive lower bound)
+- `>` - Greater than (exclusive lower bound)
+- `<=` - Less than or equal (inclusive upper bound)
+- `<` - Less than (exclusive upper bound)
+- `=` - Equality (creates an exact match range)
+
+**Notes:**
+
+- Multiple conditions are combined with `&` or `&&`
+- The equality operator (`=`) cannot be combined with other range operators
+- All interpolated values must be used in the expression
+- Invalid ranges (e.g., lower > upper) will throw errors when used with IndexedDB
 
 ---
 
@@ -430,7 +481,7 @@ const allUsersWithPosts = await db.collections.users.all({
 // getIndexRange()
 const usersInRange = await db.collections.users.getIndexRange(
   "idx_age",
-  IDBKeyRange.bound(20, 40),
+  range`>= ${20} && <= ${40}`,
   { with: { userPosts: true } }
 )
 
@@ -695,7 +746,7 @@ for await (const user of db.collections.users) {
   console.log(user)
 }
 
-const ageKeyRange = IDBKeyRange.bound(0, 30)
+const ageKeyRange = range`< ${30}`
 for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
   console.log(user)
 }
@@ -727,7 +778,7 @@ for await (const user of db.collections.users.iterateReversed(null, {
 }
 
 // Iterate over index with relations
-const ageKeyRange = IDBKeyRange.bound(20, 40)
+const ageKeyRange = range`>= ${30} & < ${40}`
 for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange, {
   with: { userPosts: true },
 })) {

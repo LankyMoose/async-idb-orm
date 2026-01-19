@@ -2,6 +2,7 @@ export { idb }
 export { Collection } from "./builders/Collection.js"
 export { Relations } from "./builders/Relations.js"
 export { Selector } from "./builders/Selector.js"
+export { range } from "./range.js"
 export type * from "./types"
 
 import { AsyncIDB } from "./AsyncIDB.js"

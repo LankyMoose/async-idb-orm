@@ -1,5 +1,6 @@
-import { assert, assertExists } from "$/testing/assert"
+import { assert, assertExists, assertThrows } from "$/testing/assert"
 import { db } from "$/db"
+import { range } from "async-idb-orm"
 import { TestRunner } from "../testRunner"
 import { clearAllCollections } from "../utils"
 
@@ -358,6 +359,246 @@ export default (testRunner: TestRunner) => {
         assertExists(minUser, "Should find minimum user")
         assertExists(maxUser, "Should find maximum user")
         assert(minUser.age <= maxUser.age, "Min age should be <= max age")
+      })
+
+      test("correctly creates IDBKeyRange objects with range DSL", async () => {
+        const r1 = range`>= ${20} & <= ${30}`
+        const r2 = range`> ${20} & < ${30}`
+        const r3 = range`>= ${20} & < ${30}`
+        const r4 = range`> ${20} & <= ${30}`
+        const r5 = range`= ${25}`
+        const r6 = range`< ${25}`
+        const r7 = range`>= ${25}`
+        const r8 = range`<= ${25}`
+        const r9 = range`<${69}&>=${42}`
+        await assertThrows(
+          () => {
+            range`test test test`
+          },
+          "Should throw for invalid range expression",
+          "Range defined with no values"
+        )
+        await assertThrows(
+          () => {
+            range`test test test ${123}`
+          },
+          "Should throw for invalid range expression",
+          "Invalid syntax near"
+        )
+        await assertThrows(
+          () => {
+            range`<${42}&>=${69}`
+          },
+          "Should throw for invalid range expression",
+          "Lower bound (69) cannot be greater than upper bound (42)"
+        )
+        await assertThrows(
+          () => {
+            range`>= ${20} & <= ${30} & < ${40}`
+          },
+          "Should throw for multiple upper bounds",
+          "Upper bound specified twice"
+        )
+        await assertThrows(
+          () => {
+            range`> ${20} & = ${30}`
+          },
+          "Should throw for invalid range expression",
+          "Cannot combine equality (=) with other bounds"
+        )
+
+        assert(r1 instanceof IDBKeyRange, "r1 should be an IDBKeyRange")
+        assert(r2 instanceof IDBKeyRange, "r2 should be an IDBKeyRange")
+        assert(r3 instanceof IDBKeyRange, "r3 should be an IDBKeyRange")
+        assert(r4 instanceof IDBKeyRange, "r4 should be an IDBKeyRange")
+        assert(r5 instanceof IDBKeyRange, "r5 should be an IDBKeyRange")
+        assert(r6 instanceof IDBKeyRange, "r6 should be an IDBKeyRange")
+        assert(r7 instanceof IDBKeyRange, "r7 should be an IDBKeyRange")
+        assert(r8 instanceof IDBKeyRange, "r8 should be an IDBKeyRange")
+        assert(r9 instanceof IDBKeyRange, "r9 should be an IDBKeyRange")
+
+        assert(r1.lower === 20, "r1 should have lower bound 20")
+        assert(r1.upper === 30, "r1 should have upper bound 30")
+        assert(r1.lowerOpen === false, "r1 should have lower open false")
+        assert(r1.upperOpen === false, "r1 should have upper open false")
+
+        assert(r2.lower === 20, "r2 should have lower bound 20")
+        assert(r2.upper === 30, "r2 should have upper bound 30")
+        assert(r2.lowerOpen === true, "r2 should have lower open true")
+        assert(r2.upperOpen === true, "r2 should have upper open true")
+
+        assert(r3.lower === 20, "r3 should have lower bound 20")
+        assert(r3.upper === 30, "r3 should have upper bound 30")
+        assert(r3.lowerOpen === false, "r3 should have lower open false")
+        assert(r3.upperOpen === true, "r3 should have upper open true")
+
+        assert(r4.lower === 20, "r4 should have lower bound 20")
+        assert(r4.upper === 30, "r4 should have upper bound 30")
+        assert(r4.lowerOpen === true, "r4 should have lower open true")
+        assert(r4.upperOpen === false, "r4 should have upper open false")
+
+        assert(r5.lower === 25, "r5 should have lower bound 25")
+        assert(r5.upper === 25, "r5 should have upper bound 25")
+        assert(r5.lowerOpen === false, "r5 should have lower open false")
+        assert(r5.upperOpen === false, "r5 should have upper open false")
+
+        assert(r6.lower === undefined, "r6 should have lower bound undefined")
+        assert(r6.upper === 25, "r6 should have upper bound 25")
+        assert(r6.lowerOpen === true, "r6 should have lower open true")
+        assert(r6.upperOpen === true, "r6 should have upper open true")
+
+        assert(r7.lower === 25, "r7 should have lower bound 25")
+        assert(r7.upper === undefined, "r7 should have upper bound undefined")
+        assert(r7.lowerOpen === false, "r7 should have lower open false")
+        assert(r7.upperOpen === true, "r7 should have upper open true")
+
+        assert(r8.lower === undefined, "r8 should have lower bound undefined")
+        assert(r8.upper === 25, "r8 should have upper bound 25")
+        assert(r8.lowerOpen === true, "r8 should have lower open true")
+
+        assert(r9.lower === 42, "r9 should have lower bound 42")
+        assert(r9.upper === 69, "r9 should have upper bound 69")
+        assert(r9.lowerOpen === false, "r9 should have lower open true")
+        assert(r9.upperOpen === true, "r9 should have upper open false")
+      })
+
+      test("should use range DSL for inclusive range", async () => {
+        // Create users with different ages
+        await db.collections.users.create({ name: "User 20", age: 20 })
+        await db.collections.users.create({ name: "User 25", age: 25 })
+        await db.collections.users.create({ name: "User 30", age: 30 })
+        await db.collections.users.create({ name: "User 35", age: 35 })
+
+        // Use range DSL for inclusive range
+        const results = await db.collections.users.getIndexRange(
+          "idx_age",
+          range`>= ${20} & <= ${30}`
+        )
+
+        assert(results.length === 3, "Should find 3 users in range")
+        results.forEach((user) => {
+          assert(user.age >= 20 && user.age <= 30, "Should be in age range 20-30")
+        })
+      })
+
+      test("should use range DSL for exclusive range", async () => {
+        // Create users
+        await db.collections.users.create({ name: "User 20", age: 20 })
+        await db.collections.users.create({ name: "User 25", age: 25 })
+        await db.collections.users.create({ name: "User 30", age: 30 })
+
+        // Use range DSL for exclusive range
+        const results = await db.collections.users.getIndexRange(
+          "idx_age",
+          range`> ${20} & < ${30}`
+        )
+
+        assert(results.length === 1, "Should find 1 user with exclusive bounds")
+        assert(results[0].age === 25, "Should find user aged 25")
+      })
+
+      test("should use range DSL for lower bound only", async () => {
+        // Create users
+        await db.collections.users.create({ name: "Young User", age: 25 })
+        await db.collections.users.create({ name: "Middle User", age: 35 })
+        await db.collections.users.create({ name: "Old User", age: 45 })
+
+        // Use range DSL for lower bound
+        const results = await db.collections.users.getIndexRange("idx_age", range`>= ${30}`)
+
+        assert(results.length === 2, "Should find 2 users aged 30+")
+        results.forEach((user) => {
+          assert(user.age >= 30, "Should be aged 30 or above")
+        })
+      })
+
+      test("should use range DSL for upper bound only", async () => {
+        // Create users
+        await db.collections.users.create({ name: "Young User", age: 25 })
+        await db.collections.users.create({ name: "Middle User", age: 35 })
+        await db.collections.users.create({ name: "Old User", age: 45 })
+
+        // Use range DSL for upper bound
+        const results = await db.collections.users.getIndexRange("idx_age", range`<= ${35}`)
+
+        assert(results.length === 2, "Should find 2 users aged 35 and below")
+        results.forEach((user) => {
+          assert(user.age <= 35, "Should be aged 35 or below")
+        })
+      })
+
+      test("should use range DSL for exact match", async () => {
+        // Create users
+        await db.collections.users.create({ name: "User 25", age: 25 })
+        await db.collections.users.create({ name: "User 30", age: 30 })
+        await db.collections.users.create({ name: "User 30 Duplicate", age: 30 })
+
+        // Use range DSL for exact match
+        const results = await db.collections.users.getIndexRange("idx_age", range`= ${30}`)
+
+        assert(results.length === 2, "Should find 2 users with age 30")
+        results.forEach((user) => {
+          assert(user.age === 30, "Should have age 30")
+        })
+      })
+
+      test("should use range DSL with mixed inclusive/exclusive bounds", async () => {
+        // Create users
+        await db.collections.users.create({ name: "User 20", age: 20 })
+        await db.collections.users.create({ name: "User 25", age: 25 })
+        await db.collections.users.create({ name: "User 30", age: 30 })
+
+        // Use range DSL with > and <=
+        const results = await db.collections.users.getIndexRange(
+          "idx_age",
+          range`> ${20} & <= ${30}`
+        )
+
+        assert(results.length === 2, "Should find 2 users")
+        results.forEach((user) => {
+          assert(user.age > 20 && user.age <= 30, "Should be in range >20 and <=30")
+        })
+      })
+
+      test("should use range DSL with compound indexes", async () => {
+        // Create users with same name but different ages
+        await db.collections.users.create({ name: "John Doe", age: 25 })
+        await db.collections.users.create({ name: "John Doe", age: 35 })
+        await db.collections.users.create({ name: "Jane Smith", age: 25 })
+
+        // Use range DSL with compound index
+        const results = await db.collections.users.getIndexRange(
+          "idx_name_id",
+          range`>= ${["John Doe", 0]} & <= ${["John Doe", Number.MAX_SAFE_INTEGER]}`
+        )
+
+        assert(results.length === 2, "Should find 2 John Doe users")
+        results.forEach((user) => {
+          assert(user.name === "John Doe", "Should be John Doe users")
+        })
+      })
+
+      test("should use range DSL with iterateIndex", async () => {
+        // Create users with different ages
+        await db.collections.users.create({ name: "User 20", age: 20 })
+        await db.collections.users.create({ name: "User 25", age: 25 })
+        await db.collections.users.create({ name: "User 30", age: 30 })
+        await db.collections.users.create({ name: "User 35", age: 35 })
+
+        const iteratedUsers: any[] = []
+
+        // Use range DSL with iterateIndex
+        for await (const user of db.collections.users.iterateIndex(
+          "idx_age",
+          range`>= ${20} & <= ${30}`
+        )) {
+          iteratedUsers.push(user)
+        }
+
+        assert(iteratedUsers.length === 3, "Should iterate over 3 users in range")
+        iteratedUsers.forEach((user) => {
+          assert(user.age >= 20 && user.age <= 30, "Should be in age range 20-30")
+        })
       })
     },
   })
