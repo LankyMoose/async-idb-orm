@@ -415,38 +415,70 @@ export class AsyncIDBStore<
     }
   }
 
-  async *iterate(keyRange?: IDBKeyRange): AsyncGenerator<CollectionRecord<T>, void, unknown> {
-    const objectStore = await this.getReadonlyObjectStore()
+  async *iterate<Options extends FindOptions<R, T>>(
+    keyRange?: IDBKeyRange | null,
+    options?: Options
+  ): AsyncGenerator<RelationResult<T, R, Options>, void, unknown> {
+    const tx = await this.getReadonlyTransaction()
+    const objectStore = tx.objectStore(this.name)
     const request = objectStore.openCursor(keyRange ?? null)
     const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
 
     for await (const item of iterator) {
-      yield item
+      if (options?.with) {
+        yield await this.queryExecutor.resolveRelations(
+          item as RelationResult<T, R, Options>,
+          options.with,
+          tx
+        )
+      } else {
+        yield item as RelationResult<T, R, Options>
+      }
     }
   }
 
-  async *iterateReversed(
-    keyRange?: IDBKeyRange
-  ): AsyncGenerator<CollectionRecord<T>, void, unknown> {
-    const objectStore = await this.getReadonlyObjectStore()
+  async *iterateReversed<Options extends FindOptions<R, T>>(
+    keyRange?: IDBKeyRange | null,
+    options?: Options
+  ): AsyncGenerator<RelationResult<T, R, Options>, void, unknown> {
+    const tx = await this.getReadonlyTransaction()
+    const objectStore = tx.objectStore(this.name)
     const request = objectStore.openCursor(keyRange ?? null, "prev")
     const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
 
     for await (const item of iterator) {
-      yield item
+      if (options?.with) {
+        yield await this.queryExecutor.resolveRelations(
+          item as RelationResult<T, R, Options>,
+          options.with,
+          tx
+        )
+      } else {
+        yield item as RelationResult<T, R, Options>
+      }
     }
   }
 
-  async *iterateIndex<U extends CollectionIndexName<T>>(
-    name: U,
-    keyRange?: IDBKeyRange
-  ): AsyncGenerator<CollectionRecord<T>, void, unknown> {
-    const objectStore = await this.getReadonlyObjectStore()
+  async *iterateIndex<Options extends FindOptions<R, T>>(
+    name: CollectionIndexName<T>,
+    keyRange?: IDBKeyRange | null,
+    options?: Options
+  ): AsyncGenerator<RelationResult<T, R, Options>, void, unknown> {
+    const tx = await this.getReadonlyTransaction()
+    const objectStore = tx.objectStore(this.name)
     const request = objectStore.index(name).openCursor(keyRange ?? null)
     const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
 
     for await (const item of iterator) {
-      yield item
+      if (options?.with) {
+        yield await this.queryExecutor.resolveRelations(
+          item as RelationResult<T, R, Options>,
+          options.with,
+          tx
+        )
+      } else {
+        yield item as RelationResult<T, R, Options>
+      }
     }
   }
 
@@ -516,6 +548,15 @@ export class AsyncIDBStore<
 
     const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
     return db.transaction(this.name, "readonly").objectStore(this.name)
+  }
+
+  private async getReadonlyTransaction(): Promise<IDBTransaction> {
+    if (this.taskContext) {
+      return this.taskContext.tx
+    }
+
+    const db = await new Promise<IDBDatabase>((res) => this.db.getInstance(res))
+    return db.transaction(this.db.storeNames, "readonly")
   }
 
   private initializeComponents(allStores: AsyncIDB<any, any, any>["stores"]) {

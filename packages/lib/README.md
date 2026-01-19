@@ -704,8 +704,34 @@ for await (const user of db.collections.users.iterate()) {
   console.log(user)
 }
 
-for await (const user of db.collections.users.iterateReversed()) {
+for await (const user of db.collections.users.iterateReversed(ageKeyRange)) {
   console.log(user)
+}
+```
+
+Iterators also support loading relations using `FindOptions`:
+
+```ts
+// Iterate with relations
+for await (const user of db.collections.users.iterate(null, {
+  with: { userPosts: true },
+})) {
+  console.log(user.userPosts) // Posts are loaded for each user
+}
+
+// Iterate reversed with relations
+for await (const user of db.collections.users.iterateReversed(null, {
+  with: { userPosts: { limit: 5 } },
+})) {
+  console.log(user.userPosts) // Limited to 5 posts per user
+}
+
+// Iterate over index with relations
+const ageKeyRange = IDBKeyRange.bound(20, 40)
+for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange, {
+  with: { userPosts: true },
+})) {
+  console.log(user.userPosts) // Posts loaded for users in age range
 }
 ```
 
