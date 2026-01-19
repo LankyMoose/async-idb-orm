@@ -28,11 +28,14 @@ export interface ForeignKeysInit<T extends AnyCollection> {
   }
 }
 
+const asyncNoop = async () => {}
+
 /**
  * Manages foreign key constraints and validation
  */
 export class ForeignKeyManager<T extends AnyCollection> {
-  private upstreamValidators: UpstreamValidatorCallback<T>[] = []
+  validateUpstreamConstraints: UpstreamValidatorCallback<T> = asyncNoop
+
   private downstreamHandlers: DownstreamHandlerCallback<T>[] = []
 
   constructor(
@@ -52,7 +55,7 @@ export class ForeignKeyManager<T extends AnyCollection> {
     if (!foreignKeys.length) return
 
     // Set up upstream validation (check referenced records exist)
-    this.upstreamValidators.push(async (ctx, record) => {
+    this.validateUpstreamConstraints = async (ctx, record) => {
       await Promise.all(
         foreignKeys.map(async ({ ref, collection, onDelete }) => {
           const key = record[ref]
@@ -83,7 +86,7 @@ export class ForeignKeyManager<T extends AnyCollection> {
           }
         })
       )
-    })
+    }
 
     // Set up downstream handling (cascade, restrict, set null, no action)
     for (const { ref: field, collection, onDelete } of foreignKeys) {
@@ -121,13 +124,6 @@ export class ForeignKeyManager<T extends AnyCollection> {
           )
       }
     }
-  }
-
-  /**
-   * Validates upstream foreign key constraints
-   */
-  async validateUpstreamConstraints(ctx: TaskContext, record: CollectionRecord<T>): Promise<void> {
-    await Promise.all(this.upstreamValidators.map((validator) => validator(ctx, record)))
   }
 
   /**
