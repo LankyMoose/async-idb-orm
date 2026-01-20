@@ -1,4 +1,9 @@
-import type { AsyncIDBInstance, CollectionSchema, RelationsSchema } from "../types"
+import type {
+  AsyncIDBInstance,
+  CollectionSchema,
+  ReadOnlyTransactionContext,
+  RelationsSchema,
+} from "../types"
 
 const SelectorBuilderSentinel = Symbol()
 
@@ -34,7 +39,7 @@ export class Selector<T extends CollectionSchema, R extends RelationsSchema, Dat
   /**
    * Sets the selector callback
    */
-  as<Callback extends (ctx: AsyncIDBInstance<T, R, any>["collections"]) => Promise<unknown>>(
+  as<Callback extends (ctx: ReadOnlyTransactionContext<T, R>) => Promise<unknown>>(
     callback: Callback
   ) {
     this.selector = callback as any

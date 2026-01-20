@@ -36,7 +36,7 @@ import { TaskContext } from "./core/TaskContext.js"
  */
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
-  R extends RelationsSchema
+  R extends RelationsSchema,
 > {
   private transactionManager: TransactionManager
   private eventEmitter: StoreEventEmitter<T>
@@ -379,18 +379,18 @@ export class AsyncIDBStore<
     return result ? this.wrap(result) : null
   }
 
-  async max<Options extends FindOptions<R, T>>(
-    name: CollectionIndexName<T>,
-    options?: Options
-  ): Promise<RelationResult<T, R, Options> | null> {
-    return this.queryExecutor.findByDirection(name, "prev", options, this.db.storeNames)
-  }
-
   async min<Options extends FindOptions<R, T>>(
     name: CollectionIndexName<T>,
     options?: Options
   ): Promise<RelationResult<T, R, Options> | null> {
     return this.queryExecutor.findByDirection(name, "next", options, this.db.storeNames)
+  }
+
+  async max<Options extends FindOptions<R, T>>(
+    name: CollectionIndexName<T>,
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null> {
+    return this.queryExecutor.findByDirection(name, "prev", options, this.db.storeNames)
   }
 
   async getIndexRange<Options extends FindOptions<R, T>>(

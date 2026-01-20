@@ -306,6 +306,7 @@ export default (testRunner: TestRunner) => {
 
       test("should throw an error when performing mutations within a selector", async () => {
         const users = db.select(async (ctx) => {
+          // @ts-expect-error - "create" is not a valid member
           await ctx.users.create({ name: "Alice", age: 25 })
           return ctx.users.all()
         })

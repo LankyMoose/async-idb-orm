@@ -25,7 +25,7 @@ import { TaskContext } from "./core/TaskContext.js"
 export class AsyncIDB<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  S extends SelectorSchema
+  S extends SelectorSchema,
 > {
   #db: IDBDatabase | null
   #instanceCallbacks: DBInstanceCallback[]
@@ -41,7 +41,10 @@ export class AsyncIDB<
   selectors: {
     [key in keyof S]: AsyncIDBSelector<InferSelectorReturn<S[key]>>
   }
-  constructor(private name: string, private config: AsyncIDBConfig<T, R, S>) {
+  constructor(
+    private name: string,
+    private config: AsyncIDBConfig<T, R, S>
+  ) {
     this.#db = null
     this.#instanceCallbacks = []
     this.schema = config.schema
@@ -91,10 +94,10 @@ export class AsyncIDB<
     instanceCallback(this.#db)
   }
 
-  async transaction<CB extends IDBTransactionCallback<T, R, S>>(
-    callback: CB,
-    options?: TransactionOptions
-  ): Promise<ReturnType<CB>> {
+  async transaction<
+    const Options extends TransactionOptions,
+    CB extends IDBTransactionCallback<T, R, S, Options>,
+  >(callback: CB, options?: TransactionOptions): Promise<ReturnType<CB>> {
     const { durability, mode = "readwrite" } = options ?? {}
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
     const tx = idbInstance.transaction(this.storeNames, mode, { durability })
@@ -175,12 +178,15 @@ export class AsyncIDB<
   }
 
   private cloneStoresForTransaction(ctx: TaskContext) {
-    return Object.entries(this.stores).reduce((acc, [name, store]) => {
-      return {
-        ...acc,
-        [name]: AsyncIDBStore.cloneForTransaction(ctx, store),
-      }
-    }, {} as AsyncIDBInstance<T, R, S>["collections"])
+    return Object.entries(this.stores).reduce(
+      (acc, [name, store]) => {
+        return {
+          ...acc,
+          [name]: AsyncIDBStore.cloneForTransaction(ctx, store),
+        }
+      },
+      {} as AsyncIDBInstance<T, R, S>["collections"]
+    )
   }
 
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {

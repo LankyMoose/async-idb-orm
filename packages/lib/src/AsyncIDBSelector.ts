@@ -1,6 +1,6 @@
 import type { Selector } from "./builders/Selector"
 import type { AsyncIDB } from "./AsyncIDB"
-import type { AsyncIDBInstance, CollectionSchema, RelationsSchema } from "./types"
+import type { CollectionSchema, ReadOnlyTransactionContext, RelationsSchema } from "./types"
 import type { AsyncIDBStore } from "./AsyncIDBStore"
 
 const $DATA_EMPTY = Symbol("DATA_EMPTY")
@@ -24,7 +24,7 @@ export class AsyncIDBSelector<Data> {
   constructor(
     private db: AsyncIDB<CollectionSchema, RelationsSchema, any>,
     private selector: (
-      data: AsyncIDBInstance<CollectionSchema, RelationsSchema, any>["collections"]
+      data: ReadOnlyTransactionContext<CollectionSchema, RelationsSchema>
     ) => Promise<Data>
   ) {
     this.#subscribers = new Set()
