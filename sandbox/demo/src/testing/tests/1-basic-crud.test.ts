@@ -66,7 +66,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "B", age: 25 })
         await db.collections.users.create({ name: "C", age: 40 })
 
-        const reversedUsers = await Array.fromAsync(db.collections.users.iterateReversed())
+        const reversedUsers = await Array.fromAsync(
+          db.collections.users.iterate({ direction: "prev" })
+        )
 
         assert(reversedUsers.length === 3, "Should get all users in reverse order")
         assert(reversedUsers[0].name === "C", "First user should be C")

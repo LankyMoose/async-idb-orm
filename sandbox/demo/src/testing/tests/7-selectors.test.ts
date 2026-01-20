@@ -1,4 +1,4 @@
-import { assert, assertExists, assertThrows } from "$/testing/assert"
+import { assert, assertExists } from "$/testing/assert"
 import { db } from "$/db"
 import { TestRunner } from "../testRunner"
 import { clearAllCollections } from "../utils"
@@ -302,22 +302,6 @@ export default (testRunner: TestRunner) => {
         assert(timesSelectorCalled === 4, "Selector should have batched multiple calls")
 
         users.dispose()
-      })
-
-      test("should throw an error when performing mutations within a selector", async () => {
-        const users = db.select(async (ctx) => {
-          // @ts-expect-error - "create" is not a valid member
-          await ctx.users.create({ name: "Alice", age: 25 })
-          return ctx.users.all()
-        })
-
-        await assertThrows(
-          async () => {
-            await users.get()
-          },
-          "Should throw an error when performing mutations within a selector",
-          "Failed to execute 'add' on 'IDBObjectStore': The transaction is read-only."
-        )
       })
     },
   })

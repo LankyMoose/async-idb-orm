@@ -10,6 +10,7 @@ import {
   SelectorSchema,
   TransactionOptions,
   CollectionIndex,
+  ReadOnlyTransactionContext,
 } from "./types.js"
 
 import { Collection } from "./builders/Collection.js"
@@ -25,7 +26,7 @@ import { TaskContext } from "./core/TaskContext.js"
 export class AsyncIDB<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  S extends SelectorSchema,
+  S extends SelectorSchema
 > {
   #db: IDBDatabase | null
   #instanceCallbacks: DBInstanceCallback[]
@@ -41,10 +42,7 @@ export class AsyncIDB<
   selectors: {
     [key in keyof S]: AsyncIDBSelector<InferSelectorReturn<S[key]>>
   }
-  constructor(
-    private name: string,
-    private config: AsyncIDBConfig<T, R, S>
-  ) {
+  constructor(private name: string, private config: AsyncIDBConfig<T, R, S>) {
     this.#db = null
     this.#instanceCallbacks = []
     this.schema = config.schema
@@ -96,14 +94,18 @@ export class AsyncIDB<
 
   async transaction<
     const Options extends TransactionOptions,
-    CB extends IDBTransactionCallback<T, R, S, Options>,
+    CB extends IDBTransactionCallback<T, R, S, Options>
   >(callback: CB, options?: TransactionOptions): Promise<ReturnType<CB>> {
     const { durability, mode = "readwrite" } = options ?? {}
     const idbInstance = await new Promise<IDBDatabase>((res) => this.getInstance(res))
     const tx = idbInstance.transaction(this.storeNames, mode, { durability })
 
     const taskCtx = new TaskContext(idbInstance, tx)
-    const txCollections = this.cloneStoresForTransaction(taskCtx)
+    const txCollections = this.cloneStoresForTransaction(taskCtx, mode) as Options extends {
+      mode: "readonly"
+    }
+      ? ReadOnlyTransactionContext<T, R>
+      : AsyncIDBInstance<T, R, S>["collections"]
 
     return taskCtx.run(async () => {
       return (await callback(txCollections, tx)) as ReturnType<CB>
@@ -177,16 +179,25 @@ export class AsyncIDB<
     )
   }
 
-  private cloneStoresForTransaction(ctx: TaskContext) {
-    return Object.entries(this.stores).reduce(
-      (acc, [name, store]) => {
+  private cloneStoresForTransaction<const Mode extends "readonly" | "readwrite">(
+    ctx: TaskContext,
+    mode: Mode
+  ): Mode extends "readonly"
+    ? ReadOnlyTransactionContext<T, R>
+    : AsyncIDBInstance<T, R, S>["collections"] {
+    return Object.entries(this.stores).reduce((acc, [name, store]) => {
+      const cloned = AsyncIDBStore.cloneForTransaction(ctx, store)
+      if (mode === "readonly") {
         return {
           ...acc,
-          [name]: AsyncIDBStore.cloneForTransaction(ctx, store),
+          [name]: AsyncIDBStore.getStoreReader(cloned),
         }
-      },
-      {} as AsyncIDBInstance<T, R, S>["collections"]
-    )
+      }
+      return {
+        ...acc,
+        [name]: cloned,
+      }
+    }, {} as Mode extends "readonly" ? ReadOnlyTransactionContext<T, R> : AsyncIDBInstance<T, R, S>["collections"])
   }
 
   private async initializeStores(request: IDBOpenDBRequest, event: IDBVersionChangeEvent) {
@@ -200,9 +211,10 @@ export class AsyncIDB<
     if (!this.config.onUpgrade) return upsertStores()
 
     const taskCtx = new TaskContext(dbInstance, tx)
+    const collections = this.cloneStoresForTransaction(taskCtx, "readwrite")
     const ctx: OnDBUpgradeCallbackContext<T, R> = {
       db: dbInstance,
-      collections: this.cloneStoresForTransaction(taskCtx),
+      collections,
       deleteStore: (name) => dbInstance.deleteObjectStore(name),
       createStore: (name) => this.createOrUpdateStore(dbInstance, tx, name),
     }

@@ -157,7 +157,10 @@ const exactMatch = range`= ${42}`
 const usersInRange = await db.collections.users.getIndexRange("idx_age", range`>= ${20} & <= ${40}`)
 
 // Use with iteration
-for await (const user of db.collections.users.iterateIndex("idx_age", range`>= ${30} & < ${40}`)) {
+for await (const user of db.collections.users.iterate({
+  index: "idx_age",
+  keyRange: range`>= ${30} & < ${40}`,
+})) {
   console.log(user)
 }
 ```
@@ -739,7 +742,7 @@ await db.collections.users.delete(bob.id)
 
 ### Async Iteration
 
-Collections implement several async iterators:
+Collections implement extensive async iteration support:
 
 ```ts
 for await (const user of db.collections.users) {
@@ -747,15 +750,11 @@ for await (const user of db.collections.users) {
 }
 
 const ageKeyRange = range`< ${30}`
-for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
-  console.log(user)
-}
-
-for await (const user of db.collections.users.iterate()) {
-  console.log(user)
-}
-
-for await (const user of db.collections.users.iterateReversed(ageKeyRange)) {
+for await (const user of db.collections.users.iterate({
+  index: "idx_age", // iterate over index
+  keyRange: ageKeyRange, // iterate over index with key range
+  direction: "next", // or "prev" to iterate in reverse order
+})) {
   console.log(user)
 }
 ```
@@ -764,14 +763,15 @@ Iterators also support loading relations using `FindOptions`:
 
 ```ts
 // Iterate with relations
-for await (const user of db.collections.users.iterate(null, {
+for await (const user of db.collections.users.iterate({
   with: { userPosts: true },
 })) {
   console.log(user.userPosts) // Posts are loaded for each user
 }
 
 // Iterate reversed with relations
-for await (const user of db.collections.users.iterateReversed(null, {
+for await (const user of db.collections.users.iterate({
+  direction: "prev",
   with: { userPosts: { limit: 5 } },
 })) {
   console.log(user.userPosts) // Limited to 5 posts per user
@@ -779,7 +779,9 @@ for await (const user of db.collections.users.iterateReversed(null, {
 
 // Iterate over index with relations
 const ageKeyRange = range`>= ${30} & < ${40}`
-for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange, {
+for await (const user of db.collections.users.iterate({
+  index: "idx_age",
+  keyRange: ageKeyRange,
   with: { userPosts: true },
 })) {
   console.log(user.userPosts) // Posts loaded for users in age range

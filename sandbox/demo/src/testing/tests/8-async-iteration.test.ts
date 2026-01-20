@@ -100,7 +100,10 @@ export default (testRunner: TestRunner) => {
 
         // Iterate over users aged 30-45 using index
         const ageKeyRange = IDBKeyRange.bound(30, 45)
-        for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
+        for await (const user of db.collections.users.iterate({
+          index: "idx_age",
+          keyRange: ageKeyRange,
+        })) {
           iteratedUsers.push(user)
         }
 
@@ -121,7 +124,10 @@ export default (testRunner: TestRunner) => {
 
         // Iterate over users with specific age
         const ageKeyRange = IDBKeyRange.only(30)
-        for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
+        for await (const user of db.collections.users.iterate({
+          index: "idx_age",
+          keyRange: ageKeyRange,
+        })) {
           iteratedUsers.push(user)
         }
 
@@ -143,7 +149,10 @@ export default (testRunner: TestRunner) => {
 
         // Iterate over users aged 30 and below
         const ageKeyRange = IDBKeyRange.upperBound(30)
-        for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
+        for await (const user of db.collections.users.iterate({
+          index: "idx_age",
+          keyRange: ageKeyRange,
+        })) {
           iteratedUsers.push(user)
         }
 
@@ -165,7 +174,10 @@ export default (testRunner: TestRunner) => {
 
         // Iterate over users aged 40 and above
         const ageKeyRange = IDBKeyRange.lowerBound(40)
-        for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange)) {
+        for await (const user of db.collections.users.iterate({
+          index: "idx_age",
+          keyRange: ageKeyRange,
+        })) {
           iteratedUsers.push(user)
         }
 
@@ -242,7 +254,7 @@ export default (testRunner: TestRunner) => {
 
         const usersWithPosts: any[] = []
         // Iterate with relations
-        for await (const user of db.collections.users.iterate(null, {
+        for await (const user of db.collections.users.iterate({
           with: { userPosts: true },
         })) {
           usersWithPosts.push(user)
@@ -268,8 +280,9 @@ export default (testRunner: TestRunner) => {
         const usersWithPosts: any[] = []
 
         // Iterate reversed with relations
-        for await (const user of db.collections.users.iterateReversed(null, {
+        for await (const user of db.collections.users.iterate({
           with: { userPosts: true },
+          direction: "prev",
         })) {
           usersWithPosts.push(user)
         }
@@ -296,7 +309,9 @@ export default (testRunner: TestRunner) => {
 
         // Iterate over index with relations
         const ageKeyRange = IDBKeyRange.bound(20, 35)
-        for await (const user of db.collections.users.iterateIndex("idx_age", ageKeyRange, {
+        for await (const user of db.collections.users.iterate({
+          index: "idx_age",
+          keyRange: ageKeyRange,
           with: { userPosts: true },
         })) {
           usersWithPosts.push(user)

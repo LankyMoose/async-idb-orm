@@ -140,10 +140,10 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "Senior User", age: 65 })
 
         // Get users aged 20-30 (inclusive)
-        const youngAdults = await db.collections.users.getIndexRange(
-          "idx_age",
-          IDBKeyRange.bound(20, 30)
-        )
+        const youngAdults = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: IDBKeyRange.bound(20, 30),
+          with: { userPosts: true },
+        })
 
         assert(youngAdults.length === 2, "Should find 2 young adults")
         youngAdults.forEach((user) => {
@@ -159,10 +159,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "User 30", age: 30 })
 
         // Get users aged >20 and <30 (exclusive)
-        const results = await db.collections.users.getIndexRange(
-          "idx_age",
-          IDBKeyRange.bound(20, 30, true, true)
-        )
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: IDBKeyRange.bound(20, 30, true, true),
+        })
 
         assert(results.length === 1, "Should find 1 user with exclusive bounds")
         assert(results[0].age === 25, "Should find user aged 25")
@@ -176,10 +175,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "Old User", age: 45 })
 
         // Get users aged 30 and above
-        const results = await db.collections.users.getIndexRange(
-          "idx_age",
-          IDBKeyRange.lowerBound(30)
-        )
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: IDBKeyRange.lowerBound(30),
+        })
 
         assert(results.length === 2, "Should find 2 users aged 30+")
         results.forEach((user) => {
@@ -194,10 +192,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "Old User", age: 45 })
 
         // Get users aged 35 and below
-        const results = await db.collections.users.getIndexRange(
-          "idx_age",
-          IDBKeyRange.upperBound(35)
-        )
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: IDBKeyRange.upperBound(35),
+        })
 
         assert(results.length === 2, "Should find 2 users aged 35 and below")
         results.forEach((user) => {
@@ -217,15 +214,12 @@ export default (testRunner: TestRunner) => {
         await db.collections.posts.create({ content: "Post 3", userId: user2.id })
 
         // Get users aged 25-35 with their posts loaded
-        const usersWithPosts = await db.collections.users.getIndexRange(
-          "idx_age",
-          IDBKeyRange.bound(25, 35),
-          {
-            with: {
-              userPosts: true,
-            },
-          }
-        )
+        const usersWithPosts = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: IDBKeyRange.bound(25, 35),
+          with: {
+            userPosts: true,
+          },
+        })
 
         assert(usersWithPosts.length === 2, "Should find 2 users in age range")
 
@@ -325,10 +319,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "Jane Smith", age: 25 })
 
         // Query using compound index (name + id)
-        const results = await db.collections.users.getIndexRange(
-          "idx_name_id",
-          IDBKeyRange.bound(["John Doe", 0], ["John Doe", Number.MAX_SAFE_INTEGER])
-        )
+        const results = await db.collections.users.getIndexRange("idx_name_id", {
+          keyRange: IDBKeyRange.bound(["John Doe", 0], ["John Doe", Number.MAX_SAFE_INTEGER]),
+        })
 
         assert(results.length === 2, "Should find 2 John Doe users")
         results.forEach((user) => {
@@ -470,10 +463,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "User 35", age: 35 })
 
         // Use range DSL for inclusive range
-        const results = await db.collections.users.getIndexRange(
-          "idx_age",
-          range`>= ${20} & <= ${30}`
-        )
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: range`>= ${20} & <= ${30}`,
+        })
 
         assert(results.length === 3, "Should find 3 users in range")
         results.forEach((user) => {
@@ -488,10 +480,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "User 30", age: 30 })
 
         // Use range DSL for exclusive range
-        const results = await db.collections.users.getIndexRange(
-          "idx_age",
-          range`> ${20} & < ${30}`
-        )
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: range`> ${20} & < ${30}`,
+        })
 
         assert(results.length === 1, "Should find 1 user with exclusive bounds")
         assert(results[0].age === 25, "Should find user aged 25")
@@ -504,7 +495,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "Old User", age: 45 })
 
         // Use range DSL for lower bound
-        const results = await db.collections.users.getIndexRange("idx_age", range`>= ${30}`)
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: range`>= ${30}`,
+        })
 
         assert(results.length === 2, "Should find 2 users aged 30+")
         results.forEach((user) => {
@@ -519,7 +512,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "Old User", age: 45 })
 
         // Use range DSL for upper bound
-        const results = await db.collections.users.getIndexRange("idx_age", range`<= ${35}`)
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: range`<= ${35}`,
+        })
 
         assert(results.length === 2, "Should find 2 users aged 35 and below")
         results.forEach((user) => {
@@ -534,7 +529,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "User 30 Duplicate", age: 30 })
 
         // Use range DSL for exact match
-        const results = await db.collections.users.getIndexRange("idx_age", range`= ${30}`)
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: range`= ${30}`,
+        })
 
         assert(results.length === 2, "Should find 2 users with age 30")
         results.forEach((user) => {
@@ -549,10 +546,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "User 30", age: 30 })
 
         // Use range DSL with > and <=
-        const results = await db.collections.users.getIndexRange(
-          "idx_age",
-          range`> ${20} & <= ${30}`
-        )
+        const results = await db.collections.users.getIndexRange("idx_age", {
+          keyRange: range`> ${20} & <= ${30}`,
+        })
 
         assert(results.length === 2, "Should find 2 users")
         results.forEach((user) => {
@@ -567,10 +563,9 @@ export default (testRunner: TestRunner) => {
         await db.collections.users.create({ name: "Jane Smith", age: 25 })
 
         // Use range DSL with compound index
-        const results = await db.collections.users.getIndexRange(
-          "idx_name_id",
-          range`>= ${["John Doe", 0]} & <= ${["John Doe", Number.MAX_SAFE_INTEGER]}`
-        )
+        const results = await db.collections.users.getIndexRange("idx_name_id", {
+          keyRange: range`>= ${["John Doe", 0]} & <= ${["John Doe", Number.MAX_SAFE_INTEGER]}`,
+        })
 
         assert(results.length === 2, "Should find 2 John Doe users")
         results.forEach((user) => {
@@ -588,10 +583,10 @@ export default (testRunner: TestRunner) => {
         const iteratedUsers: any[] = []
 
         // Use range DSL with iterateIndex
-        for await (const user of db.collections.users.iterateIndex(
-          "idx_age",
-          range`>= ${20} & <= ${30}`
-        )) {
+        for await (const user of db.collections.users.iterate({
+          index: "idx_age",
+          keyRange: range`>= ${20} & <= ${30}`,
+        })) {
           iteratedUsers.push(user)
         }
 

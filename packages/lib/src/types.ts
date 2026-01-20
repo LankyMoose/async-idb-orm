@@ -4,6 +4,57 @@ import type { Relations } from "./builders/Relations"
 import type { Selector } from "./builders/Selector"
 import type { AsyncIDBSelector, InferSelectorReturn } from "./AsyncIDBSelector"
 
+export interface StoreReader<
+  T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
+  R extends RelationsSchema
+> {
+  find<Options extends FindOptions<R, T>>(
+    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean),
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null>
+  findActive(
+    predicateOrKey: CollectionKeyPathType<T> | ((item: CollectionRecord<T>) => boolean)
+  ): Promise<ActiveRecord<CollectionRecord<T>> | null>
+  findMany<Options extends FindOptions<R, T>>(
+    predicate: (item: CollectionRecord<T>) => boolean,
+    options?: Options & { limit?: number }
+  ): Promise<RelationResult<T, R, Options>[]>
+  findManyActive(
+    predicate: (item: CollectionRecord<T>) => boolean,
+    options?: { limit?: number }
+  ): Promise<ActiveRecord<CollectionRecord<T>>[]>
+  all<Options extends FindOptions<R, T>>(
+    options?: Options
+  ): Promise<RelationResult<T, R, Options>[]>
+  allActive(): Promise<ActiveRecord<CollectionRecord<T>>[]>
+  count(): Promise<number>
+  latest<Options extends FindOptions<R, T>>(
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null>
+  latestActive(): Promise<ActiveRecord<CollectionRecord<T>> | null>
+  min<Options extends FindOptions<R, T>>(
+    name: CollectionIndexName<T>,
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null>
+  max<Options extends FindOptions<R, T>>(
+    name: CollectionIndexName<T>,
+    options?: Options
+  ): Promise<RelationResult<T, R, Options> | null>
+  getIndexRange<Options extends FindOptions<R, T>>(
+    name: CollectionIndexName<T>,
+    options: Options & { keyRange: IDBKeyRange }
+  ): Promise<RelationResult<T, R, Options>[]>
+
+  iterate<Options extends FindOptions<R, T>>(
+    options?: Options & {
+      direction?: IDBCursorDirection
+      keyRange?: IDBKeyRange | null
+      index?: CollectionIndexName<T>
+    }
+  ): AsyncGenerator<RelationResult<T, R, Options>, void, unknown>
+  [Symbol.asyncIterator](): AsyncGenerator<CollectionRecord<T>, void, unknown>
+}
+
 type Prettify<T> = {
   [K in keyof T]: T[K]
 } & {}
@@ -11,7 +62,7 @@ type Prettify<T> = {
 export type AsyncIDBConfig<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  S extends SelectorSchema,
+  S extends SelectorSchema
 > = {
   /**
    * Collection schema - `Record<string, Collection>`
@@ -79,34 +130,15 @@ export type TransactionOptions = IDBTransactionOptions & {
   mode?: "readonly" | "readwrite"
 }
 
-type ReadonlyCollection<T extends AnyCollection, R extends RelationsSchema> = Pick<
-  AsyncIDBStore<T, R>,
-  | "find"
-  | "findActive"
-  | "findMany"
-  | "findManyActive"
-  | "all"
-  | "allActive"
-  | "count"
-  | "latest"
-  | "latestActive"
-  | "min"
-  | "max"
-  | "getIndexRange"
-  | "iterate"
-  | "iterateIndex"
-  | "iterateReversed"
->
-
 export type ReadOnlyTransactionContext<T extends CollectionSchema, R extends RelationsSchema> = {
-  [key in keyof T]: ReadonlyCollection<T[key], R>
+  [key in keyof T]: StoreReader<T[key], R>
 }
 
 export type IDBTransactionCallback<
   T extends CollectionSchema,
   R extends RelationsSchema,
   S extends SelectorSchema,
-  Options extends TransactionOptions,
+  Options extends TransactionOptions
 > = (
   ctx: Options extends { mode: "readonly" }
     ? ReadOnlyTransactionContext<T, R>
@@ -117,7 +149,7 @@ export type IDBTransactionCallback<
 export type IDBTransactionFunction<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  S extends SelectorSchema,
+  S extends SelectorSchema
 > = <Options extends TransactionOptions, CB extends IDBTransactionCallback<T, R, S, Options>>(
   callback: CB,
   options?: Options
@@ -146,7 +178,7 @@ export type OnDBUpgradeCallback<T extends CollectionSchema, R extends RelationsS
 export type AsyncIDBInstance<
   T extends CollectionSchema,
   R extends RelationsSchema,
-  S extends SelectorSchema,
+  S extends SelectorSchema
 > = {
   collections: {
     [key in keyof T]: AsyncIDBStore<T[key], R>
@@ -234,7 +266,7 @@ export type CollectionDTO<T extends AnyCollection> = T[typeof $COLLECTION_INTERN
 
 export type CollectionKeyPathType<
   T extends AnyCollection,
-  KeyPath = T["keyPath"],
+  KeyPath = T["keyPath"]
 > = KeyPath extends keyof T[typeof $COLLECTION_INTERNAL]["record"]
   ? T[typeof $COLLECTION_INTERNAL]["record"][KeyPath]
   : never
@@ -268,7 +300,7 @@ export type RecordKeyPath<RecordType extends Record<string, any>> =
 type GetTargetCollectionForRelation<
   R extends RelationsSchema,
   SourceCollection extends AnyCollection,
-  RelationName extends string,
+  RelationName extends string
 > = {
   [K in keyof R]: R[K] extends Relations<infer From, infer To, infer RelMap>
     ? [From, RelationName] extends [SourceCollection, keyof RelMap]
@@ -300,7 +332,7 @@ export type RelationWithOptions<R extends RelationsSchema> = RelationWithOptions
 // Only include relations where the current collection is the 'From' collection
 type ValidRelationNamesForCollection<
   R extends RelationsSchema,
-  CurrentCollection extends AnyCollection,
+  CurrentCollection extends AnyCollection
 > = {
   [K in keyof R]: R[K] extends Relations<infer From, any, infer RelMap>
     ? From extends CurrentCollection
@@ -328,8 +360,8 @@ type FindRelationForName<R extends RelationsSchema, RelationName extends string>
         ? Type extends "one-to-one"
           ? CollectionRecord<To>
           : Type extends "one-to-many"
-            ? CollectionRecord<To>[]
-            : never
+          ? CollectionRecord<To>[]
+          : never
         : never
       : never
     : never
@@ -339,16 +371,16 @@ type FindRelationForName<R extends RelationsSchema, RelationName extends string>
 type ProcessNestedRelations<
   R extends RelationsSchema,
   WithOptions extends Record<string, any>,
-  RelationName extends string,
+  RelationName extends string
 > = WithOptions[RelationName] extends { with: infer NestedWith }
   ? NestedWith extends Record<string, any>
     ? FindRelationForName<R, RelationName> extends Array<infer ArrayElement>
       ? (ArrayElement & Prettify<MapRelationsToTypes<R, NestedWith>>)[]
       : FindRelationForName<R, RelationName> extends infer SingleElement
-        ? SingleElement extends null | undefined
-          ? (SingleElement & Prettify<MapRelationsToTypes<R, NestedWith>>) | null
-          : SingleElement & Prettify<MapRelationsToTypes<R, NestedWith>>
-        : never
+      ? SingleElement extends null | undefined
+        ? (SingleElement & Prettify<MapRelationsToTypes<R, NestedWith>>) | null
+        : SingleElement & Prettify<MapRelationsToTypes<R, NestedWith>>
+      : never
     : FindRelationForName<R, RelationName>
   : FindRelationForName<R, RelationName>
 
@@ -365,7 +397,7 @@ type MapRelationsToTypes<R extends RelationsSchema, WithOptions extends Record<s
 export type RelationResult<
   T extends AnyCollection,
   R extends RelationsSchema,
-  Options extends FindOptions<R, T>,
+  Options extends FindOptions<R, T>
 > = Options extends { with: infer With }
   ? With extends Record<string, any>
     ? CollectionRecord<T> & Prettify<MapRelationsToTypes<R, With>>
@@ -379,5 +411,5 @@ export type RelationsWith<R extends RelationsSchema, _CollectionName extends str
 >
 export type RelationsWithOptions<
   R extends RelationsSchema,
-  _CollectionName extends string,
+  _CollectionName extends string
 > = RelationWithOptions<R>
