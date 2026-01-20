@@ -63,29 +63,32 @@ export class AsyncIDBSelector<Data> {
 
     this.#refreshQueued = true
     queueMicrotask(() => {
-      this.db.transaction(async (ctx, tx) => {
-        const stores = new Set<AnyStore>()
-        AsyncIDBSelector.observed.set(tx, stores)
+      this.db.transaction(
+        async (ctx, tx) => {
+          const stores = new Set<AnyStore>()
+          AsyncIDBSelector.observed.set(tx, stores)
 
-        try {
-          const data = (this.#data = await this.selector(ctx))
-          this.#subscribers.forEach((cb) => cb(data))
-          while (this.#getterPromises.length) {
-            const [res] = this.#getterPromises.shift()!
-            res(data)
+          try {
+            const data = (this.#data = await this.selector(ctx))
+            this.#subscribers.forEach((cb) => cb(data))
+            while (this.#getterPromises.length) {
+              const [res] = this.#getterPromises.shift()!
+              res(data)
+            }
+            this.registerListeners(stores)
+          } catch (e) {
+            while (this.#getterPromises.length) {
+              const [_, rej] = this.#getterPromises.shift()!
+              rej(e)
+            }
+            throw e
+          } finally {
+            this.#refreshQueued = false
+            AsyncIDBSelector.observed.delete(tx)
           }
-          this.registerListeners(stores)
-        } catch (e) {
-          while (this.#getterPromises.length) {
-            const [_, rej] = this.#getterPromises.shift()!
-            rej(e)
-          }
-          throw e
-        } finally {
-          this.#refreshQueued = false
-          AsyncIDBSelector.observed.delete(tx)
-        }
-      })
+        },
+        { mode: "readonly" }
+      )
     })
   }
 

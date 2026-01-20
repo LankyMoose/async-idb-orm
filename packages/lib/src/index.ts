@@ -48,7 +48,7 @@ if (typeof indexedDB === "undefined") {
 function idb<
   T extends CollectionSchema,
   R extends RelationsSchema = {},
-  S extends SelectorSchema = {}
+  S extends SelectorSchema = {},
 >(name: string, config: AsyncIDBConfig<T, R, S>): AsyncIDBInstance<T, R, S> {
   if (isNaN(config.version) || Math.floor(config.version) !== config.version)
     throw new Error("[async-idb-orm]: Version must be an integer with no decimal places")
@@ -61,7 +61,9 @@ function idb<
 
   const select: AsyncIDBInstance<T, R, S>["select"] = (cb) => {
     const selector = new AsyncIDBSelector(db as any, cb as any)
-    return Object.assign(selector, { dispose: () => AsyncIDBSelector.dispose(selector) }) as any
+    return Object.assign(selector, {
+      dispose: AsyncIDBSelector.dispose.bind(null, selector),
+    }) as any
   }
 
   return {
