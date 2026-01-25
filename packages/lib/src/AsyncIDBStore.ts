@@ -443,29 +443,49 @@ export class AsyncIDBStore<
   ): AsyncGenerator<RelationResult<T, R, Options>, void, unknown> {
     const tx = await this.getReadonlyTransaction()
     const objectStore = tx.objectStore(this.name)
-    const request =
-      typeof options?.index === "string" && !!options.index
-        ? objectStore.index(options.index).openCursor(options.keyRange ?? null, options.direction)
-        : objectStore.openCursor(options?.keyRange ?? null, options?.direction)
 
+    const source =
+      typeof options?.index === "string" && !!options.index
+        ? objectStore.index(options.index)
+        : objectStore
+
+    const request = source.openCursor(options?.keyRange ?? null, options?.direction)
     const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
 
-    if (!options?.with) {
-      for await (const item of iterator) {
-        yield item as RelationResult<T, R, Options>
+    const BATCH_SIZE = 100
+    let buffer: RelationResult<T, R, Options>[] = []
+
+    const withOptions = options?.with
+
+    for await (const item of iterator) {
+      const record = item as RelationResult<T, R, Options>
+
+      // If no relations are needed, we can theoretically yield immediately.
+      // However, small batching (even 10-20) helps prevents transaction timeouts
+      // if the consumer is slightly slow.
+      if (!withOptions) {
+        yield record
+        continue
       }
-      return
+
+      buffer.push(record)
+
+      if (buffer.length >= BATCH_SIZE) {
+        // resolve & flush buffer
+        await this.queryExecutor.resolveRelations(tx, withOptions, ...buffer)
+        for (const r of buffer) {
+          yield r
+        }
+        buffer.length = 0
+      }
     }
 
-    const records: RelationResult<T, R, Options>[] = []
-    for await (const item of iterator) {
-      records.push(item as RelationResult<T, R, Options>)
-    }
-    if (records.length > 0) {
-      await this.queryExecutor.resolveRelations(tx, options.with, ...records)
-    }
-    for (const r of records) {
-      yield r
+    // Handle items remaining in buffer
+    if (buffer.length > 0) {
+      await this.queryExecutor.resolveRelations(tx, withOptions!, ...buffer)
+      for (const r of buffer) {
+        yield r
+      }
     }
   }
 
