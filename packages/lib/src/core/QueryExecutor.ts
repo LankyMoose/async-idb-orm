@@ -167,29 +167,35 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
 
   async resolveRelations<Options extends FindOptions<R, T>>(
     tx: IDBTransaction,
-    withOptions: Record<string, boolean | any>,
+    withOptions: NonNullable<Options["with"]>,
     ...records: RelationResult<T, R, Options>[]
   ): Promise<void> {
     const relations = this.getRelations()
 
     for (const [relationName, options] of Object.entries(withOptions)) {
-      await this.fetchRelatedRecords(tx, records, relationName, relations[relationName], options)
+      if (options === false) continue
+
+      await this.populateRelations(
+        tx,
+        records,
+        relationName,
+        relations[relationName],
+        options === true ? {} : (options as any)
+      )
     }
   }
 
-  private async fetchRelatedRecords(
+  private async populateRelations(
     tx: IDBTransaction,
     records: CollectionRecord<T>[],
     relationName: string,
-    relationDef: RelationDefinitionEntry<T, AnyCollection> | undefined,
+    relationDef: RelationDefinitionEntry<T, AnyCollection>,
     options?: {
       limit?: number
       where?: (item: any) => boolean
       with?: Record<string, boolean | any>
     }
   ): Promise<void> {
-    if (!relationDef) return
-
     const { def, other } = relationDef
     const { type: relationType, from: sourceField, to: targetField } = def
 
@@ -210,24 +216,50 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
             source[relationName].push(related)
           }
 
-    const sourceValuesToSourceRecords = new Map(
-      records.map((record) => {
-        record[relationName] = initRelationProperty()
-        return [record[sourceField], record]
-      })
-    )
+    const sourceValuesToSourceRecords_v3 = new Map<
+      any,
+      { record: CollectionRecord<T>; count: number }[]
+    >()
+
+    for (const record of records) {
+      const srcKey = record[sourceField]
+      record[relationName] = initRelationProperty()
+
+      if (!sourceValuesToSourceRecords_v3.has(srcKey)) {
+        sourceValuesToSourceRecords_v3.set(srcKey, [])
+      }
+      sourceValuesToSourceRecords_v3.get(srcKey)!.push({ record, count: 0 })
+    }
 
     const nested: any[] = []
-    let count = 0
+    const limit = options?.limit ?? Infinity
+
     for await (const related of iterator) {
       const key = related[targetField]
+      const sourceRecords = sourceValuesToSourceRecords_v3.get(key)
 
-      const sourceRecord = sourceValuesToSourceRecords.get(key)
-      if (!sourceRecord || (options?.where && !options.where(related))) continue
+      if (
+        !sourceRecords ||
+        sourceRecords.length === 0 ||
+        (options?.where && !options.where(related))
+      )
+        continue
 
       nested.push(related)
-      setRelationProperty(sourceRecord, related)
-      if (options?.limit !== undefined && ++count >= options.limit) break
+
+      for (let i = 0; i < sourceRecords.length; i++) {
+        const sourceRecord = sourceRecords[i]
+        setRelationProperty(sourceRecord.record, related)
+
+        if (++sourceRecord.count === limit) {
+          sourceRecords.splice(i--, 1)
+
+          if (sourceRecords.length === 0) {
+            sourceValuesToSourceRecords_v3.delete(key)
+            break
+          }
+        }
+      }
     }
 
     if (nested.length > 0 && options?.with) {

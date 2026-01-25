@@ -104,7 +104,7 @@ export default (testRunner: TestRunner) => {
         })
       })
 
-      test("should limit relations using limit option", async () => {
+      test("should limit relations using limit option (single user)", async () => {
         // Create user and many posts
         const user = await db.collections.users.create({ name: "Limit User", age: 32 })
         for (let i = 1; i <= 10; i++) {
@@ -122,6 +122,34 @@ export default (testRunner: TestRunner) => {
 
         assertExists(userWithLimitedPosts, "User should be found")
         assert(userWithLimitedPosts.userPosts.length === 5, "Should limit to 5 posts")
+      })
+
+      test("should limit relations using limit option (multiple users)", async () => {
+        // Create user and many posts
+        for (let i = 0; i < 10; i++) {
+          await db.collections.users.create({ name: `Limit User ${i}`, age: 32 })
+        }
+        for await (const user of db.collections.users) {
+          for (let i = 0; i < 10; i++) {
+            await db.collections.posts.create({ content: `Post ${i}`, userId: user.id })
+          }
+        }
+
+        // Load users with limited posts
+        const usersWithLimitedPosts = await db.collections.users.findMany(() => true, {
+          limit: 5,
+          with: {
+            userPosts: {
+              limit: 5,
+            },
+          },
+        })
+
+        assertExists(usersWithLimitedPosts.length === 5, "Should have loaded 5 users")
+        assert(
+          usersWithLimitedPosts.every((user) => user.userPosts.length === 5),
+          "Should have loaded 5 posts per user"
+        )
       })
 
       test("should combine filtering and limiting", async () => {
