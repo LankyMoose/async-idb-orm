@@ -42,9 +42,6 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
     return operation(tx)
   }
 
-  /**
-   * Finds a single record by key with optional relations
-   */
   async findByKey<Options extends FindOptions<R, T>>(
     key: CollectionKeyPathType<T>,
     options: Options | undefined,
@@ -59,16 +56,13 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
       const record = this.deserialize(rawRecord) as RelationResult<T, R, Options>
 
       if (options?.with) {
-        return this.resolveRelations(record, options.with, tx)
+        await this.resolveRelations(tx, options.with, record)
       }
 
       return record
     }, storeNames)
   }
 
-  /**
-   * Finds records by predicate with optional relations
-   */
   async findByPredicate<Options extends FindOptions<R, T>>(
     predicate: (item: CollectionRecord<T>) => boolean,
     options: (Options & { limit?: number }) | undefined,
@@ -83,19 +77,14 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
         deserialize: this.deserialize,
       })) as RelationResult<T, R, Options>[]
 
-      if (options?.with) {
-        return Promise.all(
-          records.map((record) => this.resolveRelations(record, options.with!, tx))
-        )
+      if (records.length > 0 && options?.with) {
+        await this.resolveRelations(tx, options.with, ...records)
       }
 
       return records
     }, storeNames)
   }
 
-  /**
-   * Finds all records with optional relations
-   */
   async findAll<Options extends FindOptions<R, T>>(
     options: Options | undefined,
     storeNames: string[]
@@ -107,19 +96,14 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
 
       const records = result.map(this.deserialize) as RelationResult<T, R, Options>[]
 
-      if (options?.with) {
-        return Promise.all(
-          records.map((record) => this.resolveRelations(record, options.with!, tx))
-        )
+      if (records.length > 0 && options?.with) {
+        await this.resolveRelations(tx, options.with, ...records)
       }
 
       return records
     }, storeNames)
   }
 
-  /**
-   * Gets records from an index with optional relations
-   */
   async findByIndex<Options extends FindOptions<R, T>>(
     indexName: string,
     keyRange: IDBKeyRange | undefined,
@@ -136,19 +120,14 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
             results.map(this.deserialize)
           )) as RelationResult<T, R, Options>[])
 
-      if (options?.with) {
-        return Promise.all(
-          records.map((record) => this.resolveRelations(record, options.with!, tx))
-        )
+      if (records.length > 0 && options?.with) {
+        await this.resolveRelations(tx, options.with, ...records)
       }
 
       return records
     }, storeNames)
   }
 
-  /**
-   * Gets the first/last record from an index with optional relations
-   */
   async findByDirection<Options extends FindOptions<R, T>>(
     indexName: string,
     direction: IDBCursorDirection,
@@ -159,19 +138,15 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
       const objectStore = tx.objectStore(this.store.name)
       const index = objectStore.index(indexName)
       const record = await CursorIterator.getFirstByDirection(index, direction, this.deserialize)
-      
-      if (record === null) return null
-      
-      if (options?.with) {
-        return this.resolveRelations(record, options.with!, tx)
+
+      if (record !== null && options?.with) {
+        await this.resolveRelations(tx, options.with, record)
       }
+
       return record
     }, storeNames)
   }
 
-  /**
-   * Finds the latest record with optional relations
-   */
   async findLatest<Options extends FindOptions<R, T>>(
     options: Options | undefined,
     storeNames: string[]
@@ -184,78 +159,79 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
 
       const record = this.deserialize(result.value)
       if (options?.with) {
-        return this.resolveRelations(record, options.with!, tx)
+        await this.resolveRelations(tx, options.with, record)
       }
       return record
     }, storeNames)
   }
 
-  /**
-   * Resolves relations for a record
-   */
   async resolveRelations<Options extends FindOptions<R, T>>(
-    record: RelationResult<T, R, Options>,
+    tx: IDBTransaction,
     withOptions: Record<string, boolean | any>,
-    tx: IDBTransaction
-  ): Promise<RelationResult<T, R, Options>> {
+    ...records: RelationResult<T, R, Options>[]
+  ): Promise<void> {
     const relations = this.getRelations()
 
-    await Promise.all(
-      Object.entries(withOptions).map(([relationName, options]) =>
-        this.fetchRelatedRecords(tx, record, relations[relationName], options).then((result) => {
-          ;(record as any)[relationName] = result
-        })
-      )
-    )
-
-    return record
+    for (const [relationName, options] of Object.entries(withOptions)) {
+      await this.fetchRelatedRecords(tx, records, relationName, relations[relationName], options)
+    }
   }
 
-  /**
-   * Fetches related records for a relation
-   */
   private async fetchRelatedRecords(
     tx: IDBTransaction,
-    record: CollectionRecord<T>,
+    records: CollectionRecord<T>[],
+    relationName: string,
     relationDef: RelationDefinitionEntry<T, AnyCollection> | undefined,
     options?: {
       limit?: number
       where?: (item: any) => boolean
       with?: Record<string, boolean | any>
     }
-  ): Promise<any> {
-    if (!relationDef) return null
+  ): Promise<void> {
+    if (!relationDef) return
 
     const { def, other } = relationDef
     const { type: relationType, from: sourceField, to: targetField } = def
-    const sourceValue = record[sourceField]
-
-    const basePredicate = (item: any) => item[targetField] === sourceValue
-    const predicate = options?.where
-      ? (item: any) => basePredicate(item) && options.where!(item)
-      : basePredicate
 
     const objectStore = tx.objectStore(other.name)
-    let results = await CursorIterator.findByPredicate(objectStore, predicate, {
-      limit: options?.limit,
-      deserialize: AsyncIDBStore.getDeserialize(other),
-    })
+    const request = objectStore.openCursor()
+    const iterator = CursorIterator.createAsyncIterator(
+      request,
+      AsyncIDBStore.getDeserialize(other)
+    )
 
-    // If nested relations are requested, resolve them for each related record
-    if (options?.with && results.length > 0) {
-      // Use the other store's QueryExecutor to resolve nested relations
-      const otherQueryExecutor = AsyncIDBStore.getQueryExecutor(other)
-      results = await Promise.all(
-        results.map((relatedRecord) =>
-          otherQueryExecutor.resolveRelations(relatedRecord, options.with!, tx)
-        )
-      )
+    const initRelationProperty = relationType === "one-to-one" ? () => null : () => []
+    const setRelationProperty =
+      relationType === "one-to-one"
+        ? (source: any, related: any) => {
+            source[relationName] = related
+          }
+        : (source: any, related: any) => {
+            source[relationName].push(related)
+          }
+
+    const sourceValuesToSourceRecords = new Map(
+      records.map((record) => {
+        record[relationName] = initRelationProperty()
+        return [record[sourceField], record]
+      })
+    )
+
+    const nested: any[] = []
+    let count = 0
+    for await (const related of iterator) {
+      const key = related[targetField]
+
+      const sourceRecord = sourceValuesToSourceRecords.get(key)
+      if (!sourceRecord || (options?.where && !options.where(related))) continue
+
+      nested.push(related)
+      setRelationProperty(sourceRecord, related)
+      if (options?.limit !== undefined && ++count >= options.limit) break
     }
 
-    if (relationType === "one-to-one") {
-      return results[0] ?? null
+    if (nested.length > 0 && options?.with) {
+      await AsyncIDBStore.getQueryExecutor(other).resolveRelations(tx, options.with, ...nested)
     }
-
-    return results
   }
 }

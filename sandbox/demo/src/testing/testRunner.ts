@@ -58,7 +58,7 @@ export class TestRunner {
     console.log(`🧪 Running ${this.suites.length} test suite(s)...\n`)
 
     for (const suite of this.suites) {
-      console.log(`📋 ${suite.name}`)
+      console.log(`📋 suite: ${suite.name}`)
       await new Promise((resolve) => setTimeout(resolve, 100))
 
       // Run onBefore hook
@@ -67,7 +67,7 @@ export class TestRunner {
           await suite.onBefore()
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          console.error(`❌ Suite setup failed: ${message}`)
+          console.error(`❌ suite onBefore failed: ${message}`)
           continue
         }
       }
@@ -75,26 +75,25 @@ export class TestRunner {
       // Run each test
       for (const test of suite.tests) {
         this.stats.total++
-        console.log(`     🧪 ${test.name}`)
+        console.log(`🧪 test: ${test.name}`)
 
         try {
           if (suite.onBeforeEach) {
             await suite.onBeforeEach()
           }
         } catch (error) {
-          console.error(`❌ Suite beforeEach failed: ${error}`)
+          console.error(`❌ suite onBeforeEach failed: ${error}`)
         }
 
         try {
           await test.fn()
 
-          console.log(`  ✅ ${test.name}`)
+          console.log(`✅`)
           this.stats.passed++
         } catch (error) {
           debugger
           const message = error instanceof Error ? error.message : String(error)
-          console.log(`  ❌ ${test.name}`)
-          console.log(`     ${message}`)
+          console.log(`❌`, message)
           this.stats.failed++
           this.stats.errors.push({
             suite: suite.name,
@@ -108,7 +107,7 @@ export class TestRunner {
             await suite.onAfterEach()
           }
         } catch (error) {
-          console.error(`❌ Suite afterEach failed: ${error}`)
+          console.error(`❌ suite afterEach failed: ${error}`)
         }
       }
 
@@ -118,7 +117,7 @@ export class TestRunner {
           await suite.onAfter()
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          console.error(`❌ Suite teardown failed: ${message}`)
+          console.error(`❌ suite onAfter failed: ${message}`)
         }
       }
 

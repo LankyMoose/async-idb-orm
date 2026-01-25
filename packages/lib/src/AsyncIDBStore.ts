@@ -37,9 +37,8 @@ import { TaskContext } from "./core/TaskContext.js"
  */
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
-  R extends RelationsSchema
-> implements StoreReader<T, R>
-{
+  R extends RelationsSchema,
+> implements StoreReader<T, R> {
   private transactionManager: TransactionManager
   private eventEmitter: StoreEventEmitter<T>
   private foreignKeyManager: ForeignKeyManager<T>
@@ -94,7 +93,7 @@ export class AsyncIDBStore<
 
   static getStoreReader<
     T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
-    R extends RelationsSchema
+    R extends RelationsSchema,
   >(store: AsyncIDBStore<T, R>): StoreReader<T, R> {
     return {
       find: store.find.bind(store),
@@ -111,7 +110,7 @@ export class AsyncIDBStore<
       getIndexRange: store.getIndexRange.bind(store),
       iterate: store.iterate.bind(store) as StoreReader<T, R>["iterate"],
       [Symbol.asyncIterator]: store[Symbol.asyncIterator].bind(store),
-    }
+    } as StoreReader<T, R>
   }
 
   // =============================================================================
@@ -451,16 +450,22 @@ export class AsyncIDBStore<
 
     const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
 
-    for await (const item of iterator) {
-      if (options?.with) {
-        yield await this.queryExecutor.resolveRelations(
-          item as RelationResult<T, R, Options>,
-          options.with,
-          tx
-        )
-      } else {
+    if (!options?.with) {
+      for await (const item of iterator) {
         yield item as RelationResult<T, R, Options>
       }
+      return
+    }
+
+    const records: RelationResult<T, R, Options>[] = []
+    for await (const item of iterator) {
+      records.push(item as RelationResult<T, R, Options>)
+    }
+    if (records.length > 0) {
+      await this.queryExecutor.resolveRelations(tx, options.with, ...records)
+    }
+    for (const r of records) {
+      yield r
     }
   }
 
