@@ -145,7 +145,7 @@ export default (testRunner: TestRunner) => {
           },
         })
 
-        assertExists(usersWithLimitedPosts.length === 5, "Should have loaded 5 users")
+        assert(usersWithLimitedPosts.length === 5, "Should have loaded 5 users")
         assert(
           usersWithLimitedPosts.every((user) => user.userPosts.length === 5),
           "Should have loaded 5 posts per user"

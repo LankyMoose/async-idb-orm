@@ -22,13 +22,17 @@ export class CursorIterator {
       request.onerror = () => reject(request.error)
       request.onsuccess = () => {
         const cursor = request.result
-        if (!cursor || results.length >= limit) {
+        if (!cursor) {
           return resolve(results)
         }
 
-        const value = deserialize(cursor.value)
-        if (predicate(value)) {
-          results.push(value)
+        const record = deserialize(cursor.value)
+        if (predicate(record)) {
+          results.push(record)
+
+          if (results.length === limit) {
+            return resolve(results)
+          }
         }
 
         cursor.continue()
@@ -51,15 +55,13 @@ export class CursorIterator {
   ): Promise<T[]> {
     const { limit = Infinity, deserialize = (v) => v, onBeforeDelete, onAfterDelete } = options
     const results: T[] = []
-    let remaining = limit
-
     return new Promise((resolve, reject) => {
       const request = objectStore.openCursor()
 
       request.onerror = () => reject(request.error)
       request.onsuccess = async () => {
         const cursor = request.result
-        if (!cursor || remaining <= 0) {
+        if (!cursor) {
           return resolve(results)
         }
 
@@ -79,39 +81,17 @@ export class CursorIterator {
             if (onAfterDelete) {
               onAfterDelete(record)
             }
+
             results.push(record)
-            remaining--
+            if (results.length === limit) {
+              return resolve(results)
+            }
+
             cursor.continue()
           }
         } catch (error) {
           reject(error)
         }
-      }
-    })
-  }
-
-  /**
-   * Gets records from an index within a key range
-   */
-  static async getIndexRange<T>(
-    index: IDBIndex,
-    keyRange: IDBKeyRange,
-    deserialize: (value: any) => T = (v) => v
-  ): Promise<T[]> {
-    const results: T[] = []
-
-    return new Promise((resolve, reject) => {
-      const request = index.openCursor(keyRange)
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => {
-        const cursor = request.result
-        if (!cursor) {
-          return resolve(results)
-        }
-
-        results.push(deserialize(cursor.value))
-        cursor.continue()
       }
     })
   }

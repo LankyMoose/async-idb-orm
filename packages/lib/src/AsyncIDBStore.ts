@@ -87,6 +87,7 @@ export class AsyncIDBStore<
       this.deserialize,
       () => new Promise((resolve) => this.db.getInstance(resolve)),
       () => this.relations,
+      () => this.db.storeNames,
       this.taskContext?.tx
     )
   }
@@ -335,15 +336,14 @@ export class AsyncIDBStore<
     options?: Options
   ): Promise<RelationResult<T, R, Options> | null> {
     if (typeof predicateOrKey === "function") {
-      const [result] = await this.queryExecutor.findByPredicate(
-        predicateOrKey,
-        { ...options, limit: 1 },
-        this.db.storeNames
-      )
+      const [result] = await this.queryExecutor.findByPredicate(predicateOrKey, {
+        ...options,
+        limit: 1,
+      })
       return (result ?? null) as RelationResult<T, R, Options> | null
     }
 
-    return this.queryExecutor.findByKey(predicateOrKey, options, this.db.storeNames)
+    return this.queryExecutor.findByKey(predicateOrKey, options)
   }
 
   async findActive(
@@ -357,7 +357,7 @@ export class AsyncIDBStore<
     predicate: (item: CollectionRecord<T>) => boolean,
     options?: Options & { limit?: number }
   ): Promise<RelationResult<T, R, Options>[]> {
-    return this.queryExecutor.findByPredicate(predicate, options, this.db.storeNames)
+    return this.queryExecutor.findByPredicate(predicate, options)
   }
 
   async findManyActive(
@@ -371,7 +371,7 @@ export class AsyncIDBStore<
   async all<Options extends FindOptions<R, T>>(
     options?: Options
   ): Promise<RelationResult<T, R, Options>[]> {
-    return this.queryExecutor.findAll(options, this.db.storeNames)
+    return this.queryExecutor.findAll(options)
   }
 
   async allActive(): Promise<ActiveRecord<CollectionRecord<T>>[]> {
@@ -394,7 +394,7 @@ export class AsyncIDBStore<
   async latest<Options extends FindOptions<R, T>>(
     options?: Options
   ): Promise<RelationResult<T, R, Options> | null> {
-    return this.queryExecutor.findLatest(options, this.db.storeNames)
+    return this.queryExecutor.findLatest(options)
   }
 
   async latestActive(): Promise<ActiveRecord<CollectionRecord<T>> | null> {
@@ -406,21 +406,28 @@ export class AsyncIDBStore<
     name: CollectionIndexName<T>,
     options?: Options
   ): Promise<RelationResult<T, R, Options> | null> {
-    return this.queryExecutor.findByDirection(name, "next", options, this.db.storeNames)
+    return this.queryExecutor.findByDirection(name, "next", options)
   }
 
   async max<Options extends FindOptions<R, T>>(
     name: CollectionIndexName<T>,
     options?: Options
   ): Promise<RelationResult<T, R, Options> | null> {
-    return this.queryExecutor.findByDirection(name, "prev", options, this.db.storeNames)
+    return this.queryExecutor.findByDirection(name, "prev", options)
   }
 
   async getIndexRange<Options extends FindOptions<R, T>>(
-    name: CollectionIndexName<T>,
-    options: Options & { keyRange: IDBKeyRange }
+    index: CollectionIndexName<T>,
+    options: Options & {
+      direction?: IDBCursorDirection
+      keyRange: IDBKeyRange
+    }
   ): Promise<RelationResult<T, R, Options>[]> {
-    return this.queryExecutor.findByIndex(name, options.keyRange, options, this.db.storeNames)
+    const results: RelationResult<T, R, Options>[] = []
+    for await (const record of this.iterate({ ...options, index })) {
+      results.push(record)
+    }
+    return results
   }
 
   async *[Symbol.asyncIterator](): AsyncGenerator<CollectionRecord<T>, void, unknown> {
@@ -434,7 +441,6 @@ export class AsyncIDBStore<
   }
 
   async *iterate<Options extends FindOptions<R, T>>(
-    this: AsyncIDBStore<T, R>,
     options?: Options & {
       direction?: IDBCursorDirection
       keyRange?: IDBKeyRange | null
@@ -534,6 +540,7 @@ export class AsyncIDBStore<
       cloned.deserialize,
       () => new Promise((resolve) => cloned.db.getInstance(resolve)),
       () => cloned.relations,
+      () => cloned.db.storeNames,
       ctx.tx
     )
 

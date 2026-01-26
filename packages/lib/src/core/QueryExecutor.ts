@@ -21,6 +21,7 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
     private deserialize: (value: any) => CollectionRecord<T>,
     private getDb: () => Promise<IDBDatabase>,
     private getRelations: () => Record<string, RelationDefinitionEntry<T, AnyCollection>>,
+    private getStoreNames: () => string[],
     private currentTx?: IDBTransaction
   ) {}
 
@@ -28,8 +29,7 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
    * Executes a query within a transaction context
    */
   async executeInTransaction<TResult>(
-    operation: (tx: IDBTransaction) => Promise<TResult>,
-    storeNames: string[]
+    operation: (tx: IDBTransaction) => Promise<TResult>
   ): Promise<TResult> {
     if (this.currentTx) {
       AsyncIDBSelector.observe(this.currentTx, this.store)
@@ -37,15 +37,14 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
     }
 
     const db = await this.getDb()
-    const tx = db.transaction(storeNames, "readonly")
+    const tx = db.transaction(this.getStoreNames(), "readonly")
     AsyncIDBSelector.observe(tx, this.store)
     return operation(tx)
   }
 
   async findByKey<Options extends FindOptions<R, T>>(
     key: CollectionKeyPathType<T>,
-    options: Options | undefined,
-    storeNames: string[]
+    options: Options | undefined
   ): Promise<RelationResult<T, R, Options> | null> {
     return this.executeInTransaction(async (tx) => {
       const objectStore = tx.objectStore(this.store.name)
@@ -60,13 +59,12 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
       }
 
       return record
-    }, storeNames)
+    })
   }
 
   async findByPredicate<Options extends FindOptions<R, T>>(
     predicate: (item: CollectionRecord<T>) => boolean,
-    options: (Options & { limit?: number }) | undefined,
-    storeNames: string[]
+    options: (Options & { limit?: number }) | undefined
   ): Promise<RelationResult<T, R, Options>[]> {
     const limit = options?.limit || Infinity
 
@@ -82,12 +80,11 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
       }
 
       return records
-    }, storeNames)
+    })
   }
 
   async findAll<Options extends FindOptions<R, T>>(
-    options: Options | undefined,
-    storeNames: string[]
+    options: Options | undefined
   ): Promise<RelationResult<T, R, Options>[]> {
     return this.executeInTransaction(async (tx) => {
       const objectStore = tx.objectStore(this.store.name)
@@ -101,38 +98,13 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
       }
 
       return records
-    }, storeNames)
-  }
-
-  async findByIndex<Options extends FindOptions<R, T>>(
-    indexName: string,
-    keyRange: IDBKeyRange | undefined,
-    options: Options | undefined,
-    storeNames: string[]
-  ): Promise<RelationResult<T, R, Options>[]> {
-    return this.executeInTransaction(async (tx) => {
-      const objectStore = tx.objectStore(this.store.name)
-      const index = objectStore.index(indexName)
-
-      const records = keyRange
-        ? await CursorIterator.getIndexRange(index, keyRange, this.deserialize)
-        : ((await RequestHelper.promisify(index.getAll()).then((results) =>
-            results.map(this.deserialize)
-          )) as RelationResult<T, R, Options>[])
-
-      if (records.length > 0 && options?.with) {
-        await this.resolveRelations(tx, options.with, ...records)
-      }
-
-      return records
-    }, storeNames)
+    })
   }
 
   async findByDirection<Options extends FindOptions<R, T>>(
     indexName: string,
     direction: IDBCursorDirection,
-    options: Options | undefined,
-    storeNames: string[]
+    options: Options | undefined
   ): Promise<RelationResult<T, R, Options> | null> {
     return this.executeInTransaction(async (tx) => {
       const objectStore = tx.objectStore(this.store.name)
@@ -144,12 +116,11 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
       }
 
       return record
-    }, storeNames)
+    })
   }
 
   async findLatest<Options extends FindOptions<R, T>>(
-    options: Options | undefined,
-    storeNames: string[]
+    options: Options | undefined
   ): Promise<RelationResult<T, R, Options> | null> {
     return this.executeInTransaction(async (tx) => {
       const objectStore = tx.objectStore(this.store.name)
@@ -162,7 +133,7 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
         await this.resolveRelations(tx, options.with, record)
       }
       return record
-    }, storeNames)
+    })
   }
 
   async resolveRelations<Options extends FindOptions<R, T>>(
@@ -206,37 +177,30 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
       AsyncIDBStore.getDeserialize(other)
     )
 
-    const initRelationProperty = relationType === "one-to-one" ? () => null : () => []
-    const setRelationProperty =
-      relationType === "one-to-one"
-        ? (source: any, related: any) => {
-            source[relationName] = related
-          }
-        : (source: any, related: any) => {
-            source[relationName].push(related)
-          }
+    const isOneToOne = relationType === "one-to-one"
+    const nested: unknown[] = []
+    const limit = isOneToOne ? 1 : (options?.limit ?? Infinity)
 
-    const sourceValuesToSourceRecords_v3 = new Map<
-      any,
-      { record: CollectionRecord<T>; count: number }[]
-    >()
+    const setRelation: RelationSetter<T> = isOneToOne
+      ? (source, related) => (source[relationName] = related)
+      : (source, related) => source[relationName].push(related)
+
+    type SourceKeyMapEntry = { record: CollectionRecord<T>; count: number }[]
+    const sourceKeysToRecords = new Map<any, SourceKeyMapEntry>()
 
     for (const record of records) {
       const srcKey = record[sourceField]
-      record[relationName] = initRelationProperty()
+      record[relationName] = isOneToOne ? null : []
 
-      if (!sourceValuesToSourceRecords_v3.has(srcKey)) {
-        sourceValuesToSourceRecords_v3.set(srcKey, [])
+      if (!sourceKeysToRecords.has(srcKey)) {
+        sourceKeysToRecords.set(srcKey, [])
       }
-      sourceValuesToSourceRecords_v3.get(srcKey)!.push({ record, count: 0 })
+      sourceKeysToRecords.get(srcKey)!.push({ record, count: 0 })
     }
-
-    const nested: any[] = []
-    const limit = options?.limit ?? Infinity
 
     for await (const related of iterator) {
       const key = related[targetField]
-      const sourceRecords = sourceValuesToSourceRecords_v3.get(key)
+      const sourceRecords = sourceKeysToRecords.get(key)
 
       if (
         !sourceRecords ||
@@ -249,13 +213,13 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
 
       for (let i = 0; i < sourceRecords.length; i++) {
         const sourceRecord = sourceRecords[i]
-        setRelationProperty(sourceRecord.record, related)
+        setRelation(sourceRecord.record, related)
 
         if (++sourceRecord.count === limit) {
           sourceRecords.splice(i--, 1)
 
           if (sourceRecords.length === 0) {
-            sourceValuesToSourceRecords_v3.delete(key)
+            sourceKeysToRecords.delete(key)
             break
           }
         }
@@ -267,3 +231,8 @@ export class QueryExecutor<T extends AnyCollection, R extends RelationsSchema> {
     }
   }
 }
+
+type RelationSetter<T extends AnyCollection> = (
+  source: CollectionRecord<T>,
+  related: unknown
+) => void
