@@ -13,15 +13,6 @@ export class RequestHelper {
   }
 
   /**
-   * Executes a callback-style IDB operation and wraps it in a promise
-   */
-  static execute<T>(
-    operation: (resolve: (value: T) => void, reject: (reason?: any) => void) => void
-  ): Promise<T> {
-    return new Promise(operation)
-  }
-
-  /**
    * Gets a record by key from an object store
    */
   static async get<T>(objectStore: IDBObjectStore, key: IDBValidKey): Promise<T | null> {

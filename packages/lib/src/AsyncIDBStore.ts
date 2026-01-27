@@ -421,12 +421,32 @@ export class AsyncIDBStore<
     options: Options & {
       direction?: IDBCursorDirection
       keyRange: IDBKeyRange
+      limit?: number
     }
   ): Promise<RelationResult<T, R, Options>[]> {
+    const tx = await this.getReadonlyTransaction()
+
+    const request = tx
+      .objectStore(this.name)
+      .index(index)
+      .openCursor(options.keyRange, options.direction)
+
+    const iterator = CursorIterator.createAsyncIterator(request, this.deserialize)
+
+    const limit = options.limit ?? Infinity
     const results: RelationResult<T, R, Options>[] = []
-    for await (const record of this.iterate({ ...options, index })) {
-      results.push(record)
+
+    for await (const record of iterator) {
+      results.push(record as RelationResult<T, R, Options>)
+      if (results.length === limit) {
+        break
+      }
     }
+
+    if (results.length > 0 && options.with) {
+      await this.queryExecutor.resolveRelations(tx, options.with, ...results)
+    }
+
     return results
   }
 
