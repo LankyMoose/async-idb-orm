@@ -37,8 +37,9 @@ import { TaskContext } from "./core/TaskContext.js"
  */
 export class AsyncIDBStore<
   T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
-  R extends RelationsSchema,
-> implements StoreReader<T, R> {
+  R extends RelationsSchema
+> implements StoreReader<T, R>
+{
   private transactionManager: TransactionManager
   private eventEmitter: StoreEventEmitter<T>
   private foreignKeyManager: ForeignKeyManager<T>
@@ -94,7 +95,7 @@ export class AsyncIDBStore<
 
   static getStoreReader<
     T extends Collection<Record<string, any>, any, any, CollectionIndex<any>[], any>,
-    R extends RelationsSchema,
+    R extends RelationsSchema
   >(store: AsyncIDBStore<T, R>): StoreReader<T, R> {
     return {
       find: store.find.bind(store),
@@ -264,29 +265,6 @@ export class AsyncIDBStore<
     }
 
     return this.deleteByKey(predicateOrKey)
-  }
-
-  private async deleteByKey(key: CollectionKeyPathType<T>): Promise<CollectionRecord<T> | null> {
-    return this.transactionManager.queueTask<CollectionRecord<T> | null>(async (ctx) => {
-      const objectStore = ctx.tx.objectStore(this.name)
-      const record = await RequestHelper.get(objectStore, key as IDBValidKey)
-
-      if (!record) {
-        return null
-      }
-
-      await this.foreignKeyManager.handleDownstreamConstraints(ctx, key)
-
-      await RequestHelper.delete(objectStore, key as IDBValidKey)
-
-      const deserialized = this.deserialize(record)
-      ctx.onDidCommit(() => {
-        this.eventEmitter.emit("delete", deserialized)
-        this.eventEmitter.emit("write|delete", deserialized)
-      })
-
-      return deserialized
-    })
   }
 
   async deleteMany(
@@ -516,7 +494,7 @@ export class AsyncIDBStore<
   }
 
   // =============================================================================
-  // Static Methods (for compatibility)
+  // Static Methods
   // =============================================================================
 
   static relay<U extends CollectionEvent>(
@@ -574,6 +552,29 @@ export class AsyncIDBStore<
   // =============================================================================
   // Private Methods
   // =============================================================================
+
+  private async deleteByKey(key: CollectionKeyPathType<T>): Promise<CollectionRecord<T> | null> {
+    return this.transactionManager.queueTask<CollectionRecord<T> | null>(async (ctx) => {
+      const objectStore = ctx.tx.objectStore(this.name)
+      const record = await RequestHelper.get(objectStore, key as IDBValidKey)
+
+      if (!record) {
+        return null
+      }
+
+      await this.foreignKeyManager.handleDownstreamConstraints(ctx, key)
+
+      await RequestHelper.delete(objectStore, key as IDBValidKey)
+
+      const deserialized = this.deserialize(record)
+      ctx.onDidCommit(() => {
+        this.eventEmitter.emit("delete", deserialized)
+        this.eventEmitter.emit("write|delete", deserialized)
+      })
+
+      return deserialized
+    })
+  }
 
   private async getReadonlyObjectStore(): Promise<IDBObjectStore> {
     if (this.taskContext) {
