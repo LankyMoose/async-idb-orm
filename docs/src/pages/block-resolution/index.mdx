@@ -1,0 +1,54 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Block Resolution — async-idb-orm</title>
+</Head.Content>
+
+# Block Resolution
+
+When one tab opens the DB at a higher version while another still has it open at an older version, IndexedDB fires a **blocked** event and the new open request stays pending until all other connections are closed. async-idb-orm handles this automatically so you don’t have to coordinate tabs by hand.
+
+## What happens
+
+1. Tab A has the DB open at version 1.
+2. You deploy version 2; Tab B loads the new code and calls `idb(..., { version: 2 })`.
+3. The upgrade from 1 → 2 can’t run until every connection from Tab A is closed.
+4. IndexedDB blocks the open in Tab B and fires `blocked`.
+
+async-idb-orm uses a **BroadcastChannel** to talk between tabs:
+
+- When Tab B is blocked, it tells Tab A to close its connection.
+- Tab A finishes in-flight work, closes the connection.
+- Tab B’s open completes, runs `onUpgrade`, and opens the DB at version 2.
+- Tab B then tells Tab A to reopen the DB at version 2.
+
+So all tabs end up on the new version without you writing tab-coordination logic.
+
+## Optional: reload old tabs
+
+You can force very old tabs to reload (e.g. after breaking changes) via `onBeforeReinit`:
+
+```ts
+const VERSION = 1
+export const db = idb("users", {
+  schema,
+  version: VERSION,
+  onUpgrade: async (ctx, event) => {
+    // handle migrations
+  },
+  onBeforeReinit: (oldVersion, newVersion) => {
+    const breakingChangesVersion = parseInt(localStorage.getItem("breakingChangesVersion") ?? "0")
+    if (oldVersion < breakingChangesVersion) {
+      window.location.reload()
+    }
+  },
+})
+```
+
+`onBeforeReinit` runs in the **old** tab right before it reopens the DB at `newVersion`. Use it to reload when the old runtime is too far behind (e.g. oldVersion &lt; some stored “minimum” version).
+
+## Diagram
+
+![Block resolution flow](https://raw.githubusercontent.com/LankyMoose/async-idb-orm/main/packages/lib/assets/block-resolution.png)
+
+This coordination runs inside the library; you only need to bump `version` and implement `onUpgrade` (and optionally `onBeforeReinit`) for your migrations.

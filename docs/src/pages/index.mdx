@@ -1,0 +1,47 @@
+import { Head, Link } from "kiru/router"
+
+<Head.Content>
+  <title>async-idb-orm — Introduction</title>
+</Head.Content>
+
+# async-idb-orm
+
+**Promise-based IndexedDB wrapper with an ORM-like API and support for Active Records, relations, and migrations.**
+
+Build offline-first web apps with a type-safe, ergonomic API. async-idb-orm gives you collections, key ranges, events, transactions, relations, selectors, foreign keys, async iteration, serialization, and migrations—without leaving the comfort of promises and TypeScript.
+
+## What’s in the docs
+
+- <Link to="/getting-started">Getting Started</Link> — Install, define collections, and run your first queries
+- <Link to="/key-ranges">Key Ranges</Link> — Use the `range` tagged template for index queries and iteration
+- <Link to="/events">Events</Link> — Listen to `write`, `delete`, and `clear`; optional cross-tab relay
+- <Link to="/active-records">Active Records</Link> — Work with live objects and call `.save()` / `.delete()`
+- <Link to="/transactions">Transactions</Link> — Wrap multi-step updates with `db.transaction()`
+- <Link to="/relations">Relations</Link> — One-to-one and one-to-many with `with`, `where`, `limit`, nesting
+- <Link to="/selectors">Selectors</Link> — Derived, reactive data that updates when collections change
+- <Link to="/foreign-keys">Foreign Keys</Link> — Pseudo-FKs with cascade/restrict and parent checks
+- <Link to="/async-iteration">Async Iteration</Link> — `for await` over collections and indexes
+- <Link to="/serialization">Serialization</Link> — Store types IndexedDB doesn’t support natively
+- <Link to="/migrations">Migrations</Link> — Version upgrades and schema changes via `onUpgrade`
+- <Link to="/block-resolution">Block Resolution</Link> — How version conflicts across tabs are handled
+
+## Quick peek
+
+```ts
+import { idb, Collection } from "async-idb-orm"
+
+type User = { id: string; name: string; age: number }
+const users = Collection.create<User>()
+  .withKeyPath("id")
+  .withTransformers({
+    create: (dto) => ({ ...dto, id: crypto.randomUUID() }),
+  })
+
+const db = idb("my-app", { schema: { users }, version: 1 })
+
+const user = await db.collections.users.create({ name: "Alice", age: 30 })
+await db.collections.users.update({ ...user, age: 31 })
+const found = await db.collections.users.find(user.id)
+```
+
+Hit **Getting Started** next to wire this into your app.

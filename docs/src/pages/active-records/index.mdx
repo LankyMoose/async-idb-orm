@@ -1,0 +1,38 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Active Records — async-idb-orm</title>
+</Head.Content>
+
+# Active Records
+
+`create`, `find`, `findMany`, and `all` have **Active** variants that return an `ActiveRecord<T>` with `.save()` and `.delete()`.
+
+## Using Active methods
+
+```ts
+async function setUserAge(userId: string, age: number) {
+    const user = await db.collections.users.findActive(userId)
+    if (!user) throw new Error("User not found")
+    user.age = 42
+    await user.save()
+}
+```
+
+## Upgrade / downgrade
+
+You can turn a plain record into an active record with `wrap`, and back with `unwrap`:
+
+```ts
+async function setUserAge(userId: string, age: number) {
+  const user = await db.collections.users.find(userId)
+  if (!user) throw new Error("User not found")
+  const activeUser = db.collections.users.wrap(user)
+  activeUser.age = 42
+  await activeUser.save()
+
+  return db.collections.users.unwrap(activeUser)
+}
+```
+
+`.save()` writes the current in-memory state to the store. `.delete()` removes the record and disconnects the active record from the collection.

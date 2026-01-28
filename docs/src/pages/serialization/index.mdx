@@ -1,0 +1,51 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Serialization — async-idb-orm</title>
+</Head.Content>
+
+# Serialization
+
+IndexedDB can’t store arbitrary types (e.g. `Date`, custom classes). Use **serialization** to convert to/from storable shapes when writing and reading.
+
+## Example: custom class
+
+```ts
+class TimeStamp {
+  date: Date
+  constructor(initialValue?: string) {
+    this.date = initialValue ? new Date(initialValue) : new Date()
+  }
+
+  toJSON() {
+    return this.date.toISOString()
+  }
+}
+
+type User = { id: string; name: string; createdAt: TimeStamp }
+type UserDTO = { name: string }
+
+export const users = Collection.create<User, UserDTO>()
+  .withTransformers({
+    create: (dto) => ({
+      ...dto,
+      id: crypto.randomUUID(),
+      createdAt: new TimeStamp(),
+    }),
+  })
+  .withSerialization({
+    write: (user) => ({
+      ...user,
+      createdAt: user.createdAt.toJSON(),
+    }),
+    read: (serializedUser) => ({
+      ...serializedUser,
+      createdAt: new TimeStamp(serializedUser.createdAt),
+    }),
+  })
+```
+
+- **`write`** — Called before putting a record into IndexedDB. Return a plain, storable object.
+- **`read`** — Called after reading from IndexedDB. Return the full, typed record (e.g. with `new TimeStamp(...)`).
+
+Use this for `Date`, `Map`, `Set`, or any type that isn’t a plain JSON-like value.

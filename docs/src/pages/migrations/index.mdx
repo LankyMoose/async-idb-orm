@@ -1,0 +1,40 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Migrations — async-idb-orm</title>
+</Head.Content>
+
+# Migrations
+
+Bump the DB `version` and use `onUpgrade` to change schema or data when users open a newer build.
+
+## Example: add a field to a collection
+
+```ts
+const VERSION = 2
+export const db = idb("users", {
+  schema,
+  version: VERSION,
+  onUpgrade: async (ctx, event: IDBVersionChangeEvent) => {
+    if (event.oldVersion === 0) return // skip initial DB creation
+
+    if (event.oldVersion === 1) {
+      // migrate from v1 -> v2: add someNewKey to posts
+      const oldPosts = (await ctx.collections.posts.all()) as Omit<Post, "someNewKey">[]
+      ctx.deleteStore("posts")
+      ctx.createStore("posts")
+      const newPosts = oldPosts.map((post) => ({ ...post, someNewKey: 42 }))
+      await ctx.collections.posts.upsert(...newPosts)
+      console.log("successfully migrated from v1 -> v2")
+    }
+  },
+})
+```
+
+- **`ctx`** — Upgrade context with `collections`, `deleteStore`, `createStore`, etc.
+- **`event.oldVersion`** — Previous version (0 when the DB is created for the first time).
+- **`event.newVersion`** — The version you passed to `idb(..., { version })`.
+
+Stores that don’t exist yet are created automatically during the upgrade; use `deleteStore` / `createStore` when you need to recreate a store (e.g. to change key path or indexes).
+
+Run migrations only in `onUpgrade`; avoid doing schema changes in normal app code.

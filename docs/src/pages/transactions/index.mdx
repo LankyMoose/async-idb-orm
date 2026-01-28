@@ -1,0 +1,52 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Transactions — async-idb-orm</title>
+</Head.Content>
+
+# Transactions
+
+Use `db.transaction()` for multi-step updates. On throw, the transaction is aborted and the error is re-thrown.
+
+## Example
+
+```ts
+async function transferFunds(
+  senderId: string,
+  recipientId: string,
+  transferAmount: number
+): Promise<TransferResult> {
+  try {
+    return await db.transaction(async (ctx, tx) => {
+      const sender = await ctx.accounts.findActive({ id: senderId })
+      const recipient = await ctx.accounts.findActive({ id: recipientId })
+
+      if (!sender || !recipient) {
+        throw TransferResult.InvalidAccount
+      }
+
+      if (sender.balance < transferAmount) {
+        tx.abort()
+        return TransferResult.InsufficientFunds
+      }
+
+      sender.balance -= transferAmount
+      recipient.balance += transferAmount
+
+      await sender.save()
+      await recipient.save()
+
+      tx.commit()
+      return TransferResult.Success
+    })
+  } catch (error) {
+    return isTransferResult(error) ? error : TransferResult.Error
+  }
+}
+```
+
+- **Throw** — Aborts the transaction and re-throws.
+- **`tx.abort()`** — Aborts without throwing; you can return a value from the callback.
+- **`tx.commit()`** — Commits explicitly. If you don’t call it, the transaction still commits when all outstanding requests finish and no new ones are started.
+
+Use `ctx` (same shape as `db.collections`) for all reads and writes inside the transaction.

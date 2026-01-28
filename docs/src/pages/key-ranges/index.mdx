@@ -1,0 +1,54 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Key Ranges — async-idb-orm</title>
+</Head.Content>
+
+# Key Ranges
+
+The `range` tagged template builds `IDBKeyRange` objects for index queries and iteration.
+
+## Usage
+
+```ts
+import { range } from "async-idb-orm"
+
+// Inclusive: values >= 20 && values <= 30
+const inclusiveRange = range`>= ${20} & <= ${30}`
+
+// Exclusive: values > 20 && values < 30
+const exclusiveRange = range`> ${20} & < ${30}`
+
+// Mixed: values >= 20 && values < 30
+const mixedRange = range`>= ${20} & < ${30}`
+
+// Single lower bound: values >= 25
+const lowerBound = range`>= ${25}`
+
+// Single upper bound: values < 100
+const upperBound = range`< ${100}`
+
+// Equality: values === 42
+const exactMatch = range`= ${42}`
+
+const usersInRange = await db.collections.users.getIndexRange("idx_age", range`>= ${20} & <= ${40}`)
+
+for await (const user of db.collections.users.iterate({
+  index: "idx_age",
+  keyRange: range`>= ${30} & < ${40}`,
+})) {
+  console.log(user)
+}
+```
+
+## Operators
+
+| Operator | Meaning |
+|----------|---------|
+| `>=` | Greater than or equal (inclusive lower) |
+| `>` | Greater than (exclusive lower) |
+| `<=` | Less than or equal (inclusive upper) |
+| `<` | Less than (exclusive upper) |
+| `=` | Equality (exact match) |
+
+Combine bounds with `&` or `&&`. The equality operator `=` cannot be combined with others. Invalid ranges (e.g. lower > upper) will throw when used with IndexedDB.

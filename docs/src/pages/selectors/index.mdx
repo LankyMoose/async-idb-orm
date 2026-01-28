@@ -1,0 +1,91 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Selectors — async-idb-orm</title>
+</Head.Content>
+
+# Selectors
+
+Selectors are **computed, reactive** values derived from your collections. They track which collections they use and refresh when those collections change.
+
+## Defining selectors
+
+**Via `db.select()`:**
+
+```ts
+export const userPostCounts = db.select(async (ctx) => {
+  const [users, posts] = await Promise.all([ctx.users.all(), ctx.posts.all()])
+  return users.map((user) => ({
+    userId: user.id,
+    name: user.name,
+    postCount: posts.filter((post) => post.userId === user.id).length,
+  }))
+})
+```
+
+**Via `Selector.create()`:**
+
+```ts
+import { Selector } from "async-idb-orm"
+import type * as schema from "./collections"
+import type * as relations from "./relations"
+
+export const allUserNames = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
+  return (await ctx.users.all()).map((user) => user.name)
+})
+```
+
+Register selectors made via `Selector.create()` when creating the DB:
+
+```ts
+export const db = idb("my-app", {
+  schema,
+  relations,
+  selectors: { allUserNames },
+  version: 1,
+})
+```
+
+## Using selectors
+
+**Promise-based:**
+
+```ts
+const userNames = await db.selectors.allUserNames.get()
+const postCounts = await userPostCounts.get()
+```
+
+**Reactive subscriptions:**
+
+```ts
+const unsubscribe = db.selectors.allUserNames.subscribe((names) => {
+  console.log("User names updated:", names)
+})
+// later: unsubscribe()
+```
+
+When any collection the selector touched is modified (create, update, delete, clear), the selector recomputes and notifies subscribers.
+
+## Behaviour
+
+- **Lazy** — Computed on first `get()` or when dependencies change.
+- **Cached** — Repeated `get()` returns cache until a dependency changes.
+- **Change detection** — Only collections actually used during the last run trigger a refresh.
+- **Batching** — Multiple rapid changes are batched into one refresh.
+
+## UI integration
+
+Use `subscribe` in your framework’s effect/lifecycle and store the result in local state:
+
+```ts
+function useUserNames() {
+  const [userNames, setUserNames] = useState<string[]>([])
+  useEffect(() => {
+    const unsub = db.selectors.allUserNames.subscribe(setUserNames)
+    return unsub
+  }, [])
+  return userNames
+}
+```
+
+Return types are inferred from the selector function.

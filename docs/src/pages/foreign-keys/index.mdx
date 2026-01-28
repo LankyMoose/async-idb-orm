@@ -1,0 +1,61 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Foreign Keys — async-idb-orm</title>
+</Head.Content>
+
+# Foreign Keys
+
+IndexedDB has no built-in foreign keys. async-idb-orm lets you define **pseudo-foreign-keys** that are enforced during execution.
+
+## What you get
+
+- **On insert/update:** The “parent” record must exist. If it doesn’t, the transaction aborts and an error is thrown.
+- **On delete:** Child records are handled according to `onDelete`:
+  - **`cascade`** — Delete all children.
+  - **`restrict`** — Abort and throw.
+  - **`no action`** — Do nothing up front; fail at commit if the constraint would be broken.
+  - **`set null`** — Set the reference field to `null`. Inserts/updates with `null` skip the parent check.
+
+## Example
+
+```ts
+import { idb, Collection } from "async-idb-orm"
+
+type User = { userId: string; name: string }
+const users = Collection.create<User>()
+
+type Post = { id: string; text: string; userId: string }
+const posts = Collection.create<Post>().withForeignKeys((posts) => [
+  { ref: posts.userId, collection: users, onDelete: "cascade" },
+])
+
+type PostComment = { id: string; content: string; postId: string; userId: string }
+const postComments = Collection.create<PostComment>().withForeignKeys((comments) => [
+  { ref: comments.postId, collection: posts, onDelete: "cascade" },
+  { ref: comments.userId, collection: users, onDelete: "cascade" },
+])
+
+const db = idb("my-app-db", {
+  schema: { users, posts, postComments },
+  version: 1,
+})
+
+// throws: user "123" does not exist
+await db.collections.posts.create({ text: "Hello world", userId: "123" })
+
+const bob = await db.collections.users.create({ name: "Bob Smith" })
+const alice = await db.collections.users.create({ name: "Alice Johnson" })
+
+const post = await db.collections.posts.create({ text: "Hello world", userId: bob.id })
+await db.collections.postComments.create({
+  content: "Great post!",
+  postId: post.id,
+  userId: alice.id,
+})
+
+// deletes bob, his post, and alice's comment (cascade)
+await db.collections.users.delete(bob.id)
+```
+
+Use `ref` to point at the field that holds the parent key, `collection` for the parent collection, and `onDelete` for the desired behaviour.

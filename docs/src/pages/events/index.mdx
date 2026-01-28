@@ -1,0 +1,41 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Events — async-idb-orm</title>
+</Head.Content>
+
+# Events
+
+Collections emit lifecycle events you can subscribe to.
+
+## Event types
+
+- **`write`** — A record was created or updated
+- **`delete`** — A record was deleted
+- **`write|delete`** — Any create, update, or delete
+- **`clear`** — All records were removed via `db.<collection>.clear`
+
+## Subscribing
+
+```ts
+const onUserDeleted = (user: User) => {
+  console.log("User deleted:", user)
+}
+
+db.collections.users.addEventListener("delete", onUserDeleted)
+db.collections.users.delete(user.id)
+// User deleted: {...}
+db.collections.users.removeEventListener("delete", onUserDeleted)
+```
+
+## Cross-tab relay
+
+By default, events are relayed to other tabs/windows using the same database. To turn this off:
+
+```ts
+export const db = idb("users", {
+  schema,
+  version: 1,
+  relayEvents: false,
+})
+```

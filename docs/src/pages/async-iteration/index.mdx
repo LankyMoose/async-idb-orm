@@ -1,0 +1,60 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Async Iteration — async-idb-orm</title>
+</Head.Content>
+
+# Async Iteration
+
+Collections are async iterable. Use `for await` to walk records or an index with optional key range and relations.
+
+## Basic iteration
+
+```ts
+for await (const user of db.collections.users) {
+  console.log(user)
+}
+```
+
+## Index + key range
+
+```ts
+import { range } from "async-idb-orm"
+
+const ageKeyRange = range`< ${30}`
+for await (const user of db.collections.users.iterate({
+  index: "idx_age",
+  keyRange: ageKeyRange,
+  direction: "next", // or "prev" for reverse
+})) {
+  console.log(user)
+}
+```
+
+## With relations
+
+```ts
+for await (const user of db.collections.users.iterate({
+  with: { userPosts: true },
+})) {
+  console.log(user.userPosts)
+}
+
+for await (const user of db.collections.users.iterate({
+  direction: "prev",
+  with: { userPosts: { limit: 5 } },
+})) {
+  console.log(user.userPosts)
+}
+
+const ageKeyRange = range`>= ${30} & < ${40}`
+for await (const user of db.collections.users.iterate({
+  index: "idx_age",
+  keyRange: ageKeyRange,
+  with: { userPosts: true },
+})) {
+  console.log(user.userPosts)
+}
+```
+
+`iterate()` accepts the same `with` (and nested `where`/`limit`) options as `find` / `findMany` / `all`.

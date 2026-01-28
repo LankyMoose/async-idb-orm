@@ -1,0 +1,117 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Getting Started — async-idb-orm</title>
+</Head.Content>
+
+# Getting Started
+
+Install, define your schema, and run your first queries.
+
+## Install
+
+```bash
+pnpm add async-idb-orm
+# or npm / yarn / bun
+```
+
+## Define schema and DB
+
+```ts
+// db.ts
+import { idb, Collection, Selector } from "async-idb-orm"
+
+type User = {
+  id: string
+  name: string
+  age: number
+  createdAt: number
+  updatedAt?: number
+}
+type UserDTO = {
+  name: string
+  age: number
+}
+
+const users = Collection.create<User, UserDTO>()
+  .withKeyPath("id") // optional — defaults to "id" if present
+  .withIndexes([
+    { key: "age", name: "idx_age" },
+    { key: ["name", "age"], name: "idx_name_id" },
+  ])
+  .withTransformers({
+    create: (dto) => ({
+      ...dto,
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+    }),
+    update: (updatedRecord) => ({
+      ...updatedRecord,
+      updatedAt: Date.now(),
+    }),
+  })
+```
+
+`withKeyPath` is optional when your record has an `id` field. Use it (and optionally `autoIncrement: true`) when the key is different or auto-generated:
+
+```ts
+type Post = { id: number; text: string; userId: string }
+const posts = Collection.create<Post>().withKeyPath("id", { autoIncrement: true })
+```
+
+Wire schema (and optional relations/selectors) into the DB:
+
+```ts
+const schema = { users, posts }
+const relations = {} // see Relations section
+
+const userSummary = Selector.create<typeof schema, typeof relations>().as(async (ctx) => {
+  const allUsers = await ctx.users.all()
+  return {
+    totalUsers: allUsers.length,
+    averageAge: allUsers.reduce((sum, user) => sum + user.age, 0) / allUsers.length || 0,
+    userNames: allUsers.map((user) => user.name),
+  }
+})
+
+export const db = idb("users", {
+  schema,
+  relations,
+  selectors: { userSummary },
+  version: 1,
+})
+```
+
+## Basic usage
+
+```ts
+// app.ts
+import { db } from "$/db"
+
+const user = await db.collections.users.create({ name: "Bob Smith", age: 69 })
+//    ^? User
+
+await db.collections.users.update({ ...user, age: 42 })
+
+await db.collections.users.find(user.id)
+await db.collections.users.find((user) => user.name === "Bob Smith")
+await db.collections.users.delete(user.id)
+await db.collections.users.deleteMany((user) => user.age < 25)
+await db.collections.users.all()
+await db.collections.users.findMany((user) => user.age > 25)
+await db.collections.users.count()
+await db.collections.users.latest()
+
+const oldestUser = await db.collections.users.max("idx_age")
+const youngestUser = await db.collections.users.min("idx_age")
+
+import { range } from "async-idb-orm"
+const usersYoungerThan30 = await db.collections.users.getIndexRange("idx_age", range`< ${30}`)
+
+const summary = await db.selectors.userSummary.get()
+const unsubscribe = db.selectors.userSummary.subscribe((summary) => {
+  console.log(`Total users: ${summary.totalUsers}, Average age: ${summary.averageAge}`)
+})
+```
+
+From here you can add [Key Ranges](/key-ranges), [Relations](/relations), [Selectors](/selectors), and the rest of the docs as needed.

@@ -1,0 +1,128 @@
+import { Head } from "kiru/router"
+
+<Head.Content>
+  <title>Relations — async-idb-orm</title>
+</Head.Content>
+
+# Relations
+
+Define one-to-one and one-to-many links between collections, then load them with `with`, `where`, `limit`, and nested `with`.
+
+## Defining relations
+
+```ts
+import { idb, Relations, Collection } from "async-idb-orm"
+
+type User = { id: number; name: string; age: number }
+type Post = { id: string; content: string; userId: number }
+type Comment = { id: string; content: string; postId: string; userId: number }
+
+const users = Collection.create<User>().withKeyPath("id", { autoIncrement: true })
+const posts = Collection.create<Post>()
+const comments = Collection.create<Comment>()
+
+const userPostRelations = Relations.create(users, posts).as({
+  userPosts: (userFields, postFields) => ({
+    type: "one-to-many",
+    from: userFields.id,
+    to: postFields.userId,
+  }),
+})
+
+const postUserRelations = Relations.create(posts, users).as({
+  author: (postFields, userFields) => ({
+    type: "one-to-one",
+    from: postFields.userId,
+    to: userFields.id,
+  }),
+})
+
+const postCommentRelations = Relations.create(posts, comments).as({
+  postComments: (postFields, commentFields) => ({
+    type: "one-to-many",
+    from: postFields.id,
+    to: commentFields.postId,
+  }),
+})
+
+const db = idb("my-app", {
+  schema: { users, posts, comments },
+  relations: {
+    userPostRelations,
+    postUserRelations,
+    postCommentRelations,
+  },
+  version: 1,
+})
+```
+
+## Loading relations
+
+Use the `with` option on `find`, `findMany`, `all`, `getIndexRange`, `min`, and `max`:
+
+```ts
+const userWithPosts = await db.collections.users.find(1, {
+  with: { userPosts: true },
+})
+// userWithPosts.userPosts: Post[]
+
+const postsWithAuthors = await db.collections.posts.all({
+  with: { author: true },
+})
+// each post has .author: User
+
+const userWithPostsAndComments = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      with: { postComments: true },
+    },
+  },
+})
+```
+
+## Filtering and limiting
+
+```ts
+const userWithImportantPosts = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      where: (post) => post.content.includes("Important"),
+    },
+  },
+})
+
+const userWithRecentPosts = await db.collections.users.find(1, {
+  with: {
+    userPosts: { limit: 5 },
+  },
+})
+
+const userWithFilteredNested = await db.collections.users.find(1, {
+  with: {
+    userPosts: {
+      where: (post) => post.content.includes("Tutorial"),
+      limit: 5,
+      with: {
+        postComments: {
+          where: (comment) => comment.content.length > 10,
+          limit: 3,
+        },
+      },
+    },
+  },
+})
+```
+
+## Where it works
+
+Relations are supported on:
+
+- `find()`, `findMany()`, `all()`
+- `getIndexRange()`, `min()`, `max()`
+- Iteration via `iterate({ with: { ... } })`
+
+Relation data is read-only; you can’t turn related records into active records.
+
+## Type safety
+
+Only defined relation names are allowed in `with`, and filters receive correctly typed arguments. TypeScript will error on typos or wrong shapes.
