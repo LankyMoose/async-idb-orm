@@ -11,7 +11,7 @@ export default defineConfig({
         jsx: false,
         jsxImportSource: "kiru",
         jsxRuntime: "automatic",
-        rehypePlugins: [[shiki, { theme: "github-dark" }]],
+        rehypePlugins: [[shiki, { theme: "min-dark" }]],
       }),
     },
     kiru({

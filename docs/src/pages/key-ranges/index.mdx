@@ -43,12 +43,36 @@ for await (const user of db.collections.users.iterate({
 
 ## Operators
 
-| Operator | Meaning |
-|----------|---------|
-| `>=` | Greater than or equal (inclusive lower) |
-| `>` | Greater than (exclusive lower) |
-| `<=` | Less than or equal (inclusive upper) |
-| `<` | Less than (exclusive upper) |
-| `=` | Equality (exact match) |
+<table>
+  <thead>
+    <tr>
+      <th>Operator</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>`>=`</td>
+      <td>Greater than or equal (inclusive lower)</td>
+    </tr>
+    <tr>
+      <td>`>`</td>
+      <td>Greater than (exclusive lower)</td>
+    </tr>
+    <tr>
+      <td>`<=`</td>
+      <td>Less than or equal (inclusive upper)</td>
+    </tr>
+    <tr>
+      <td>`<`</td>
+      <td>Less than (exclusive upper)</td>
+    </tr>
+    <tr>
+      <td>`=`</td>
+      <td>Equality (exact match)</td>
+    </tr>
+  </tbody>
+</table>  
 
 Combine bounds with `&` or `&&`. The equality operator `=` cannot be combined with others. Invalid ranges (e.g. lower > upper) will throw when used with IndexedDB.
+
