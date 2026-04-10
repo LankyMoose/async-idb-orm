@@ -20,8 +20,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+
     "outDir": "dist",
-    "baseUrl": "./src"
+    "rootDir": "./src"
   },
   "include": ["src/**/*.ts"]
 }

@@ -1,38 +1,34 @@
-import { useCallback } from "kaioken"
-import { User, db } from "$/db"
+import { Derive, ErrorBoundary } from "kiru"
+import { Link } from "kiru/router"
 import { useLiveCollection } from "$/hooks/useCollection"
 import { selectedUser } from "$/state/selectedUser"
+import { db, User } from "$/db"
 import { randomUserName } from "$/random"
-import { Link } from "kaioken/router"
 
-export function UsersList() {
-  const { data: users, loading, error } = useLiveCollection("users")
+export default function UsersPage() {
+  const users = useLiveCollection("users")
 
-  const addRandom = useCallback(async () => {
+  const addRandom = async () => {
     await db.collections.users.create({
       name: randomUserName(),
       age: Math.floor(Math.random() * 100),
     })
-  }, [])
+  }
 
-  return (
+  return () => (
     <>
       <div>
         <div style="display:flex; align-items:center; justify-content:space-between; gap: 2rem;">
           <h3>Users</h3>
           <button onclick={addRandom}>Add random user</button>
         </div>
-        {loading ? (
-          <p>Loading...</p>
-        ) : error ? (
-          <p>{error.message}</p>
-        ) : (
-          <>
-            {users.map((user) => (
-              <UserCard key={user.id} user={user} />
-            ))}
-          </>
-        )}
+        <ErrorBoundary fallback={(err) => <p>{err.message}</p>}>
+          <Derive from={users} fallback={<p>Loading...</p>}>
+            {(users) => {
+              return users?.map((user) => <UserCard key={user.id} user={user} />)
+            }}
+          </Derive>
+        </ErrorBoundary>
       </div>
       {/* {window.parent === window ? (
         <iframe src="./users" width="100%" height="500px" style="border: none;" />
@@ -50,9 +46,7 @@ function UserCard({ user }: { user: User }) {
       <div>
         <button onclick={() => db.collections.users.delete((u) => u.id === user.id)}>Delete</button>
         <button onclick={() => (selectedUser.value = user)}>Select</button>
-        <Link to={`/${user.id}/posts`} inherit>
-          View Posts
-        </Link>
+        <Link to={`/users/${user.id}/posts`}>View Posts</Link>
       </div>
     </div>
   )

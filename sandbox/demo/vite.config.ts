@@ -1,5 +1,5 @@
 import { defineConfig } from "vite"
-import kaiokenPlugin from "vite-plugin-kaioken"
+import kiru from "vite-plugin-kiru"
 
 export default defineConfig({
   esbuild: {
@@ -12,5 +12,5 @@ export default defineConfig({
       $: "/src",
     },
   },
-  plugins: [kaiokenPlugin()],
+  plugins: [kiru()],
 })

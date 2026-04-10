@@ -1,5 +1,5 @@
 import { db, User } from "$/db"
-import { signal } from "kaioken"
+import { signal } from "kiru"
 
 export const selectedUser = signal<User | null>(null)
 db.collections.users.addEventListener(

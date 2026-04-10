@@ -1,61 +1,65 @@
+import { computed, Derive, ErrorBoundary, onMount, resource, setup } from "kiru"
+import { useFileRouter } from "kiru/router"
 import { db, Post, PostComment } from "$/db"
 import { selectedUser } from "$/state/selectedUser"
-import { useAsync, useEffect } from "kaioken"
-import { navigate, useRouter } from "kaioken/router"
 
-export function UserPosts() {
-  const { params } = useRouter()
-  if (!params.userId) return navigate("/users")
-  const userId = parseInt(params.userId)
-  const posts = useAsync(() => {
-    return db.collections.posts.findMany((p) => p.userId === userId, {
+export default function UserPostsPage() {
+  const router = useFileRouter()
+  const userId = computed(() => parseInt(router.state.params.value.userId))
+  if (!userId.peek() || isNaN(userId.peek())) {
+    router.navigate("/users")
+    return null
+  }
+
+  const posts = resource(() => {
+    const id = userId.value
+    return db.collections.posts.findMany((p) => p.userId === id, {
       with: { postComments: true },
     })
-  }, [userId])
+  })
+  const refetch = () => posts.refetch()
 
-  console.log("posts", posts.data)
-
-  useEffect(() => {
+  onMount(() => {
     const onRelatedCommentChanged = (r: PostComment) =>
-      posts.data?.some((p) => p.id === r.postId) && posts.invalidate()
+      posts.value?.some((p) => p.id === r.postId) && refetch()
 
-    db.collections.posts.addEventListener("write|delete", posts.invalidate)
+    db.collections.posts.addEventListener("write|delete", refetch)
     db.collections.postComments.addEventListener("write|delete", onRelatedCommentChanged)
 
     return () => {
-      db.collections.posts.removeEventListener("write|delete", posts.invalidate)
+      db.collections.posts.removeEventListener("write|delete", refetch)
       db.collections.postComments.removeEventListener("write|delete", onRelatedCommentChanged)
     }
-  }, [!!posts.data])
+  })
 
   const onCreatePostClick = async () => {
-    await db.collections.posts.create({ userId, content: "New post" })
+    await db.collections.posts.create({ userId: userId.value, content: "New post" })
   }
 
-  return (
+  return () => (
     <div>
       <div style="display:flex;gap:2rem;align-items:center;">
         <h3 style="display:flex;gap:0.5rem;align-items:center">
           Posts by
           <span style="padding: 0.25rem 0.5rem; border-radius: 8px; background: #444; border: 1px solid #333; font-size: small">
-            <UsernameView userId={userId} />
+            <UsernameView userId={userId.value} />
           </span>
         </h3>
         <button onclick={onCreatePostClick}>Create post</button>
       </div>
 
       <div>
-        {posts.loading ? (
-          <p>Loading posts...</p>
-        ) : posts.error ? (
-          <p>{posts.error.message}</p>
-        ) : (
-          <>
-            {posts.data.map((post) => (
-              <PostItemView key={post.id} post={post} />
-            ))}
-          </>
-        )}
+        <ErrorBoundary fallback={(err) => <p>{err.message}</p>}>
+          <Derive from={posts} fallback={<p>Loading posts...</p>}>
+            {(posts, isStale) => (
+              <div className={isStale ? "opacity-50" : "opacity-100"}>
+                {posts.map((post) => (
+                  <PostItemView key={post.id} post={post} />
+                ))}
+              </div>
+            )}
+          </Derive>
+        </ErrorBoundary>
       </div>
     </div>
   )
@@ -114,7 +118,20 @@ function PostCommentsView({ postId, comments }: { postId: string; comments: Post
   )
 }
 
-function UsernameView({ userId }: { userId: number }) {
-  const { data, loading, error } = useAsync(() => db.collections.users.find(userId), [userId])
-  return loading ? "Loading..." : error ? error.message : data ? data.name : "User not found"
+interface UserNameViewProps {
+  userId: number
+}
+
+const UsernameView: Kiru.FC<UserNameViewProps> = () => {
+  const $ = setup<UserNameViewProps>()
+  const userId = $.derive((p) => p.userId)
+  const user = resource(() => db.collections.users.find(userId.value))
+
+  return () => (
+    <ErrorBoundary fallback={(err) => <p>{err.message}</p>}>
+      <Derive from={user} fallback={<p>Loading...</p>}>
+        {(user) => user?.name || "User not found"}
+      </Derive>
+    </ErrorBoundary>
+  )
 }
