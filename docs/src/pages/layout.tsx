@@ -1,4 +1,4 @@
-import { useSignal } from "kiru"
+import { signal } from "kiru"
 import { Link, useFileRouter } from "kiru/router"
 
 const nav = [
@@ -17,15 +17,15 @@ const nav = [
   { href: "/block-resolution", label: "Block Resolution" },
 ]
 
-export default function RootLayout({ children }: { children: JSX.Children }) {
+export default function RootLayout() {
   const { state } = useFileRouter()
-  const menuOpen = useSignal(false)
+  const menuOpen = signal(false)
 
   const closeMenu = () => {
     menuOpen.value = false
   }
 
-  return (
+  return ({ children }: { children: JSX.Children }) => (
     <div className="docs-layout">
       <header className="mobile-header">
         <button
@@ -58,7 +58,7 @@ export default function RootLayout({ children }: { children: JSX.Children }) {
           {nav.map((item) => (
             <Link
               to={item.href}
-              className={`nav-link ${state.pathname === item.href ? "nav-link--active" : ""}`}
+              className={`nav-link ${state.pathname.value === item.href ? "nav-link--active" : ""}`}
               onclick={closeMenu}
             >
               {item.label}
